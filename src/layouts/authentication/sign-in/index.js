@@ -16,6 +16,7 @@ import bgImage from "assets/images/bg-sign-in-basic.jpeg";
 import { useDispatch } from "react-redux";
 import { useLoginMutation } from "slices/authApiSlice";
 import { setUser } from "slices/authSlice";
+import { setCredentials } from "slices/authSlice";
 
 export default function SignIn() {
   const [form, setForm] = useState({ email: "", password: "" });
@@ -48,6 +49,7 @@ export default function SignIn() {
       // Điều hướng
       navigate(from, { replace: true });
     } catch (err) {
+      console.log(err);
       setError(err?.data?.message || "Login failed");
     }
   };
