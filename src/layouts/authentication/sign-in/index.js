@@ -51,7 +51,6 @@ export default function SignIn() {
       setError(err?.data?.message || "Login failed");
     }
   };
-  F;
 
   return (
     <BasicLayout image={bgImage}>
