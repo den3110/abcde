@@ -27,18 +27,31 @@ export default function SignIn() {
   const location = useLocation();
   const from = location.state?.from?.pathname || "/dashboard";
 
+  // LoginScreen.jsx (trích phần submit handler)
   const submit = async (e) => {
     e.preventDefault();
     setError("");
+
     try {
-      const user = await login(form).unwrap(); // BE set cookie, FE nhận user
-      dispatch(setUser(user));
-      if (remember) localStorage.setItem("userInfo", JSON.stringify(user));
+      // BE trả { user, token }
+      const { user, token } = await login(form).unwrap();
+
+      // Gom lại object duy nhất để tiện lưu trữ
+      const userInfo = { ...user, token };
+
+      // Lưu vào Redux
+      dispatch(setCredentials({ user, token })); // ⬅️ action mới
+
+      // Tuỳ chọn nhớ phiên
+      if (remember) localStorage.setItem("userInfo", JSON.stringify(userInfo));
+
+      // Điều hướng
       navigate(from, { replace: true });
     } catch (err) {
       setError(err?.data?.message || "Login failed");
     }
   };
+  F;
 
   return (
     <BasicLayout image={bgImage}>
