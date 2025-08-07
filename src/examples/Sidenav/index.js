@@ -1,5 +1,6 @@
+/* eslint-disable react/prop-types */
 import { useEffect } from "react";
-import { useLocation, NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import PropTypes from "prop-types";
 
 // @mui material
@@ -26,10 +27,19 @@ import {
 
 // Redux
 import { useDispatch } from "react-redux";
-import { logout } from "slices/authSlice";
+import { logout as clearAuth } from "slices/authSlice";
+import { useLogoutMutation } from "slices/authApiSlice";
+import { apiSlice } from "slices/apiSlice";
 
 // Icons
 import LogoutIcon from "@mui/icons-material/Logout";
+
+function clearAllCookies() {
+  document.cookie.split(";").forEach((cookie) => {
+    const name = cookie.split("=")[0].trim();
+    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+  });
+}
 
 function Sidenav({ color, brand, brandName, routes, ...rest }) {
   const [controller, dispatchCtrl] = useMaterialUIController();
@@ -37,10 +47,10 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const [logoutApi] = useLogoutMutation();
 
   const collapseName = location.pathname.replace("/", "");
   let textColor = "white";
-
   if (transparentSidenav || (whiteSidenav && !darkMode)) {
     textColor = "dark";
   } else if (whiteSidenav && darkMode) {
@@ -55,21 +65,17 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
       setTransparentSidenav(dispatchCtrl, window.innerWidth < 1200 ? false : transparentSidenav);
       setWhiteSidenav(dispatchCtrl, window.innerWidth < 1200 ? false : whiteSidenav);
     }
-
     window.addEventListener("resize", handleMiniSidenav);
     handleMiniSidenav();
-
     return () => window.removeEventListener("resize", handleMiniSidenav);
-  }, [dispatchCtrl, location]);
+  }, [dispatchCtrl, transparentSidenav, whiteSidenav]);
 
-  // Render menu
+  // Build menu items
   const renderRoutes = routes
     .filter((r) => r.show !== false)
     .map(({ type, name, icon, title, noCollapse, key, href, route }) => {
-      let returnValue;
-
       if (type === "collapse") {
-        returnValue = href ? (
+        return href ? (
           <Link
             href={href}
             key={key}
@@ -85,12 +91,18 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             />
           </Link>
         ) : (
-          <NavLink key={key} to={route}>
-            <SidenavCollapse name={name} icon={icon} active={key === collapseName} />
+          <NavLink key={key} to={route} style={{ textDecoration: "none" }}>
+            <SidenavCollapse
+              name={name}
+              icon={icon}
+              active={key === collapseName}
+              noCollapse={noCollapse}
+            />
           </NavLink>
         );
-      } else if (type === "title") {
-        returnValue = (
+      }
+      if (type === "title") {
+        return (
           <MDTypography
             key={key}
             color={textColor}
@@ -106,8 +118,9 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             {title}
           </MDTypography>
         );
-      } else if (type === "divider") {
-        returnValue = (
+      }
+      if (type === "divider") {
+        return (
           <Divider
             key={key}
             light={
@@ -117,14 +130,21 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           />
         );
       }
-
-      return returnValue;
+      return null;
     });
 
-  // Xử lý logout
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate("/authentication/sign-in");
+  // Logout handler
+  const handleLogout = async () => {
+    try {
+      await logoutApi().unwrap();
+    } catch {
+      // ignore API errors
+    }
+    clearAllCookies();
+    localStorage.removeItem("userInfo");
+    dispatch(clearAuth());
+    dispatch(apiSlice.util.resetApiState());
+    navigate("/authentication/sign-in", { replace: true });
   };
 
   return (
@@ -133,7 +153,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
       variant="permanent"
       ownerState={{ transparentSidenav, whiteSidenav, miniSidenav, darkMode }}
     >
-      {/* Logo + Brand */}
+      {/* Logo & Brand */}
       <MDBox pt={3} pb={1} px={4} textAlign="center">
         <MDBox
           display={{ xs: "block", xl: "none" }}
@@ -144,9 +164,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           onClick={closeSidenav}
           sx={{ cursor: "pointer" }}
         >
-          <MDTypography variant="h6" color="secondary">
-            <Icon sx={{ fontWeight: "bold" }}>close</Icon>
-          </MDTypography>
+          <Icon sx={{ fontWeight: "bold" }}>close</Icon>
         </MDBox>
         <MDBox component={NavLink} to="/" display="flex" alignItems="center">
           {brand && <MDBox component="img" src={brand} alt="Brand" width="2rem" />}
@@ -168,10 +186,10 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
         }
       />
 
-      {/* Menu */}
+      {/* Menu items */}
       <List>{renderRoutes}</List>
 
-      {/* Logout Button */}
+      {/* Logout button */}
       <MDBox p={2} mt="auto">
         <MDButton
           variant="gradient"

@@ -1,13 +1,19 @@
-// src/slices/apiSlice.js
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { logout } from "./authSlice";
 
-/* ---------- 1. Base query gốc: thêm prepareHeaders ---------- */
+// Helper to delete all cookies
+function clearAllCookies() {
+  document.cookie.split(";").forEach((cookie) => {
+    const name = cookie.split("=")[0].trim();
+    // set the cookie to expire in the past
+    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+  });
+}
+
 const rawBaseQuery = fetchBaseQuery({
-  baseUrl: process.env.REACT_APP_API_URL, // .env
-  credentials: "include", // gửi cookie
+  baseUrl: process.env.REACT_APP_API_URL,
+  credentials: "include",
   prepareHeaders: (headers, { getState }) => {
-    // Lấy token lưu trong Redux (được set sau khi login)
     const token = getState().auth.userInfo?.token;
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
@@ -16,23 +22,29 @@ const rawBaseQuery = fetchBaseQuery({
   },
 });
 
-/* ---------- 2. Wrapper xử lý 401 tự logout ---------- */
+// Wrap the baseQuery to handle auth errors
 const baseQuery = async (args, api, extra) => {
   const result = await rawBaseQuery(args, api, extra);
 
-  if (result.error?.status === 401) {
-    api.dispatch(logout()); // xoá userInfo + token
+  const status = result.error?.status;
+  if (status === 401 || status === 403) {
+    // 1. Clear localStorage
+    localStorage.clear();
+    // 2. Clear all cookies
+    clearAllCookies();
+    // 3. Remove auth from Redux and reset RTKQ cache
+    api.dispatch(logout());
     api.dispatch(apiSlice.util.resetApiState());
-    // window.location.assign("/authentication/sign-in"); // tuỳ nhu cầu
+    // 4. Redirect to login
+    window.location.assign("/authentication/sign-in");
   }
 
   return result;
 };
 
-/* ---------- 3. Khởi tạo apiSlice ---------- */
 export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery,
-  tagTypes: ["User"], // thêm tag nếu cần
-  endpoints: () => ({}), // các slice khác sẽ inject
+  tagTypes: ["User", "Registration" /* etc */],
+  endpoints: () => ({}),
 });

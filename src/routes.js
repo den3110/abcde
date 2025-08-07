@@ -7,10 +7,15 @@ import Notifications from "layouts/notifications";
 import Profile from "layouts/profile";
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
+import UserManagement from "layouts/user/UserListPage";
+
+/* 🆕 Admin tournament pages */
 
 // @mui icons
 import Icon from "@mui/material/Icon";
-import UserManagement from "layouts/user/UserListPage";
+import TournamentFormPage from "layouts/tournament/TournamentFormPage";
+import TournamentsListPage from "layouts/tournament/TournamentsListPage";
+import AdminTournamentRegistrations from "layouts/tournament/AdminTournamentRegistrations";
 
 const routes = [
   {
@@ -23,6 +28,7 @@ const routes = [
     private: true,
   },
 
+  /* ---------- AUTH (ẩn) ---------- */
   {
     show: false,
     type: "collapse",
@@ -34,7 +40,6 @@ const routes = [
   },
   {
     show: false,
-
     type: "collapse",
     name: "Sign Up",
     key: "sign-up",
@@ -42,13 +47,54 @@ const routes = [
     route: "/authentication/sign-up",
     component: <SignUp />,
   },
+
+  /* ---------- User management ---------- */
   {
     type: "collapse",
     name: "User Management",
     key: "user-management",
     icon: <Icon fontSize="small">people</Icon>,
     route: "/users",
-    component: <UserManagement />, //  ← component mới
+    component: <UserManagement />,
+    private: true,
+  },
+
+  /* ---------- 🆕 Tournaments ---------- */
+  {
+    type: "collapse",
+    name: "Tournaments",
+    key: "tournaments",
+    icon: <Icon fontSize="small">emoji_events</Icon>,
+    route: "/admin/tournaments",
+    component: <TournamentsListPage />,
+    private: true,
+  },
+
+  {
+    show: false, // không hiện sidebar
+    type: "collapse",
+    name: "Create Tournament",
+    key: "tournament-new",
+    route: "/admin/tournaments/new",
+    component: <TournamentFormPage />,
+    private: true,
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Edit Tournament",
+    key: "tournament-edit",
+    route: "/admin/tournaments/:id/edit",
+    component: <TournamentFormPage />,
+    private: true,
+  },
+  {
+    show: false, // ẩn khỏi sidebar
+    type: "collapse",
+    name: "Registrations",
+    key: "tournament-registrations",
+    route: "/admin/tournaments/:id/registrations",
+    component: <AdminTournamentRegistrations />,
     private: true,
   },
 ];

@@ -8,15 +8,18 @@ const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {
+    // payload = { user: {...}, token: "…" }
     setCredentials: (state, action) => {
-      // payload = { user, token }
-      state.userInfo = {
-        ...action.payload.user,
-        token: action.payload.token, // 👈 quan trọng
-      };
+      const { user, token } = action.payload;
+      const info = { ...user, token };
+      state.userInfo = info;
+      // persist to localStorage
+      localStorage.setItem("userInfo", JSON.stringify(info));
     },
     logout: (state) => {
       state.userInfo = null;
+      // remove from localStorage
+      localStorage.removeItem("userInfo");
     },
   },
 });

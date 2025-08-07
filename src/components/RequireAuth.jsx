@@ -1,22 +1,14 @@
 import PropTypes from "prop-types";
-import { useSelector } from "react-redux";
 import { Navigate, useLocation } from "react-router-dom";
 import CircularProgress from "@mui/material/CircularProgress";
 import Box from "@mui/material/Box";
 import { useVerifyQuery } from "slices/authApiSlice";
 
 export default function RequireAuth({ children }) {
-  /* ① hook 1: luôn gọi */
-  const userInfo = useSelector((s) => s.auth.userInfo);
-
-  /* ② hook 2: luôn gọi – chỉ skip request, không skip hook */
-  const { isFetching } = useVerifyQuery(undefined, {
-    skip: !userInfo, // chưa có userInfo thì không gửi request
-    refetchOnMountOrArgChange: false,
-  });
-
-  /* ③ if/return nằm SAU tất cả hook */
   const location = useLocation();
+
+  // Always call verify
+  const { data: user, isFetching, error } = useVerifyQuery();
 
   if (isFetching) {
     return (
@@ -26,9 +18,16 @@ export default function RequireAuth({ children }) {
     );
   }
 
-  if (!userInfo) {
-    return <Navigate to="/authentication/sign-in" state={{ from: location }} />;
+  // On 401 or 403 (caught by baseQuery) the user will already be logged out
+  // and redirected. But just in case:
+  const status = error?.status || error?.originalStatus;
+  if (status === 401 || status === 403 || !user) {
+    return <Navigate to="/authentication/sign-in" state={{ from: location }} replace />;
   }
+
+  // user now contains { _id, name, email, role, token }
+  // you can dispatch it into your authSlice if you like:
+  // useEffect(() => { dispatch(setCredentials(user)) }, [user])
 
   return children;
 }
