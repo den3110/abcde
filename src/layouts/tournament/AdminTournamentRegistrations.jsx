@@ -170,10 +170,10 @@ export default function AdminTournamentRegistrations() {
           <MDTypography variant="h5">Registrations</MDTypography>
         </Stack>
         {tour && (
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="text.secondary" fontSize={16}>
             {tour.name} • {new Date(tour.startDate).toLocaleDateString()} –{" "}
             {new Date(tour.endDate).toLocaleDateString()} •{" "}
-            {tour.playType === "double" ? "Double" : "Single"}
+            {tour.playType === "double" ? "Giải đôi" : "Giải đơn"}
           </Typography>
         )}
       </MDBox>

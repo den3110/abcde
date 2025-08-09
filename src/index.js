@@ -22,7 +22,8 @@ import App from "App";
 import { MaterialUIControllerProvider } from "context";
 import { Provider } from "react-redux";
 import { store } from "./store";
-
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 const container = document.getElementById("app");
 const root = createRoot(container);
 
@@ -31,6 +32,17 @@ root.render(
     <BrowserRouter>
       <MaterialUIControllerProvider>
         <App />
+        <ToastContainer
+          position="top-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          pauseOnHover
+          draggable
+          theme="colored"
+          limit={3}
+        />
       </MaterialUIControllerProvider>
     </BrowserRouter>
   </Provider>

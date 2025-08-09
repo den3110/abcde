@@ -1,42 +1,56 @@
-import { useEffect, useState } from "react";
+// src/pages/TournamentFormPage.jsx
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Button, Grid, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import { Box, Button, Grid, TextField, Typography, Stack, MenuItem, Card } from "@mui/material";
 import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
 import {
   useCreateTournamentMutation,
   useGetTournamentQuery,
   useUpdateTournamentMutation,
+  useUploadAvatarMutation,
 } from "../../slices/tournamentsApiSlice";
 import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
-const sportTypes = [
-  { value: 1, label: "Pickleball" },
-  { value: 2, label: "Tennis" },
-];
+dayjs.extend(customParseFormat);
+
+const MAX_IMG_SIZE = 10 * 1024 * 1024; // 10MB
+
+// ===== Helpers cho định dạng ngày =====
+const toDDMMYYYY = (ymd) => (ymd ? dayjs(ymd, "YYYY-MM-DD", true).format("DD/MM/YYYY") : "");
+const toYYYYMMDD = (dmy) => {
+  const d = dayjs(dmy, "DD/MM/YYYY", true);
+  return d.isValid() ? d.format("YYYY-MM-DD") : "";
+};
+const isFullValidDmy = (dmy) => dayjs(dmy, "DD/MM/YYYY", true).isValid();
 
 export default function TournamentFormPage() {
   const { id } = useParams(); // "new" | <id>
-  const isEdit = id && id !== "new";
-
+  const isEdit = !!id && id !== "new";
   const { data: tour } = useGetTournamentQuery(id, { skip: !isEdit });
+
   const [createTour] = useCreateTournamentMutation();
   const [updateTour] = useUpdateTournamentMutation();
-  const nav = useNavigate();
+  const [uploadAvatar] = useUploadAvatarMutation();
 
-  /* ---------- State ---------- */
-  const today = dayjs().format("YYYY-MM-DD");
+  const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+
+  const todayYmd = dayjs().format("YYYY-MM-DD");
+
+  // State submit (backend): giữ YYYY-MM-DD
   const [form, setForm] = useState({
     name: "",
     image: "",
     sportType: 1,
     groupId: 0,
     eventType: "double",
-    regOpenDate: today,
-    registrationDeadline: today,
-    startDate: today,
-    endDate: today,
+    regOpenDate: todayYmd,
+    registrationDeadline: todayYmd,
+    startDate: todayYmd,
+    endDate: todayYmd,
     scoreCap: 0,
     scoreGap: 0,
     singleCap: 0,
@@ -45,46 +59,159 @@ export default function TournamentFormPage() {
     contentHtml: "",
   });
 
+  // State hiển thị (frontend): giữ DD/MM/YYYY cho 4 field ngày
+  const [uiDates, setUiDates] = useState({
+    regOpenDate: toDDMMYYYY(todayYmd),
+    registrationDeadline: toDDMMYYYY(todayYmd),
+    startDate: toDDMMYYYY(todayYmd),
+    endDate: toDDMMYYYY(todayYmd),
+  });
+
+  const [uploading, setUploading] = useState(false);
+
+  // Map dữ liệu server -> state
   useEffect(() => {
-    if (tour) {
-      const clone = { ...tour };
-      ["regOpenDate", "registrationDeadline", "startDate", "endDate"].forEach(
-        (k) => (clone[k] = dayjs(clone[k]).format("YYYY-MM-DD"))
-      );
-      setForm(clone);
-    }
+    if (!tour) return;
+    const nextForm = {
+      name: tour.name || "",
+      image: tour.image || "",
+      sportType: 1,
+      groupId: Number(tour.groupId ?? 0),
+      eventType: tour.eventType || "double",
+      regOpenDate: dayjs(tour.regOpenDate).isValid()
+        ? dayjs(tour.regOpenDate).format("YYYY-MM-DD")
+        : todayYmd,
+      registrationDeadline: dayjs(tour.registrationDeadline).isValid()
+        ? dayjs(tour.registrationDeadline).format("YYYY-MM-DD")
+        : todayYmd,
+      startDate: dayjs(tour.startDate).isValid()
+        ? dayjs(tour.startDate).format("YYYY-MM-DD")
+        : todayYmd,
+      endDate: dayjs(tour.endDate).isValid() ? dayjs(tour.endDate).format("YYYY-MM-DD") : todayYmd,
+      scoreCap: Number(tour.scoreCap ?? 0),
+      scoreGap: Number(tour.scoreGap ?? 0),
+      singleCap: Number(tour.singleCap ?? 0),
+      location: tour.location || "",
+      contactHtml: tour.contactHtml || "",
+      contentHtml: tour.contentHtml || "",
+    };
+    setForm(nextForm);
+    setUiDates({
+      regOpenDate: toDDMMYYYY(nextForm.regOpenDate),
+      registrationDeadline: toDDMMYYYY(nextForm.registrationDeadline),
+      startDate: toDDMMYYYY(nextForm.startDate),
+      endDate: toDDMMYYYY(nextForm.endDate),
+    });
   }, [tour]);
 
-  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const onChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
-  /* ---------- submit ---------- */
-  const submit = async (e) => {
-    e.preventDefault();
-    try {
-      if (isEdit) {
-        await updateTour({ id, ...form }).unwrap();
-        toast.success("Đã cập nhật");
-      } else {
-        await createTour(form).unwrap();
-        toast.success("Đã tạo mới");
-      }
-      nav("/admin/tournaments");
-    } catch (err) {
-      toast.error(err?.data?.message || err.error);
+  // Xử lý nhập ngày dạng dd/mm/yyyy, chỉ set vào form (yyyy-mm-dd) khi hợp lệ.
+  const onDateChange = (name) => (e) => {
+    const raw = e.target.value;
+    // giữ UI
+    setUiDates((prev) => ({ ...prev, [name]: raw }));
+    // nếu hợp lệ đầy đủ -> cập nhật form (yyyy-mm-dd)
+    if (isFullValidDmy(raw)) {
+      setForm((prev) => ({ ...prev, [name]: toYYYYMMDD(raw) }));
     }
   };
 
-  /* ---------- UI ---------- */
+  const buildPayload = () => ({
+    name: (form.name || "").trim(),
+    image: form.image || "",
+    sportType: 1,
+    groupId: Number(form.groupId) || 0,
+    eventType: form.eventType,
+    regOpenDate: form.regOpenDate,
+    registrationDeadline: form.registrationDeadline,
+    startDate: form.startDate,
+    endDate: form.endDate,
+    scoreCap: Number(form.scoreCap) || 0,
+    scoreGap: Number(form.scoreGap) || 0,
+    singleCap: Number(form.singleCap) || 0,
+    location: form.location,
+    contactHtml: form.contactHtml,
+    contentHtml: form.contentHtml,
+  });
+
+  const submit = async (e) => {
+    e.preventDefault();
+
+    // Validate 4 ngày lần cuối
+    const dateFields = ["regOpenDate", "registrationDeadline", "startDate", "endDate"];
+    for (const f of dateFields) {
+      if (!form[f] || !dayjs(form[f], "YYYY-MM-DD", true).isValid()) {
+        toast.error(`Ngày không hợp lệ ở trường: ${f}`);
+        return;
+      }
+    }
+
+    const body = buildPayload();
+    try {
+      if (isEdit) {
+        await updateTour({ id, body }).unwrap();
+        toast.success("Cập nhật thành công");
+      } else {
+        await createTour(body).unwrap();
+        toast.success("Tạo mới thành công");
+      }
+      navigate("/admin/tournaments");
+    } catch (err) {
+      toast.error(err?.data?.message || err?.error || "Có lỗi xảy ra");
+    }
+  };
+
+  const pickFile = () => fileInputRef.current?.click();
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Vui lòng chọn đúng file ảnh (PNG/JPG/WebP...)");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > MAX_IMG_SIZE) {
+      toast.error("Ảnh vượt quá 10MB. Vui lòng chọn ảnh nhỏ hơn.");
+      e.target.value = "";
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const res = await uploadAvatar(file).unwrap();
+      const url =
+        res?.url || res?.path || res?.secure_url || res?.data?.url || res?.data?.path || "";
+      if (!url) throw new Error("Không tìm thấy URL ảnh từ server");
+
+      setForm((prev) => ({ ...prev, image: url }));
+      toast.success("Tải ảnh thành công");
+    } catch (err) {
+      toast.error(err?.data?.message || err?.message || "Upload ảnh thất bại");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const clearImage = () => setForm((prev) => ({ ...prev, image: "" }));
+
   return (
     <DashboardLayout>
       <DashboardNavbar />
 
-      <Box p={3}>
+      <Box p={3} sx={{ backgroundColor: "#fff", borderRadius: 1 }}>
         <Typography variant="h4" mb={3}>
-          {isEdit ? "Sửa giải đấu" : "Tạo giải đấu"}
+          {isEdit ? "Sửa Giải đấu" : "Tạo Giải đấu"}
         </Typography>
 
-        <Box component="form" onSubmit={submit}>
+        <Box
+          component="form"
+          onSubmit={submit}
+          sx={{ "& .MuiInputBase-root": { minHeight: 50, alignItems: "center" } }}
+        >
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
               <TextField
@@ -96,29 +223,81 @@ export default function TournamentFormPage() {
                 required
                 margin="normal"
               />
-              <TextField
-                name="image"
-                label="Ảnh URL"
-                value={form.image}
-                onChange={onChange}
-                fullWidth
-                margin="normal"
-              />
+
+              {/* Upload ảnh từ máy + preview */}
+              <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Ảnh đại diện giải
+                </Typography>
+
+                {form.image ? (
+                  <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
+                    <img
+                      src={form.image}
+                      referrerPolicy="no-referrer"
+                      alt="preview"
+                      style={{
+                        width: 160,
+                        height: 90,
+                        objectFit: "cover",
+                        borderRadius: 8,
+                        border: "1px solid rgba(0,0,0,0.12)",
+                      }}
+                    />
+                    <Stack direction="row" spacing={1}>
+                      <Button variant="outlined" onClick={pickFile} disabled={uploading}>
+                        {uploading ? "Đang tải..." : "Thay ảnh"}
+                      </Button>
+                      <Button
+                        variant="text"
+                        color="error"
+                        onClick={clearImage}
+                        disabled={uploading}
+                      >
+                        Xoá ảnh
+                      </Button>
+                    </Stack>
+                  </Box>
+                ) : (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Button variant="outlined" onClick={pickFile} disabled={uploading}>
+                      {uploading ? "Đang tải..." : "Chọn ảnh từ máy"}
+                    </Button>
+                    <Typography variant="body2" color="text.secondary">
+                      PNG/JPG/WebP • ≤ 10MB. Sau khi chọn sẽ tự upload.
+                    </Typography>
+                  </Stack>
+                )}
+
+                {/* file input ẩn */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  style={{ display: "none" }}
+                />
+
+                {/* Nhập URL thủ công nếu muốn */}
+                <TextField
+                  name="image"
+                  label="Ảnh (URL)"
+                  value={form.image}
+                  onChange={onChange}
+                  fullWidth
+                  margin="normal"
+                  helperText="Có thể dán URL ảnh trực tiếp nếu đã có."
+                />
+              </Card>
+
               <TextField
                 name="sportType"
-                label="Môn"
-                select
-                value={form.sportType}
-                onChange={onChange}
+                label="Môn thi"
+                value="Pickleball"
                 fullWidth
                 margin="normal"
-              >
-                {sportTypes.map((s) => (
-                  <MenuItem key={s.value} value={s.value}>
-                    {s.label}
-                  </MenuItem>
-                ))}
-              </TextField>
+                InputProps={{ readOnly: true }}
+              />
               <TextField
                 name="groupId"
                 label="Group ID"
@@ -159,19 +338,19 @@ export default function TournamentFormPage() {
               ].map((d) => (
                 <TextField
                   key={d.n}
-                  type="date"
                   name={d.n}
-                  label={d.l}
-                  value={form[d.n]}
-                  onChange={onChange}
+                  label={`${d.l} (dd/mm/yyyy)`}
+                  placeholder="dd/mm/yyyy"
+                  value={uiDates[d.n]}
+                  onChange={onDateChange(d.n)}
                   fullWidth
                   margin="normal"
-                  InputLabelProps={{ shrink: true }}
+                  inputProps={{ inputMode: "numeric" }}
                 />
               ))}
 
               {[
-                { n: "scoreCap", l: "Tổng điểm tối đa cho đôi" },
+                { n: "scoreCap", l: "Tổng điểm tối đa (đôi)" },
                 { n: "scoreGap", l: "Chênh lệch tối đa" },
                 { n: "singleCap", l: "Điểm tối đa 1 VĐV" },
               ].map((s) => (
@@ -213,10 +392,19 @@ export default function TournamentFormPage() {
           </Grid>
 
           <Stack direction="row" spacing={2} mt={3}>
-            <Button type="submit" variant="contained">
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={uploading}
+              sx={{
+                backgroundColor: "#1976d2",
+                color: "#fff",
+                "&:hover": { backgroundColor: "#1565c0" },
+              }}
+            >
               {isEdit ? "Cập nhật" : "Tạo mới"}
             </Button>
-            <Button variant="outlined" onClick={() => nav(-1)}>
+            <Button variant="outlined" onClick={() => navigate(-1)} disabled={uploading}>
               Huỷ
             </Button>
           </Stack>

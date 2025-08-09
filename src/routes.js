@@ -1,4 +1,4 @@
-// Material Dashboard 2 React layouts
+// src/routes.js
 import Dashboard from "layouts/dashboard";
 import Tables from "layouts/tables";
 import Billing from "layouts/billing";
@@ -9,15 +9,25 @@ import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
 import UserManagement from "layouts/user/UserListPage";
 
-/* 🆕 Admin tournament pages */
-
-// @mui icons
-import Icon from "@mui/material/Icon";
-import TournamentFormPage from "layouts/tournament/TournamentFormPage";
+// 🆕 Admin tournament pages
 import TournamentsListPage from "layouts/tournament/TournamentsListPage";
+import TournamentFormPage from "layouts/tournament/TournamentFormPage";
 import AdminTournamentRegistrations from "layouts/tournament/AdminTournamentRegistrations";
+import AdminBracketsPage from "layouts/tournament/AdminBracketsPage";
+
+// 🆕 Matches (admin)
+import AdminMatchesList from "layouts/match/AdminMatchesList";
+
+// 🆕 Referee
+import RefereeMatches from "layouts/match/RefereeMatches";
+
+import Icon from "@mui/material/Icon";
+import AdminTournamentMatches from "layouts/tournament/AdminTournamentMatches";
+import BracketViewPage from "layouts/tournament/BracketViewPage";
+import TournamentBracketView from "layouts/tournament/TournamentBracketView";
 
 const routes = [
+  // Dashboard
   {
     type: "collapse",
     name: "Dashboard",
@@ -28,7 +38,7 @@ const routes = [
     private: true,
   },
 
-  /* ---------- AUTH (ẩn) ---------- */
+  // Auth (ẩn)
   {
     show: false,
     type: "collapse",
@@ -48,7 +58,7 @@ const routes = [
     component: <SignUp />,
   },
 
-  /* ---------- User management ---------- */
+  // User management (Admin)
   {
     type: "collapse",
     name: "User Management",
@@ -57,9 +67,10 @@ const routes = [
     route: "/users",
     component: <UserManagement />,
     private: true,
+    roles: ["admin"],
   },
 
-  /* ---------- 🆕 Tournaments ---------- */
+  // Tournaments (Admin)
   {
     type: "collapse",
     name: "Tournaments",
@@ -68,16 +79,17 @@ const routes = [
     route: "/admin/tournaments",
     component: <TournamentsListPage />,
     private: true,
+    roles: ["admin"],
   },
-
   {
-    show: false, // không hiện sidebar
+    show: false,
     type: "collapse",
     name: "Create Tournament",
     key: "tournament-new",
     route: "/admin/tournaments/new",
     component: <TournamentFormPage />,
     private: true,
+    roles: ["admin"],
   },
   {
     show: false,
@@ -87,15 +99,73 @@ const routes = [
     route: "/admin/tournaments/:id/edit",
     component: <TournamentFormPage />,
     private: true,
+    roles: ["admin"],
   },
   {
-    show: false, // ẩn khỏi sidebar
+    show: false,
     type: "collapse",
     name: "Registrations",
     key: "tournament-registrations",
     route: "/admin/tournaments/:id/registrations",
     component: <AdminTournamentRegistrations />,
     private: true,
+    roles: ["admin"],
+  },
+
+  // Brackets per tournament (Admin)
+  {
+    show: false,
+    type: "collapse",
+    name: "Brackets",
+    key: "tournament-brackets",
+    route: "/admin/tournaments/:id/brackets",
+    component: <AdminBracketsPage />,
+    private: true,
+    roles: ["admin"],
+  },
+
+  // Matches (Admin)
+  {
+    type: "collapse",
+    name: "Matches",
+    key: "admin-matches",
+    icon: <Icon fontSize="small">sports_tennis</Icon>,
+    route: "/admin/matches",
+    component: <AdminMatchesList />,
+    private: true,
+    roles: ["admin"],
+  },
+
+  // Referee view
+  // {
+  //   type: "collapse",
+  //   name: "Referee",
+  //   key: "referee-matches",
+  //   icon: <Icon fontSize="small">sports_score</Icon>,
+  //   route: "/referee/matches",
+  //   component: <RefereeMatches />,
+  //   private: true,
+  //   roles: ["referee", "admin"],
+  // },
+  {
+    show: false,
+    type: "collapse",
+    name: "Tournament Matches",
+    key: "tournament-matches",
+    route: "/admin/tournaments/:id/matches",
+    component: <AdminTournamentMatches />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Bracket View",
+    key: "tournament-bracket-view",
+    route: "/admin/tournaments/:id/bracket",
+    component: <TournamentBracketView />,
+    private: true,
+    roles: ["admin"],
   },
 ];
 

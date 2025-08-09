@@ -69,11 +69,12 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: [{ type: "Tournament", id: "PARTIAL-LIST" }],
     }),
     updateTournament: builder.mutation({
-      query: ({ id, ...body }) => ({
+      query: ({ id, body }) => ({
         url: `/admin/tournaments/${id}`,
         method: "PUT",
         body,
       }),
+
       invalidatesTags: (res, err, arg) => [
         { type: "Tournament", id: arg.id },
         { type: "Tournament", id: "PARTIAL-LIST" },
@@ -91,6 +92,106 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (r) => [{ type: "Registration", id: r?.tournament?.toString() || "LIST" }],
     }),
+    // Brackets
+    listBrackets: builder.query({
+      query: (tourId) => `/admin/tournaments/${tourId}/brackets`,
+      providesTags: (r, e, tourId) =>
+        r ? [{ type: "Bracket", id: tourId }] : [{ type: "Bracket", id: tourId }],
+    }),
+    createBracket: builder.mutation({
+      query: ({ tourId, body }) => ({
+        url: `/admin/tournaments/${tourId}/brackets`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (r, e, { tourId }) => [{ type: "Bracket", id: tourId }],
+    }),
+
+    // Matches
+    listMatches: builder.query({
+      query: (bracketId) => `/admin/brackets/${bracketId}/matches`,
+      providesTags: (r, e, bracketId) =>
+        r ? [{ type: "Match", id: bracketId }] : [{ type: "Match", id: bracketId }],
+    }),
+    createMatch: builder.mutation({
+      query: ({ bracketId, body }) => ({
+        url: `/admin/brackets/${bracketId}/matches`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (r, e, { bracketId }) => [{ type: "Match", id: bracketId }],
+    }),
+    deleteMatch: builder.mutation({
+      query: (matchId) => ({
+        url: `/admin/matches/${matchId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: [{ type: "Match", id: "PARTIAL-LIST" }],
+    }),
+    updateMatchScore: builder.mutation({
+      query: ({ matchId, body }) => ({
+        url: `/matches/${matchId}/score`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: (r) => (r ? [{ type: "Match", id: r.bracket.toString() }] : []),
+    }),
+    assignReferee: builder.mutation({
+      query: ({ matchId, refereeId }) => ({
+        url: `/admin/matches/${matchId}/referee`,
+        method: "PATCH",
+        body: { refereeId },
+      }),
+      invalidatesTags: (r) => (r ? [{ type: "Match", id: r.bracket.toString() }] : []),
+    }),
+    listAllMatches: builder.query({
+      query: () => `/admin/matches`,
+      providesTags: (result = [], error) =>
+        result
+          ? [...result.map((m) => ({ type: "Match", id: m._id })), { type: "Match", id: "LIST" }]
+          : [{ type: "Match", id: "LIST" }],
+    }),
+    getMatch: builder.query({
+      query: (matchId) => `/admin/matches/${matchId}`,
+      providesTags: (r, e, id) => [{ type: "Match", id }],
+    }),
+    deleteBracket: builder.mutation({
+      query: ({ tournamentId, bracketId }) => ({
+        url: `/admin/tournaments/${tournamentId}/brackets/${bracketId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: [{ type: "Bracket", id: "PARTIAL-LIST" }],
+    }),
+    // GET single bracket
+    getBracket: builder.query({
+      query: (bracketId) => `/admin/brackets/${bracketId}`,
+      providesTags: (res, err, id) => [{ type: "Bracket", id }],
+    }),
+    updateBracket: builder.mutation({
+      query: ({ tournamentId, bracketId, body }) => ({
+        url: `/admin/tournaments/${tournamentId}/brackets/${bracketId}`,
+        method: "PATCH",
+        body,
+      }),
+    }),
+    updateMatch: builder.mutation({
+      query: ({ matchId, body }) => ({
+        url: `/admin/matches/${matchId}`,
+        method: "PATCH",
+        body,
+      }),
+    }),
+    uploadAvatar: builder.mutation({
+      query: (file) => {
+        const form = new FormData();
+        form.append("avatar", file); // field name phía server
+        return {
+          url: "/upload/avatar", // baseUrl '/api' => thành /api/upload/avatar
+          method: "POST",
+          body: form,
+        };
+      },
+    }),
   }),
 });
 
@@ -107,4 +208,18 @@ export const {
   useUpdateTournamentMutation,
   useDeleteTournamentMutation,
   useDeleteRegistrationMutation,
+  useListBracketsQuery,
+  useCreateBracketMutation,
+  useListMatchesQuery,
+  useCreateMatchMutation,
+  useUpdateMatchScoreMutation,
+  useAssignRefereeMutation,
+  useListAllMatchesQuery,
+  useGetMatchQuery,
+  useDeleteMatchMutation,
+  useDeleteBracketMutation,
+  useGetBracketQuery,
+  useUpdateBracketMutation,
+  useUpdateMatchMutation,
+  useUploadAvatarMutation,
 } = tournamentsApiSlice;

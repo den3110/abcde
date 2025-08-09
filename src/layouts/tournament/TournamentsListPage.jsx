@@ -1,41 +1,52 @@
+// src/layouts/tournament/TournamentsListPage.jsx
 import { useState, useEffect } from "react";
 import {
   Avatar,
   Box,
+  Button,
   Chip,
   CircularProgress,
-  Grid,
   IconButton,
-  MenuItem,
-  Paper,
-  Select,
   Stack,
-  TextField,
-  Tooltip,
-  Pagination,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
   useMediaQuery,
   useTheme,
+  Tooltip,
+  Grid,
+  Paper,
+  Pagination,
+  TextField,
+  Select,
+  MenuItem,
 } from "@mui/material";
-import { Add, Delete, Edit, ListAlt } from "@mui/icons-material";
+import {
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+  ListAlt as ListAltIcon,
+  TableChart as TableChartIcon,
+} from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { useListTournamentsQuery, useDeleteTournamentMutation } from "slices/tournamentsApiSlice";
 import { setTKeyword, setTPage, setTStatus } from "slices/adminTournamentUiSlice";
 import { toast } from "react-toastify";
 
-/* Creative-Tim */
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
 import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
-import MDAvatar from "components/MDAvatar";
 import MDButton from "components/MDButton";
 import MDBadge from "components/MDBadge";
 import DataTable from "examples/Tables/DataTable";
 
-/* ----- const ----- */
 const STATUS_LABEL = {
   upcoming: "Sắp diễn ra",
   ongoing: "Đang diễn ra",
@@ -43,65 +54,55 @@ const STATUS_LABEL = {
 };
 const STATUS_COLOR = { upcoming: "info", ongoing: "success", finished: "default" };
 
-/* ============================================================== */
 export default function TournamentsListPage() {
-  /* ---------- Redux UI-state ---------- */
-  const { page, limit, keyword, status } = useSelector((s) => s.adminTournamentUi);
   const dispatch = useDispatch();
-
-  /* ---------- search debounce ---------- */
+  const { page, limit, keyword, status } = useSelector((s) => s.adminTournamentUi);
   const [input, setInput] = useState(keyword);
+  const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
   useEffect(() => {
     const id = setTimeout(() => dispatch(setTKeyword(input.trim().toLowerCase())), 300);
     return () => clearTimeout(id);
   }, [input, dispatch]);
 
-  /* ---------- Query ---------- */
   const {
-    data = { list: [], total: 0 },
+    data: { list: tournaments = [], total = 0 } = {},
     isLoading,
     error,
   } = useListTournamentsQuery(
     { page: page + 1, limit, keyword, status },
     { keepPreviousData: true }
   );
+  const totalPages = Math.ceil(total / limit);
 
-  const tournaments = data.list;
-  const totalPages = Math.ceil(data.total / limit);
-
-  /* ---------- hooks ---------- */
   const [del] = useDeleteTournamentMutation();
-  const nav = useNavigate();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-
-  /* ---------- delete ---------- */
   const handleDelete = async (id) => {
     if (!window.confirm("Xoá giải này?")) return;
     try {
       await del(id).unwrap();
-      toast.success("Đã xoá");
+      toast.success("Đã xoá giải");
     } catch (err) {
       toast.error(err?.data?.message || err.error);
     }
   };
 
-  /* ---------- columns ---------- */
   const columns = [
     { Header: "#", accessor: "idx", width: "6%", align: "center" },
-    { Header: "tên", accessor: "name", width: "26%" },
-    { Header: "thời gian", accessor: "time", width: "18%" },
-    { Header: "loại", accessor: "type", align: "center" },
-    { Header: "trạng thái", accessor: "status", align: "center" },
-    { Header: "đăng ký", accessor: "reg", align: "center" },
-    { Header: "hành động", accessor: "actions", align: "center", width: "12%" },
+    { Header: "Tên", accessor: "name", width: "26%" },
+    { Header: "Thời gian", accessor: "time", width: "18%" },
+    { Header: "Loại", accessor: "type", align: "center" },
+    { Header: "Trạng thái", accessor: "status", align: "center" },
+    { Header: "Đăng ký", accessor: "reg", align: "center" },
+    { Header: "Hành động", accessor: "actions", align: "center", width: "18%" },
   ];
 
   const rows = tournaments.map((t, i) => ({
     idx: <MDTypography variant="caption">{page * limit + i + 1}</MDTypography>,
     name: (
       <Stack direction="row" spacing={1} alignItems="center">
-        <MDAvatar src={t.image} size="sm" variant="rounded" />
+        <Avatar src={t.image} variant="rounded" sx={{ width: 32, height: 32 }} />
         <MDTypography variant="button" fontWeight="medium">
           {t.name}
         </MDTypography>
@@ -131,32 +132,48 @@ export default function TournamentsListPage() {
       </MDTypography>
     ),
     actions: (
-      <>
-        {/* 👉 NEW: xem danh sách đăng ký */}
+      <Stack direction="row" spacing={1} justifyContent="center">
         <Tooltip title="Đăng ký">
           <IconButton
             size="small"
             color="info"
-            onClick={() => nav(`/admin/tournaments/${t._id}/registrations`)}
+            onClick={() => navigate(`/admin/tournaments/${t._id}/registrations`)}
           >
-            <ListAlt fontSize="small" />
+            <ListAltIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Brackets">
+          <IconButton
+            size="small"
+            color="primary"
+            onClick={() => navigate(`/admin/tournaments/${t._id}/brackets`)}
+          >
+            <TableChartIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Matches">
+          <IconButton
+            size="small"
+            color="secondary"
+            onClick={() => navigate(`/admin/tournaments/${t._id}/matches`)}
+          >
+            <ListAltIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Sửa">
-          <IconButton size="small" onClick={() => nav(`/admin/tournaments/${t._id}/edit`)}>
-            <Edit fontSize="small" />
+          <IconButton size="small" onClick={() => navigate(`/admin/tournaments/${t._id}/edit`)}>
+            <EditIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Xoá">
           <IconButton size="small" color="error" onClick={() => handleDelete(t._id)}>
-            <Delete fontSize="small" />
+            <DeleteIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-      </>
+      </Stack>
     ),
   }));
 
-  /* ---------- UI ---------- */
   return (
     <DashboardLayout>
       <DashboardNavbar />
@@ -171,25 +188,23 @@ export default function TournamentsListPage() {
             onChange={(e) => setInput(e.target.value)}
             sx={{ width: { xs: "100%", sm: 260 } }}
           />
-
           <Select
             size="small"
             value={status}
             onChange={(e) => dispatch(setTStatus(e.target.value))}
             displayEmpty
           >
-            <MenuItem value="">All status</MenuItem>
-            <MenuItem value="upcoming">Upcoming</MenuItem>
-            <MenuItem value="ongoing">Ongoing</MenuItem>
-            <MenuItem value="finished">Finished</MenuItem>
+            <MenuItem value="">Tất cả trạng thái</MenuItem>
+            <MenuItem value="upcoming">Sắp diễn ra</MenuItem>
+            <MenuItem value="ongoing">Đang diễn ra</MenuItem>
+            <MenuItem value="finished">Đã diễn ra</MenuItem>
           </Select>
-
           <MDButton
             sx={{ ml: { sm: "auto" } }}
-            startIcon={<Add />}
+            startIcon={<AddIcon />}
             color="info"
             variant="gradient"
-            onClick={() => nav("/admin/tournaments/new")}
+            onClick={() => navigate("/admin/tournaments/new")}
           >
             Tạo mới
           </MDButton>
@@ -205,13 +220,13 @@ export default function TournamentsListPage() {
         ) : error ? (
           <MDTypography color="error">{error?.data?.message || error.error}</MDTypography>
         ) : isMobile ? (
-          /* ---- Mobile card list ---- */
+          // Mobile cards
           <Stack spacing={2}>
             {tournaments.map((t) => (
               <Paper key={t._id} sx={{ p: 2 }}>
                 <Grid container spacing={2}>
                   <Grid item xs={3}>
-                    <Avatar src={t.image} variant="rounded" sx={{ width: 1, height: 72 }} />
+                    <Avatar src={t.image} variant="rounded" sx={{ width: "100%", height: 72 }} />
                   </Grid>
                   <Grid item xs={9}>
                     <MDTypography fontWeight="bold">{t.name}</MDTypography>
@@ -219,30 +234,42 @@ export default function TournamentsListPage() {
                       {new Date(t.startDate).toLocaleDateString()} –{" "}
                       {new Date(t.endDate).toLocaleDateString()}
                     </MDTypography>
-
                     <Stack direction="row" spacing={1} mt={1}>
-                      <Chip label={t.status} size="small" />
+                      <Chip label={STATUS_LABEL[t.status]} size="small" />
                       <Chip label={t.eventType === "double" ? "Đôi" : "Đơn"} size="small" />
                     </Stack>
-
                     <Stack direction="row" spacing={1} mt={2}>
                       <MDButton
                         size="small"
                         variant="outlined"
                         color="info"
-                        startIcon={<Edit />}
-                        onClick={() => nav(`/admin/tournaments/${t._id}/edit`)}
+                        onClick={() => navigate(`/admin/tournaments/${t._id}/registrations`)}
                       >
-                        Sửa
+                        Đăng ký
                       </MDButton>
                       <MDButton
                         size="small"
                         variant="outlined"
-                        color="error"
-                        startIcon={<Delete />}
-                        onClick={() => handleDelete(t._id)}
+                        color="primary"
+                        onClick={() => navigate(`/admin/tournaments/${t._id}/brackets`)}
                       >
-                        Xoá
+                        Brackets
+                      </MDButton>
+                      <MDButton
+                        size="small"
+                        variant="outlined"
+                        color="secondary"
+                        onClick={() => navigate(`/admin/tournaments/${t._id}/matches`)}
+                      >
+                        Matches
+                      </MDButton>
+                      <MDButton
+                        size="small"
+                        variant="outlined"
+                        color="success"
+                        onClick={() => navigate(`/admin/tournaments/${t._id}/edit`)}
+                      >
+                        Sửa
                       </MDButton>
                     </Stack>
                   </Grid>
@@ -251,7 +278,7 @@ export default function TournamentsListPage() {
             ))}
           </Stack>
         ) : (
-          /* ---- Desktop table ---- */
+          // Desktop table
           <Card>
             <DataTable
               table={{ columns, rows }}
@@ -261,7 +288,6 @@ export default function TournamentsListPage() {
               noEndBorder
               canSearch={false}
             />
-
             <MDBox py={2} display="flex" justifyContent="center">
               <Pagination
                 color="primary"
