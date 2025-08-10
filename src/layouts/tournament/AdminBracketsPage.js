@@ -21,6 +21,9 @@ import {
   Select,
   InputLabel,
   FormControl,
+  FormControlLabel,
+  Checkbox,
+  Tooltip,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -32,6 +35,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
+import { useResetMatchChainMutation } from "slices/tournamentsApiSlice";
 
 import {
   useGetTournamentQuery,
@@ -42,10 +46,24 @@ import {
   useListAllMatchesQuery,
   useCreateMatchMutation,
   useDeleteMatchMutation,
-  // ✨ mới thêm:
   useUpdateBracketMutation,
   useUpdateMatchMutation,
 } from "slices/tournamentsApiSlice";
+
+/* ===== Helpers cho đơn/đôi ===== */
+function normType(t) {
+  const s = String(t || "").toLowerCase();
+  if (s === "single" || s === "singles") return "single";
+  if (s === "double" || s === "doubles") return "double";
+  return "double";
+}
+const regName = (reg, evType) => {
+  if (!reg) return "—";
+  if (evType === "single") return reg.player1?.fullName || "N/A";
+  const a = reg.player1?.fullName || "N/A";
+  const b = reg.player2?.fullName || "N/A";
+  return `${a} & ${b}`;
+};
 
 export default function AdminBracketsPage() {
   const { id: tournamentId } = useParams();
@@ -57,6 +75,9 @@ export default function AdminBracketsPage() {
     isLoading: loadingT,
     error: errorT,
   } = useGetTournamentQuery(tournamentId);
+
+  const evType = normType(tournament?.eventType);
+  const isSingles = evType === "single";
 
   // 2) Các cặp đăng ký
   const {
@@ -91,9 +112,9 @@ export default function AdminBracketsPage() {
   const [deleteBracket] = useDeleteBracketMutation();
   const [createMatch] = useCreateMatchMutation();
   const [deleteMatch] = useDeleteMatchMutation();
-  // ✨ mới:
   const [updateBracket] = useUpdateBracketMutation();
   const [updateMatch] = useUpdateMatchMutation();
+  const [resetMatchChain] = useResetMatchChainMutation();
 
   // Snackbar
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
@@ -140,10 +161,13 @@ export default function AdminBracketsPage() {
   const [emRules, setEmRules] = useState({ bestOf: 3, pointsToWin: 11, winByTwo: true });
   const [emStatus, setEmStatus] = useState("scheduled");
   const [emWinner, setEmWinner] = useState("");
+  const [emOldStatus, setEmOldStatus] = useState("scheduled");
+  const [emOldWinner, setEmOldWinner] = useState("");
+  const [emCascade, setEmCascade] = useState(false);
 
   // Nhóm match theo bracket
   const grouped = useMemo(() => {
-    const key = (x) => String(x?._id ?? x); // <- normalize id
+    const key = (x) => String(x?._id ?? x); // normalize id
     const m = {};
     brackets.forEach((b) => (m[key(b._id)] = []));
     matches.forEach((mt) => {
@@ -162,7 +186,11 @@ export default function AdminBracketsPage() {
     try {
       await createBracket({
         tourId: tournamentId,
-        body: { name: newBracketName.trim(), type: newBracketType, stage: newBracketStage },
+        body: {
+          name: newBracketName.trim(),
+          type: newBracketType,
+          stage: newBracketStage,
+        },
       }).unwrap();
       showSnack("success", "Đã tạo mới Bracket");
       setBracketDlg(false);
@@ -199,7 +227,7 @@ export default function AdminBracketsPage() {
 
   const handleCreateMatch = async () => {
     if (!pairA || !pairB || pairA === pairB) {
-      return showSnack("error", "Phải chọn 2 đôi khác nhau");
+      return showSnack("error", "Phải chọn 2 đội khác nhau");
     }
     try {
       await createMatch({
@@ -256,7 +284,7 @@ export default function AdminBracketsPage() {
       setNextDlgBracket(br);
       setNextRound(list.length ? lastRound + 1 : 2);
       setPairs(tmp);
-      setNextDlg(true); // luôn mở dialog
+      setNextDlg(true);
       if (!list.length) {
         showSnack("warning", "Chưa có trận nào ở vòng trước. Hãy tạo trận trước đã.");
       } else if (prev.length < 2) {
@@ -268,7 +296,7 @@ export default function AdminBracketsPage() {
     }
   };
 
-  // ======== Mở Dialog SỬA Bracket ========
+  // ======== Mở/Sửa Bracket ========
   const openEditBracket = (br) => {
     setEbId(br._id);
     setEbName(br.name || "");
@@ -284,7 +312,12 @@ export default function AdminBracketsPage() {
       await updateBracket({
         tournamentId,
         bracketId: ebId,
-        body: { name: ebName.trim(), type: ebType, stage: Number(ebStage), order: Number(ebOrder) },
+        body: {
+          name: ebName.trim(),
+          type: ebType,
+          stage: Number(ebStage),
+          order: Number(ebOrder),
+        },
       }).unwrap();
       showSnack("success", "Đã cập nhật Bracket");
       setEditBracketDlg(false);
@@ -294,7 +327,7 @@ export default function AdminBracketsPage() {
     }
   };
 
-  // ======== Mở Dialog SỬA Match ========
+  // ======== Mở/Sửa Match ========
   const openEditMatch = (mt) => {
     setEmId(mt._id);
     setEmBracketId(mt.bracket?._id || mt.bracket);
@@ -309,13 +342,20 @@ export default function AdminBracketsPage() {
     });
     setEmStatus(mt.status || "scheduled");
     setEmWinner(mt.winner || "");
+    setEmOldStatus(mt.status || "scheduled");
+    setEmOldWinner(mt.winner || "");
+    setEmCascade(false);
     setEditMatchDlg(true);
   };
+
+  const willDowngrade = emOldStatus === "finished" && emStatus !== "finished";
+  const willChangeWinner = emStatus === "finished" && emWinner && emWinner !== emOldWinner;
+  const suggestCascade = willDowngrade || willChangeWinner;
 
   const saveEditMatch = async () => {
     if (!emId) return;
     if (!emPairA || !emPairB || emPairA === emPairB) {
-      return showSnack("error", "Phải chọn 2 đôi khác nhau");
+      return showSnack("error", "Phải chọn 2 đội khác nhau");
     }
     try {
       await updateMatch({
@@ -331,10 +371,16 @@ export default function AdminBracketsPage() {
             winByTwo: !!emRules.winByTwo,
           },
           status: emStatus,
-          winner: emStatus === "finished" ? emWinner : "", // nếu chưa kết thúc thì xoá winner
+          winner: emStatus === "finished" ? emWinner : "",
         },
       }).unwrap();
-      showSnack("success", "Đã cập nhật Match");
+
+      if (emCascade) {
+        // ⬇️ sửa: truyền object { matchId }
+        await resetMatchChain({ matchId: emId }).unwrap();
+      }
+
+      showSnack("success", emCascade ? "Đã lưu & reset chuỗi trận sau" : "Đã lưu");
       setEditMatchDlg(false);
       refetchMatches();
     } catch (e) {
@@ -345,11 +391,11 @@ export default function AdminBracketsPage() {
   const loading = loadingT || regsLoading || loadingB || loadingM;
   const errorMsg = errorT || regsError || errorB || errorM;
   const idOf = (x) => String(x?._id ?? x);
+
   const getSideLabel = (mt, side) => {
     const pair = side === "A" ? mt?.pairA : mt?.pairB;
-    if (pair?.player1?.fullName && pair?.player2?.fullName) {
-      return `${pair.player1.fullName} & ${pair.player2.fullName}`;
-    }
+    if (pair) return regName(pair, evType);
+
     const prevId = side === "A" ? mt?.previousA : mt?.previousB;
     if (!prevId) return "—";
 
@@ -358,17 +404,15 @@ export default function AdminBracketsPage() {
 
     if (prev?.status === "finished" && prev?.winner) {
       const reg = prev?.winner === "A" ? prev?.pairA : prev?.pairB;
-      return `${reg?.player1?.fullName ?? "?"} & ${reg?.player2?.fullName ?? "?"} (thắng R${
-        prev?.round
-      }-#${prev?.order ?? 0})`;
+      return `${regName(reg, evType)} (thắng R${prev?.round}-#${prev?.order ?? 0})`;
     }
     return `Thắng trận R${prev?.round}-#${prev?.order ?? 0} (TBD)`;
   };
+
   const canCreateNext = pairs.some(
-    (row) =>
-      (row.leftMatch && row.rightMatch) || // có đủ 2 trận để nối winner-of
-      (row.leftMatch && !row.rightMatch && row.bRegId) // trường hợp lẻ: có left + đã chọn B
+    (row) => (row.leftMatch && row.rightMatch) || (row.leftMatch && !row.rightMatch && row.bRegId)
   );
+
   return (
     <DashboardLayout>
       <DashboardNavbar />
@@ -390,7 +434,8 @@ export default function AdminBracketsPage() {
             {/* Thông tin giải */}
             <Typography variant="h6" gutterBottom>
               {tournament.name} ({new Date(tournament.startDate).toLocaleDateString()} –{" "}
-              {new Date(tournament.endDate).toLocaleDateString()})
+              {new Date(tournament.endDate).toLocaleDateString()}) •{" "}
+              {isSingles ? "Giải đơn" : "Giải đôi"}
             </Typography>
             <Divider sx={{ mb: 2 }} />
 
@@ -454,13 +499,6 @@ export default function AdminBracketsPage() {
                         <Box>
                           <Typography>
                             Vòng {mt.round || 1} — <strong>#{mt.order ?? 0}</strong>:{" "}
-                            {/* <strong>
-                              {mt?.pairA?.player1?.fullName} & {mt?.pairA?.player2?.fullName}
-                            </strong>{" "}
-                            vs{" "}
-                            <strong>
-                              {mt?.pairB?.player1?.fullName} & {mt?.pairB?.player2?.fullName}
-                            </strong> */}
                             <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
                             <strong>{getSideLabel(mt, "B")}</strong>
                           </Typography>
@@ -539,68 +577,6 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog SỬA Bracket */}
-      <Dialog
-        open={editBracketDlg}
-        onClose={() => setEditBracketDlg(false)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Sửa Bracket</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} mt={1}>
-            <TextField
-              label="Tên Bracket"
-              fullWidth
-              value={ebName}
-              onChange={(e) => setEbName(e.target.value)}
-            />
-            <FormControl fullWidth>
-              <InputLabel>Kiểu Bracket</InputLabel>
-              <Select
-                value={ebType}
-                label="Kiểu Bracket"
-                onChange={(e) => setEbType(e.target.value)}
-                sx={{
-                  mt: 1,
-                  "& .MuiInputBase-root": { minHeight: 56 },
-                  "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
-                }}
-              >
-                <MenuItem value="knockout">Knockout</MenuItem>
-                <MenuItem value="group">Vòng bảng</MenuItem>
-              </Select>
-            </FormControl>
-            <Grid container spacing={2} p={2}>
-              <Grid item xs={6}>
-                <TextField
-                  label="Stage"
-                  type="number"
-                  fullWidth
-                  value={ebStage}
-                  onChange={(e) => setEbStage(Number(e.target.value))}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <TextField
-                  label="Order (hiển thị)"
-                  type="number"
-                  fullWidth
-                  value={ebOrder}
-                  onChange={(e) => setEbOrder(Number(e.target.value))}
-                />
-              </Grid>
-            </Grid>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditBracketDlg(false)}>Huỷ</Button>
-          <Button onClick={saveEditBracket} variant="contained">
-            Lưu
-          </Button>
-        </DialogActions>
-      </Dialog>
-
       {/* Dialog tạo Match đơn lẻ */}
       <Dialog open={matchDlg} onClose={() => setMatchDlg(false)} fullWidth maxWidth="sm">
         <DialogTitle>Tạo trận đấu</DialogTitle>
@@ -623,7 +599,7 @@ export default function AdminBracketsPage() {
 
             <TextField
               select
-              label="Chọn Đôi A"
+              label={isSingles ? "Chọn VĐV A" : "Chọn Đội A"}
               fullWidth
               value={pairA}
               onChange={(e) => setPairA(e.target.value)}
@@ -638,13 +614,14 @@ export default function AdminBracketsPage() {
               </MenuItem>
               {registrations.map((r) => (
                 <MenuItem key={r._id} value={r._id}>
-                  {r.player1.fullName} & {r.player2.fullName}
+                  {regName(r, evType)}
                 </MenuItem>
               ))}
             </TextField>
+
             <TextField
               select
-              label="Chọn Đôi B"
+              label={isSingles ? "Chọn VĐV B" : "Chọn Đội B"}
               fullWidth
               value={pairB}
               onChange={(e) => setPairB(e.target.value)}
@@ -659,7 +636,7 @@ export default function AdminBracketsPage() {
               </MenuItem>
               {registrations.map((r) => (
                 <MenuItem key={r._id} value={r._id}>
-                  {r.player1.fullName} & {r.player2.fullName}
+                  {regName(r, evType)}
                 </MenuItem>
               ))}
             </TextField>
@@ -757,7 +734,7 @@ export default function AdminBracketsPage() {
             <TextField
               select
               fullWidth
-              label="Đội A"
+              label={isSingles ? "VĐV A" : "Đội A"}
               value={emPairA}
               onChange={(e) => setEmPairA(e.target.value)}
               sx={{
@@ -770,7 +747,7 @@ export default function AdminBracketsPage() {
               </MenuItem>
               {registrations.map((r) => (
                 <MenuItem key={r._id} value={r._id}>
-                  {r.player1.fullName} & {r.player2.fullName}
+                  {regName(r, evType)}
                 </MenuItem>
               ))}
             </TextField>
@@ -778,7 +755,7 @@ export default function AdminBracketsPage() {
             <TextField
               select
               fullWidth
-              label="Đội B"
+              label={isSingles ? "VĐV B" : "Đội B"}
               value={emPairB}
               onChange={(e) => setEmPairB(e.target.value)}
               sx={{
@@ -791,7 +768,7 @@ export default function AdminBracketsPage() {
               </MenuItem>
               {registrations.map((r) => (
                 <MenuItem key={r._id} value={r._id}>
-                  {r.player1.fullName} & {r.player2.fullName}
+                  {regName(r, evType)}
                 </MenuItem>
               ))}
             </TextField>
@@ -892,6 +869,36 @@ export default function AdminBracketsPage() {
                 <MenuItem value="B">B</MenuItem>
               </TextField>
             </Stack>
+
+            {suggestCascade && (
+              <Alert severity="warning">
+                Bạn đang {willDowngrade ? "đổi trạng thái từ finished → " + emStatus : "đổi winner"}
+                .
+                <br />
+                Có thể cần <b>reset các trận sau</b> trong nhánh này để nhất quán.
+              </Alert>
+            )}
+
+            <Tooltip
+              title="Bật để reset các trận phụ thuộc (nextMatch → …) trong nhánh."
+              placement="top-start"
+            >
+              <span>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={emCascade}
+                      onChange={(e) => setEmCascade(e.target.checked)}
+                    />
+                  }
+                  label="Reset chuỗi trận sau (xoá winner đã propagate, đưa các trận sau về TBD)"
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Bật nếu bạn vừa chuyển từ <b>finished</b> về <b>live/scheduled</b> hoặc đổi{" "}
+                  <b>winner</b>.
+                </Typography>
+              </span>
+            </Tooltip>
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -901,6 +908,7 @@ export default function AdminBracketsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
       {/* Dialog: Tạo vòng sau (chọn đội thủ công) */}
       <Dialog open={nextDlg} onClose={() => setNextDlg(false)} fullWidth maxWidth="md">
         <DialogTitle>Tạo vòng {nextRound} (chọn đội)</DialogTitle>
@@ -939,17 +947,18 @@ export default function AdminBracketsPage() {
                   const rm = row.rightMatch;
 
                   const lmLabel = lm
-                    ? `R${lm.round}-#${lm.order ?? 0}: ${lm.pairA?.player1?.fullName} & ${
-                        lm.pairA?.player2?.fullName
-                      } vs ${lm.pairB?.player1?.fullName} & ${lm.pairB?.player2?.fullName}`
+                    ? `R${lm.round}-#${lm.order ?? 0}: ${regName(lm.pairA, evType)} vs ${regName(
+                        lm.pairB,
+                        evType
+                      )}`
                     : "—";
                   const rmLabel = rm
-                    ? `R${rm.round}-#${rm.order ?? 0}: ${rm.pairA?.player1?.fullName} & ${
-                        rm.pairA?.player2?.fullName
-                      } vs ${rm.pairB?.player1?.fullName} & ${rm.pairB?.player2?.fullName}`
+                    ? `R${rm.round}-#${rm.order ?? 0}: ${regName(rm.pairA, evType)} vs ${regName(
+                        rm.pairB,
+                        evType
+                      )}`
                     : "—";
 
-                  // Nếu vòng trước lẻ: Slot B chọn đội còn lại (cùng vòng trước), trừ 2 đội của leftMatch
                   const prevList = (grouped[idOf(nextDlgBracket._id)] || []).filter(
                     (m) => (m.round || 1) === nextRound - 1
                   );
@@ -962,14 +971,13 @@ export default function AdminBracketsPage() {
 
                   return (
                     <Card key={idx} variant="outlined" sx={{ p: 2 }}>
-                      {/* --- từ trận trái: CHỌN SLOT A --- */}
                       <Typography variant="body2" color="text.secondary">
                         Từ trận trái: {lmLabel}
                       </Typography>
                       <TextField
                         select
                         fullWidth
-                        label="Chọn đội cho Slot A"
+                        label={isSingles ? "Chọn VĐV cho Slot A" : "Chọn đội cho Slot A"}
                         value={row.aRegId}
                         onChange={(e) => {
                           const v = e.target.value;
@@ -987,12 +995,12 @@ export default function AdminBracketsPage() {
                         {[
                           lm?.pairA && (
                             <MenuItem key={`${lm._id}-A`} value={lm.pairA._id}>
-                              A) {lm.pairA.player1.fullName} & {lm.pairA.player2.fullName}
+                              {regName(lm.pairA, evType)}
                             </MenuItem>
                           ),
                           lm?.pairB && (
                             <MenuItem key={`${lm._id}-B`} value={lm.pairB._id}>
-                              B) {lm.pairB.player1.fullName} & {lm.pairB.player2.fullName}
+                              {regName(lm.pairB, evType)}
                             </MenuItem>
                           ),
                         ].filter(Boolean)}
@@ -1000,14 +1008,13 @@ export default function AdminBracketsPage() {
 
                       <Divider sx={{ my: 2 }} />
 
-                      {/* --- từ trận phải: CHỌN SLOT B --- */}
                       <Typography variant="body2" color="text.secondary">
                         Từ trận phải: {rmLabel}
                       </Typography>
                       <TextField
                         select
                         fullWidth
-                        label="Chọn đội cho Slot B"
+                        label={isSingles ? "Chọn VĐV cho Slot B" : "Chọn đội cho Slot B"}
                         value={row.bRegId}
                         onChange={(e) => {
                           const v = e.target.value;
@@ -1018,7 +1025,6 @@ export default function AdminBracketsPage() {
                           "& .MuiInputBase-root": { minHeight: 56 },
                           "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
                         }}
-                        // nếu vòng trước lẻ (không có rightMatch) thì cho chọn từ các đội còn lại
                         disabled={!rm && otherTeams.length === 0}
                         helperText={
                           rm
@@ -1036,18 +1042,18 @@ export default function AdminBracketsPage() {
                           ? [
                               rm?.pairA && (
                                 <MenuItem key={`${rm._id}-A`} value={rm.pairA._id}>
-                                  A) {rm.pairA.player1.fullName} & {rm.pairA.player2.fullName}
+                                  {regName(rm.pairA, evType)}
                                 </MenuItem>
                               ),
                               rm?.pairB && (
                                 <MenuItem key={`${rm._id}-B`} value={rm.pairB._id}>
-                                  B) {rm.pairB.player1.fullName} & {rm.pairB.player2.fullName}
+                                  {regName(rm.pairB, evType)}
                                 </MenuItem>
                               ),
                             ].filter(Boolean)
                           : otherTeams.map((t) => (
                               <MenuItem key={t._id} value={t._id}>
-                                {t.player1.fullName} & {t.player2.fullName}
+                                {regName(t, evType)}
                               </MenuItem>
                             ))}
                       </TextField>
@@ -1075,11 +1081,9 @@ export default function AdminBracketsPage() {
                 let created = 0;
                 const idOf = (x) => String(x?._id ?? x);
 
-                // danh sách trận của vòng trước (để kiểm tra khi case lẻ)
                 const prevList = (grouped[idOf(nextDlgBracket._id)] || []).filter(
                   (m) => (m.round || 1) === nextRound - 1
                 );
-                // map registrationId -> matchId vòng trước (để tránh chọn 2 đội cùng 1 match)
                 const regToPrevMatch = new Map();
                 prevList.forEach((pm) => {
                   if (pm.pairA?._id) regToPrevMatch.set(String(pm.pairA._id), String(pm._id));
@@ -1091,7 +1095,6 @@ export default function AdminBracketsPage() {
                   const lm = row.leftMatch;
                   const rm = row.rightMatch;
 
-                  // 1) Trường hợp chuẩn: đủ 2 trận -> nối winner-of hai trận
                   if (lm && rm) {
                     await createMatch({
                       bracketId: nextDlgBracket._id,
@@ -1107,7 +1110,6 @@ export default function AdminBracketsPage() {
                     continue;
                   }
 
-                  // 2) Trường hợp lẻ: chỉ có leftMatch, phải chọn tay đội B còn lại
                   if (lm && !rm) {
                     if (!row.bRegId) {
                       showSnack("warning", `Cặp #${i}: chưa chọn đội cho Slot B`);
@@ -1127,8 +1129,8 @@ export default function AdminBracketsPage() {
                       body: {
                         round: nextRound,
                         order: i,
-                        previousA: lm._id, // bên A nối winner-of
-                        pairB: row.bRegId, // bên B chọn tay registration
+                        previousA: lm._id,
+                        pairB: row.bRegId,
                         rules: { bestOf: 3, pointsToWin: 11, winByTwo: true },
                       },
                     }).unwrap();

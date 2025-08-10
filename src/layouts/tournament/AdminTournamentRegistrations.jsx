@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Avatar,
   Box,
@@ -37,6 +37,14 @@ import {
   useDeleteRegistrationMutation,
 } from "slices/tournamentsApiSlice";
 
+function normType(t) {
+  const s = String(t || "").toLowerCase();
+  if (s === "single" || s === "singles") return "single";
+  if (s === "double" || s === "doubles") return "double";
+  return s || "double";
+}
+const PLACE = "";
+
 export default function AdminTournamentRegistrations() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -62,10 +70,13 @@ export default function AdminTournamentRegistrations() {
   const [page, setPage] = useState(1);
   const perPage = 10;
   const totalPages = Math.ceil(regs.length / perPage);
-  const paged = regs.slice((page - 1) * perPage, page * perPage);
+  const paged = useMemo(() => regs.slice((page - 1) * perPage, page * perPage), [regs, page]);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
+  const evType = normType(tour?.eventType);
+  const isSingles = evType === "single";
 
   /* ───── side-effects ───── */
   useEffect(() => {
@@ -104,57 +115,77 @@ export default function AdminTournamentRegistrations() {
     }
   };
 
-  const renderAthlete = (pl) => (
-    <Stack direction="row" spacing={1} alignItems="center">
-      <Avatar src={pl.avatar} />
-      <Box>
-        <MDTypography variant="button">{pl.fullName}</MDTypography>
-        <Box></Box>
+  const renderAthlete = (pl) => {
+    if (!pl)
+      return (
         <MDTypography variant="caption" color="text">
-          {pl.phone}
+          —
         </MDTypography>
-      </Box>
-    </Stack>
-  );
+      );
+    return (
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Avatar src={pl.avatar || PLACE} />
+        <Box>
+          <MDTypography variant="button">{pl.fullName}</MDTypography>
+          <div></div>
+          <MDTypography variant="caption" color="text">
+            {pl.phone}
+          </MDTypography>
+        </Box>
+      </Stack>
+    );
+  };
 
   /* ───── DataTable config ───── */
-  const columns = [
-    { Header: "#", accessor: "idx", align: "center", width: "6%" },
-    { Header: "Athlete 1", accessor: "ath1" },
-    { Header: "Athlete 2", accessor: "ath2" },
-    { Header: "Created", accessor: "created" },
-    { Header: "Fee", accessor: "fee", align: "center" },
-    { Header: "Action", accessor: "act", align: "center" },
-  ];
+  const columns = useMemo(() => {
+    const base = [
+      { Header: "#", accessor: "idx", align: "center", width: "6%" },
+      { Header: isSingles ? "Athlete" : "Athlete 1", accessor: "ath1" },
+    ];
+    if (!isSingles) {
+      base.push({ Header: "Athlete 2", accessor: "ath2" });
+    }
+    base.push(
+      { Header: "Created", accessor: "created" },
+      { Header: "Fee", accessor: "fee", align: "center" },
+      { Header: "Actions", accessor: "act", align: "center" }
+    );
+    return base;
+  }, [isSingles]);
 
-  const rows = paged.map((r, i) => ({
-    idx: <MDTypography variant="caption">{(page - 1) * perPage + i + 1}</MDTypography>,
-    ath1: renderAthlete(r.player1),
-    ath2: renderAthlete(r.player2),
-    created: (
-      <MDTypography variant="caption">{new Date(r.createdAt).toLocaleString()}</MDTypography>
-    ),
-    fee: (
-      <Chip
-        size="small"
-        color={r.payment.status === "Paid" ? "success" : "default"}
-        label={r.payment.status}
-      />
-    ),
-    act: (
-      <>
-        <IconButton
-          color={r.payment.status === "Paid" ? "error" : "success"}
-          onClick={() => handleToggle(r)}
-        >
-          {r.payment.status === "Paid" ? <MoneyOff /> : <Paid />}
-        </IconButton>
-        <IconButton color="error" onClick={() => setConfirmDel(r)}>
-          <DeleteIcon />
-        </IconButton>
-      </>
-    ),
-  }));
+  const rows = useMemo(
+    () =>
+      paged.map((r, i) => ({
+        idx: <MDTypography variant="caption">{(page - 1) * perPage + i + 1}</MDTypography>,
+        ath1: renderAthlete(r.player1),
+        ...(isSingles ? {} : { ath2: renderAthlete(r.player2) }),
+        created: (
+          <MDTypography variant="caption">{new Date(r.createdAt).toLocaleString()}</MDTypography>
+        ),
+        fee: (
+          <Chip
+            size="small"
+            color={r.payment.status === "Paid" ? "success" : "default"}
+            label={r.payment.status}
+          />
+        ),
+        act: (
+          <>
+            <IconButton
+              color={r.payment.status === "Paid" ? "error" : "success"}
+              onClick={() => handleToggle(r)}
+              title={r.payment.status === "Paid" ? "Mark unpaid" : "Confirm payment"}
+            >
+              {r.payment.status === "Paid" ? <MoneyOff /> : <Paid />}
+            </IconButton>
+            <IconButton color="error" onClick={() => setConfirmDel(r)} title="Delete registration">
+              <DeleteIcon />
+            </IconButton>
+          </>
+        ),
+      })),
+    [paged, page, isSingles]
+  );
 
   /* ───── render ───── */
   return (
@@ -172,8 +203,7 @@ export default function AdminTournamentRegistrations() {
         {tour && (
           <Typography variant="caption" color="text.secondary" fontSize={16}>
             {tour.name} • {new Date(tour.startDate).toLocaleDateString()} –{" "}
-            {new Date(tour.endDate).toLocaleDateString()} •{" "}
-            {tour.playType === "double" ? "Giải đôi" : "Giải đơn"}
+            {new Date(tour.endDate).toLocaleDateString()} • {isSingles ? "Giải đơn" : "Giải đôi"}
           </Typography>
         )}
       </MDBox>
@@ -197,27 +227,46 @@ export default function AdminTournamentRegistrations() {
                     label={r.payment.status}
                   />
                 </Stack>
-                {[r.player1, r.player2].map((pl) => (
-                  <Stack key={pl.phone} direction="row" spacing={1} alignItems="center" mb={1}>
-                    <Avatar src={pl.avatar} />
+
+                {[r.player1, r.player2].filter(Boolean).map((pl) => (
+                  <Stack
+                    key={pl.phone || pl.fullName}
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    mb={1}
+                  >
+                    <Avatar src={pl.avatar || PLACE} />
                     <Box>
                       <MDTypography variant="body2">{pl.fullName}</MDTypography>
+                      <div></div>
                       <MDTypography variant="caption" color="text">
                         {pl.phone}
                       </MDTypography>
                     </Box>
                   </Stack>
                 ))}
-                <Stack direction="row" justifyContent="space-between">
+
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <MDTypography variant="caption">
                     {new Date(r.createdAt).toLocaleString()}
                   </MDTypography>
-                  <IconButton
-                    color={r.payment.status === "Paid" ? "error" : "success"}
-                    onClick={() => handleToggle(r)}
-                  >
-                    {r.payment.status === "Paid" ? <MoneyOff /> : <Paid />}
-                  </IconButton>
+                  <Stack direction="row" spacing={1}>
+                    <IconButton
+                      color={r.payment.status === "Paid" ? "error" : "success"}
+                      onClick={() => handleToggle(r)}
+                      title={r.payment.status === "Paid" ? "Mark unpaid" : "Confirm payment"}
+                    >
+                      {r.payment.status === "Paid" ? <MoneyOff /> : <Paid />}
+                    </IconButton>
+                    <IconButton
+                      color="error"
+                      onClick={() => setConfirmDel(r)}
+                      title="Delete registration"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Stack>
                 </Stack>
               </Card>
             ))}
@@ -261,11 +310,29 @@ export default function AdminTournamentRegistrations() {
           {snack.msg}
         </Alert>
       </Snackbar>
+
+      {/* Confirm delete */}
       <Dialog open={!!confirmDel} onClose={() => setConfirmDel(null)}>
         <DialogTitle>Delete registration?</DialogTitle>
         <DialogContent>
-          Bạn chắc chắn xoá cặp&nbsp;
-          <b>{confirmDel?.player1.fullName}</b> — <b>{confirmDel?.player2.fullName}</b>?
+          {isSingles ? (
+            <>
+              Bạn chắc chắn xoá đăng ký của <b>{confirmDel?.player1?.fullName}</b>?
+            </>
+          ) : (
+            <>
+              Bạn chắc chắn xoá cặp&nbsp;
+              <b>{confirmDel?.player1?.fullName}</b>
+              {confirmDel?.player2 ? (
+                <>
+                  {" "}
+                  — <b>{confirmDel?.player2?.fullName}</b>?
+                </>
+              ) : (
+                "?"
+              )}
+            </>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmDel(null)}>Huỷ</Button>

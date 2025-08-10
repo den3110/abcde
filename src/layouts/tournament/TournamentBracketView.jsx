@@ -34,8 +34,15 @@ import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
 import PropTypes from "prop-types";
 
 /* ================= Helpers ================= */
-function safePairName(pair) {
+function normType(t) {
+  const s = String(t || "").toLowerCase();
+  if (s === "single" || s === "singles") return "single";
+  if (s === "double" || s === "doubles") return "double";
+  return "double";
+}
+function safeRegName(pair, evType) {
   if (!pair) return "—";
+  if (evType === "single") return pair.player1?.fullName || "N/A";
   const p1 = pair.player1?.fullName || "N/A";
   const p2 = pair.player2?.fullName || "N/A";
   return `${p1} & ${p2}`;
@@ -46,17 +53,10 @@ function depLabel(prev) {
   const idx = (prev.order ?? 0) + 1;
   return `Winner of R${r} #${idx}`;
 }
-function matchSideLabel(m, side /* 'A'|'B' */) {
-  const pair = side === "A" ? m.pairA : m.pairB;
-  const prev = side === "A" ? m.previousA : m.previousB;
-  if (pair) return safePairName(pair);
-  if (prev) return depLabel(prev);
-  return "Chưa có đội";
-}
-function resultLabel(m) {
+function resultLabel(m, entityWord /* 'VĐV' | 'Đôi' */) {
   if (m?.status === "finished") {
-    if (m?.winner === "A") return "Đôi A thắng";
-    if (m?.winner === "B") return "Đôi B thắng";
+    if (m?.winner === "A") return `${entityWord} A thắng`;
+    if (m?.winner === "B") return `${entityWord} B thắng`;
     return "Hoà/Không xác định";
   }
   if (m?.status === "live") return "Đang diễn ra";
@@ -71,16 +71,19 @@ function roundTitleByCount(cnt) {
   return `Vòng (${cnt} trận)`;
 }
 
-/* ======== Build rounds (có placeholder QF/SF/Final) cho react-brackets ======== */
-function placeholderSeed(r, idx) {
+/* ======== Build rounds (có placeholder) cho react-brackets ======== */
+function placeholderSeed(r, idx, emptyLabel) {
   return {
     id: `placeholder-${r}-${idx}`,
     __match: null,
-    teams: [{ name: "Chưa có đội" }, { name: "Chưa có đội" }],
+    teams: [{ name: emptyLabel }, { name: emptyLabel }],
   };
 }
 
-function buildRoundsWithPlaceholders(brMatches, { minRounds = 3 } = {}) {
+function buildRoundsWithPlaceholders(
+  brMatches,
+  { minRounds = 3, matchSideLabelFn = () => "—", emptyLabel = "Chưa có đội/VDV" } = {}
+) {
   const real = (brMatches || [])
     .slice()
     .sort((a, b) => (a.round || 1) - (b.round || 1) || (a.order || 0) - (b.order || 0));
@@ -88,14 +91,10 @@ function buildRoundsWithPlaceholders(brMatches, { minRounds = 3 } = {}) {
   const roundsHave = Array.from(new Set(real.map((m) => m.round || 1))).sort((a, b) => a - b);
   const lastRound = roundsHave.length ? Math.max(...roundsHave) : 1;
 
-  // mặc định: hiển thị từ vòng nhỏ nhất (thường là R1)
   let firstRound = roundsHave.length ? Math.min(...roundsHave) : 1;
-  // nếu muốn đảm bảo tối thiểu X cột thì mới dịch trái sang phải
   if (minRounds != null) {
     const haveCols = lastRound - firstRound + 1;
-    if (haveCols < minRounds) {
-      firstRound = Math.max(1, lastRound - (minRounds - 1));
-    }
+    if (haveCols < minRounds) firstRound = Math.max(1, lastRound - (minRounds - 1));
   }
 
   const countByRoundReal = {};
@@ -116,7 +115,7 @@ function buildRoundsWithPlaceholders(brMatches, { minRounds = 3 } = {}) {
 
   return roundNums.map((r) => {
     const need = seedsCount[r];
-    const seeds = Array.from({ length: need }, (_, i) => placeholderSeed(r, i));
+    const seeds = Array.from({ length: need }, (_, i) => placeholderSeed(r, i, emptyLabel));
 
     const ms = real
       .filter((m) => (m.round || 1) === r)
@@ -126,115 +125,105 @@ function buildRoundsWithPlaceholders(brMatches, { minRounds = 3 } = {}) {
       let i = Number.isInteger(m.order) ? m.order : seeds.findIndex((s) => s.__match === null);
       if (i < 0 || i >= seeds.length) i = Math.min(idx, seeds.length - 1);
 
-      const obj = {
+      seeds[i] = {
         id: m._id || `${r}-${i}`,
         date: m?.scheduledAt ? new Date(m.scheduledAt).toDateString() : undefined,
         __match: m,
-        teams: [{ name: matchSideLabel(m, "A") }, { name: matchSideLabel(m, "B") }],
+        teams: [{ name: matchSideLabelFn(m, "A") }, { name: matchSideLabelFn(m, "B") }],
       };
-      seeds[i] = obj;
     });
 
-    return {
-      title: roundTitleByCount(need),
-      seeds,
-    };
+    return { title: roundTitleByCount(need), seeds };
   });
 }
 
-/* ========== Custom seed: highlight đội thắng bằng màu đỏ (viền + vạch) + cúp ở chung kết ========== */
+/* ========== Custom seed (local theo eventType) ========== */
 const RED = "#F44336";
 
-const CustomSeed = ({ seed, breakpoint }) => {
-  const m = seed.__match || null;
-  const nameA = seed.teams?.[0]?.name || "Chưa có đội";
-  const nameB = seed.teams?.[1]?.name || "Chưa có đội";
+function makeCustomSeed({ emptyLabel, entityWord }) {
+  const CustomSeedLocal = ({ seed, breakpoint }) => {
+    const m = seed.__match || null;
+    const nameA = seed.teams?.[0]?.name || emptyLabel;
+    const nameB = seed.teams?.[1]?.name || emptyLabel;
 
-  const winA = m?.status === "finished" && m?.winner === "A";
-  const winB = m?.status === "finished" && m?.winner === "B";
-  const isPlaceholder = !m && nameA === "Chưa có đội" && nameB === "Chưa có đội";
-  // xem đây có phải trận chung kết không: thường là trận không có nextMatch
-  const isFinal = Boolean(m && !m?.nextMatch);
+    const winA = m?.status === "finished" && m?.winner === "A";
+    const winB = m?.status === "finished" && m?.winner === "B";
+    const isPlaceholder = !m && nameA === emptyLabel && nameB === emptyLabel;
+    const isFinal = Boolean(m && !m?.nextMatch);
 
-  // style “vạch đỏ” ở mép phải để gợi cảm giác đường thắng kéo sang vòng kế
-  const RightTick = (props) => (
-    <span
-      {...props}
-      style={{
-        position: "absolute",
-        right: -8,
-        top: "50%",
-        transform: "translateY(-50%)",
-        width: 8,
-        height: 2,
-        background: RED,
-        opacity: 0.9,
-      }}
-    />
-  );
+    const RightTick = (props) => (
+      <span
+        {...props}
+        style={{
+          position: "absolute",
+          right: -8,
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: 8,
+          height: 2,
+          background: RED,
+          opacity: 0.9,
+        }}
+      />
+    );
 
-  return (
-    <Seed mobileBreakpoint={breakpoint} style={{ fontSize: 13 }}>
-      <SeedItem>
-        <div style={{ position: "relative", display: "grid", gap: 4 }}>
-          {/* Cúp cho đội vô địch (chung kết đã có winner) */}
-          {isFinal && (winA || winB) && (
-            <TrophyIcon
-              sx={{ position: "absolute", right: -22, top: -12, fontSize: 20, color: RED }}
-            />
-          )}
+    return (
+      <Seed mobileBreakpoint={breakpoint} style={{ fontSize: 13 }}>
+        <SeedItem>
+          <div style={{ position: "relative", display: "grid", gap: 4 }}>
+            {isFinal && (winA || winB) && (
+              <TrophyIcon
+                sx={{ position: "absolute", right: -22, top: -12, fontSize: 20, color: RED }}
+              />
+            )}
 
-          <SeedTeam
-            style={{
-              fontWeight: winA ? 700 : 400,
-              borderLeft: winA ? `4px solid ${RED}` : "4px solid transparent",
-              paddingLeft: 6,
-              opacity: isPlaceholder ? 0.7 : 1,
-              fontStyle: isPlaceholder ? "italic" : "normal",
-            }}
-          >
-            {nameA}
-          </SeedTeam>
-          <SeedTeam
-            style={{
-              fontWeight: winB ? 700 : 400,
-              borderLeft: winB ? `4px solid ${RED}` : "4px solid transparent",
-              paddingLeft: 6,
-              opacity: isPlaceholder ? 0.7 : 1,
-              fontStyle: isPlaceholder ? "italic" : "normal",
-            }}
-          >
-            {nameB}
-          </SeedTeam>
+            <SeedTeam
+              style={{
+                fontWeight: winA ? 700 : 400,
+                borderLeft: winA ? `4px solid ${RED}` : "4px solid transparent",
+                paddingLeft: 6,
+                opacity: isPlaceholder ? 0.7 : 1,
+                fontStyle: isPlaceholder ? "italic" : "normal",
+              }}
+            >
+              {nameA}
+            </SeedTeam>
+            <SeedTeam
+              style={{
+                fontWeight: winB ? 700 : 400,
+                borderLeft: winB ? `4px solid ${RED}` : "4px solid transparent",
+                paddingLeft: 6,
+                opacity: isPlaceholder ? 0.7 : 1,
+                fontStyle: isPlaceholder ? "italic" : "normal",
+              }}
+            >
+              {nameB}
+            </SeedTeam>
 
-          <div style={{ fontSize: 11, opacity: 0.75 }}>
-            {m ? resultLabel(m) : isPlaceholder ? "Chưa có đội" : "Chưa diễn ra"}
+            <div style={{ fontSize: 11, opacity: 0.75 }}>
+              {m ? resultLabel(m, entityWord) : isPlaceholder ? emptyLabel : "Chưa diễn ra"}
+            </div>
+
+            {(winA || winB) && <RightTick />}
           </div>
+        </SeedItem>
+      </Seed>
+    );
+  };
 
-          {/* gợi ý “đường” thắng kéo sang phải */}
-          {(winA || winB) && <RightTick />}
-        </div>
-      </SeedItem>
-    </Seed>
-  );
-};
+  CustomSeedLocal.propTypes = {
+    seed: PropTypes.shape({
+      __match: PropTypes.shape({
+        status: PropTypes.string,
+        winner: PropTypes.string,
+      }),
+      teams: PropTypes.arrayOf(PropTypes.shape({ name: PropTypes.string })),
+    }).isRequired,
+    breakpoint: PropTypes.number,
+  };
 
-const matchShape = PropTypes.shape({
-  status: PropTypes.string,
-  winner: PropTypes.string,
-});
-
-CustomSeed.propTypes = {
-  seed: PropTypes.shape({
-    __match: matchShape,
-    teams: PropTypes.arrayOf(
-      PropTypes.shape({
-        name: PropTypes.string,
-      })
-    ),
-  }).isRequired,
-  breakpoint: PropTypes.number,
-};
+  return CustomSeedLocal;
+}
 
 /* ================= Component ================= */
 export default function TournamentBracketView() {
@@ -246,8 +235,16 @@ export default function TournamentBracketView() {
   const loading = l1 || l2 || l3;
   const error = e1 || e2 || e3;
 
+  const evType = normType(tour?.eventType);
+  const isSingles = evType === "single";
+  const entityWord = isSingles ? "VĐV" : "Đôi";
+  const emptyLabel = isSingles ? "Chưa có VĐV" : "Chưa có đội";
+
   const matches = useMemo(
-    () => (allMatches || []).filter((m) => m.tournament?._id === tourId),
+    () =>
+      (allMatches || []).filter(
+        (m) => String(m.tournament?._id || m.tournament) === String(tourId)
+      ),
     [allMatches, tourId]
   );
 
@@ -294,6 +291,17 @@ export default function TournamentBracketView() {
     return map;
   }, [brackets, byBracket]);
 
+  const matchSideLabel = useCallback(
+    (m, side /* 'A'|'B' */) => {
+      const pair = side === "A" ? m.pairA : m.pairB;
+      const prev = side === "A" ? m.previousA : m.previousB;
+      if (pair) return safeRegName(pair, evType);
+      if (prev) return depLabel(prev);
+      return emptyLabel;
+    },
+    [evType] // emptyLabel is static per render
+  );
+
   const buildRoundsForKnockout = useCallback(
     (bracketId) => {
       const brMatches = (byBracket[bracketId] || [])
@@ -301,14 +309,19 @@ export default function TournamentBracketView() {
         .sort((a, c) => (a.round || 1) - (c.round || 1) || (a.order || 0) - (c.order || 0));
 
       const uniqueRounds = new Set(brMatches.map((m) => m.round ?? 1));
-      return buildRoundsWithPlaceholders(brMatches, { minRounds: Math.max(3, uniqueRounds.size) });
+      return buildRoundsWithPlaceholders(brMatches, {
+        minRounds: Math.max(3, uniqueRounds.size),
+        matchSideLabelFn: matchSideLabel,
+        emptyLabel,
+      });
     },
-    [byBracket]
+    [byBracket, matchSideLabel, emptyLabel]
   );
 
   const winnerPair = (m) => {
     if (!m || m.status !== "finished" || !m.winner) return null;
     return m.winner === "A" ? m.pairA : m.pairB;
+    // (pair object; render bằng safeRegName ở dưới)
   };
 
   if (loading) {
@@ -338,6 +351,8 @@ export default function TournamentBracketView() {
   const groupStage = (brackets || []).filter((b) => b.type === "group");
   const knockout = (brackets || []).filter((b) => b.type === "knockout");
 
+  const CustomSeedLocal = makeCustomSeed({ emptyLabel, entityWord });
+
   return (
     <DashboardLayout>
       <DashboardNavbar />
@@ -364,7 +379,7 @@ export default function TournamentBracketView() {
                     <TableHead style={{ display: "table-header-group" }}>
                       <TableRow>
                         <TableCell sx={{ width: 56, fontWeight: 700 }}>#</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Cặp</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{isSingles ? "VĐV" : "Cặp"}</TableCell>
                         <TableCell align="center" sx={{ width: 90, fontWeight: 700 }}>
                           Thắng
                         </TableCell>
@@ -378,7 +393,7 @@ export default function TournamentBracketView() {
                         standings.map((row, idx) => (
                           <TableRow key={row.pair?._id || idx}>
                             <TableCell>{idx + 1}</TableCell>
-                            <TableCell>{safePairName(row.pair)}</TableCell>
+                            <TableCell>{safeRegName(row.pair, evType)}</TableCell>
                             <TableCell align="center">{row.win}</TableCell>
                             <TableCell align="center">{row.loss}</TableCell>
                           </TableRow>
@@ -402,11 +417,15 @@ export default function TournamentBracketView() {
                     <TableHead style={{ display: "table-header-group" }}>
                       <TableRow>
                         <TableCell sx={{ width: 80, fontWeight: 700 }}>Vòng</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Đôi A</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>
+                          {isSingles ? "VĐV A" : "Đôi A"}
+                        </TableCell>
                         <TableCell align="center" sx={{ width: 72, fontWeight: 700 }}>
                           vs
                         </TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>Đôi B</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>
+                          {isSingles ? "VĐV B" : "Đôi B"}
+                        </TableCell>
                         <TableCell align="center" sx={{ width: 180, fontWeight: 700 }}>
                           Kết quả
                         </TableCell>
@@ -426,7 +445,7 @@ export default function TournamentBracketView() {
                               <TableCell>{matchSideLabel(m, "A")}</TableCell>
                               <TableCell align="center">vs</TableCell>
                               <TableCell>{matchSideLabel(m, "B")}</TableCell>
-                              <TableCell align="center">{resultLabel(m)}</TableCell>
+                              <TableCell align="center">{resultLabel(m, entityWord)}</TableCell>
                             </TableRow>
                           ))
                       ) : (
@@ -449,7 +468,6 @@ export default function TournamentBracketView() {
           const rounds = buildRoundsForKnockout(b._id);
           const brMatches = byBracket[b._id] || [];
 
-          // Xác định trận chung kết (trận không có nextMatch). Fallback: trận có round lớn nhất.
           const finalLike =
             brMatches.find((m) => !m?.nextMatch) ||
             brMatches.slice().sort((a, c) => (c.round || 1) - (a.round || 1))[0] ||
@@ -463,10 +481,9 @@ export default function TournamentBracketView() {
                 Nhánh loại trực tiếp: {b.name}
               </Typography>
 
-              {/* Banner VÔ ĐỊCH */}
               {champion && (
                 <Alert severity="success" sx={{ mb: 1 }}>
-                  Vô địch: <b>{safePairName(champion)}</b>
+                  Vô địch: <b>{safeRegName(champion, evType)}</b>
                   {finalLike ? (
                     <>
                       {" "}
@@ -480,12 +497,17 @@ export default function TournamentBracketView() {
                 <Alert severity="info">Chưa có trận nào.</Alert>
               ) : (
                 <Card sx={{ p: 2, overflowX: "auto" }}>
-                  <Bracket rounds={rounds} renderSeedComponent={CustomSeed} mobileBreakpoint={0} />
+                  <Bracket
+                    rounds={rounds}
+                    renderSeedComponent={CustomSeedLocal}
+                    mobileBreakpoint={0}
+                  />
                   <Divider sx={{ mt: 2 }} />
                   <Box mt={1}>
                     <Typography variant="caption" color="text.secondary">
-                      * Đậm + viền đỏ: đội thắng. Có vạch đỏ ở mép phải để gợi “đường thắng” sang
-                      vòng sau. Ô chung kết có biểu tượng cúp khi đã xác định vô địch.
+                      * Đậm + viền đỏ: {entityWord.toLowerCase()} thắng. Có vạch đỏ ở mép phải để
+                      gợi “đường thắng” sang vòng sau. Ô chung kết có biểu tượng cúp khi đã xác định
+                      vô địch.
                     </Typography>
                   </Box>
                 </Card>

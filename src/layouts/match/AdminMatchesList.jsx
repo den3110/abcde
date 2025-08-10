@@ -46,6 +46,23 @@ import { useGetUsersQuery } from "slices/adminApiSlice";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import PropTypes from "prop-types";
+
+/* ========= helpers ========= */
+const maskPhone = (p) => {
+  if (!p) return "—";
+  const s = String(p).replace(/\D/g, "");
+  if (s.length < 7) return p;
+  return `${s}`;
+};
+const isSinglesMatch = (m) => !m?.pairA?.player2 && !m?.pairB?.player2;
+const sideLabel = (pair, singles) => {
+  if (!pair) return "—";
+  const n1 = pair.player1?.fullName || pair.player1?.name || "—";
+  if (singles) return n1;
+  const n2 = pair.player2?.fullName || pair.player2?.name || "—";
+  return `${n1} & ${n2}`;
+};
+
 /* -------- BracketSection: gọi API theo trang ở BE -------- */
 const BracketSection = memo(function BracketSection({
   tournamentId,
@@ -137,23 +154,15 @@ const BracketSection = memo(function BracketSection({
       ) : (
         <Stack spacing={1}>
           {list.map((m) => {
-            const a1 = m?.pairA?.player1;
-            const a2 = m?.pairA?.player2;
-            const b1 = m?.pairB?.player1;
-            const b2 = m?.pairB?.player2;
+            const singles = isSinglesMatch(m);
+            const labelA = sideLabel(m?.pairA, singles);
+            const labelB = sideLabel(m?.pairB, singles);
             return (
               <Card key={m._id} sx={{ p: 2, opacity: isFetching ? 0.7 : 1 }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Box>
                     <Typography>
-                      Vòng {m.round}:{" "}
-                      <strong>
-                        {a1?.fullName || a1?.name || "??"} & {a2?.fullName || a2?.name || "??"}
-                      </strong>{" "}
-                      vs{" "}
-                      <strong>
-                        {b1?.fullName || b1?.name || "??"} & {b2?.fullName || b2?.name || "??"}
-                      </strong>
+                      Vòng {m.round}: <strong>{labelA}</strong> vs <strong>{labelB}</strong>
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       Trạng thái:{" "}
@@ -162,7 +171,7 @@ const BracketSection = memo(function BracketSection({
                         : m.status === "live"
                         ? "Đang diễn ra"
                         : "Đã kết thúc"}
-                      {" • "}best-of {m?.rules?.bestOf ?? "-"}, đến {m?.rules?.pointsToWin ?? "-"} (
+                      {" • "}best-of {m?.rules?.bestOf ?? "-"}, tới {m?.rules?.pointsToWin ?? "-"} (
                       {m?.rules?.winByTwo ? "cần chênh 2" : "không cần chênh 2"})
                     </Typography>
                     <Typography variant="caption" display="block" color="text.secondary">
@@ -170,10 +179,10 @@ const BracketSection = memo(function BracketSection({
                     </Typography>
                   </Box>
                   <Stack direction="row" spacing={1}>
-                    <IconButton onClick={() => onOpenDetail(m._id)} size="small">
+                    <IconButton onClick={() => onOpenDetail(m._id)} size="small" title="Chi tiết">
                       <InfoIcon />
                     </IconButton>
-                    <IconButton onClick={() => onOpenAssign(m)} size="small">
+                    <IconButton onClick={() => onOpenAssign(m)} size="small" title="Gán trọng tài">
                       <EditIcon />
                     </IconButton>
                   </Stack>
@@ -188,29 +197,28 @@ const BracketSection = memo(function BracketSection({
 });
 
 export default function AdminMatchesListGrouped() {
-  // Lấy skeleton nhóm: giải → các bracket
+  // 1) skeleton nhóm: giải → các bracket
   const {
     data: groups = [],
     isLoading: groupsLoading,
     error: groupsError,
   } = useListMatchGroupsQuery({});
-  // ref để biết accordion giải nào đang mở (để lazy fetch)
   const [openTourIds, setOpenTourIds] = useState({});
 
-  // 2) Lấy referees
+  // 2) referees
   const { data: users = { users: [] } } = useGetUsersQuery({
     page: 1,
     keyword: "",
     role: "referee",
   });
 
-  // State dialog
+  // dialog state
   const [assignDlg, setAssignDlg] = useState(null); // { match, refereeId }
   const [detailId, setDetailId] = useState(null); // match._id
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
 
-  // Mutation gán referee
+  // mutation gán referee
   const [assignReferee, { isLoading: assigning }] = useAssignRefereeMutation();
   const openAssign = useCallback(
     (m) => setAssignDlg({ match: m, refereeId: m?.referee?._id || "" }),
@@ -224,18 +232,23 @@ export default function AdminMatchesListGrouped() {
       }).unwrap();
       showSnack("success", "Gán trọng tài thành công");
       setAssignDlg(null);
-      // không cần refetch ở đây vì BracketSection tự fetch theo page; có thể trigger bằng thay đổi page/rpp nếu muốn
     } catch (e) {
       showSnack("error", e?.data?.message || e?.error || "Cập nhật thất bại");
     }
   }, [assignDlg, assignReferee]);
 
-  // 4) Lấy chi tiết trận khi mở dialog Info
+  // chi tiết trận
   const {
     data: detail,
     isLoading: detailLoading,
     error: detailError,
   } = useGetMatchQuery(detailId, { skip: !detailId });
+
+  const singlesDetail = useMemo(
+    () => (!detail ? false : !detail?.pairA?.player2 && !detail?.pairB?.player2),
+    [detail]
+  );
+  const entityWord = singlesDetail ? "VĐV" : "Đôi";
 
   return (
     <DashboardLayout>
@@ -344,30 +357,44 @@ export default function AdminMatchesListGrouped() {
               <Grid container spacing={2}>
                 {["pairA", "pairB"].map((key) => {
                   const p = detail[key];
+                  const title = key === "pairA" ? `${entityWord} A` : `${entityWord} B`;
                   return (
                     <Grid item xs={12} sm={6} key={key}>
                       <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
                         <Typography variant="subtitle1" gutterBottom>
-                          {key === "pairA" ? "Đôi A" : "Đôi B"}
+                          {title}
                         </Typography>
+
+                        {/* dòng chính tên */}
                         <Stack direction="row" spacing={2} alignItems="center" mb={1}>
                           <Avatar sx={{ width: 48, height: 48 }} />
                           <Box>
-                            <Typography>
-                              {p?.player1?.fullName || p?.player1?.name || "??"} &{" "}
-                              {p?.player2?.fullName || p?.player2?.name || "??"}
-                            </Typography>
+                            <Typography>{sideLabel(p, singlesDetail)}</Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {p?.player1?.phone || "—"} – {p?.player2?.phone || "—"}
+                              {/* mask phone */}
+                              {singlesDetail
+                                ? maskPhone(p?.player1?.phone)
+                                : `${maskPhone(p?.player1?.phone)} – ${maskPhone(
+                                    p?.player2?.phone
+                                  )}`}
                             </Typography>
                           </Box>
                         </Stack>
+
+                        {/* điểm đăng ký */}
                         <Typography variant="body2" color="text.secondary">
-                          Điểm đăng ký: {p?.player1?.score ?? "—"} + {p?.player2?.score ?? "—"} ={" "}
-                          {typeof p?.player1?.score === "number" &&
-                          typeof p?.player2?.score === "number"
-                            ? p.player1.score + p.player2.score
-                            : "—"}
+                          {singlesDetail ? (
+                            <>Điểm đăng ký: {p?.player1?.score ?? "—"}</>
+                          ) : (
+                            <>
+                              Điểm đăng ký: {p?.player1?.score ?? "—"} + {p?.player2?.score ?? "—"}{" "}
+                              ={" "}
+                              {typeof p?.player1?.score === "number" &&
+                              typeof p?.player2?.score === "number"
+                                ? p.player1.score + p.player2.score
+                                : "—"}
+                            </>
+                          )}
                         </Typography>
                       </Paper>
                     </Grid>
@@ -383,8 +410,12 @@ export default function AdminMatchesListGrouped() {
                   <TableHead sx={{ display: "table-header-group" }}>
                     <TableRow>
                       <TableCell sx={{ width: "20%" }}>Ván</TableCell>
-                      <TableCell sx={{ width: "40%", textAlign: "center" }}>Đôi A</TableCell>
-                      <TableCell sx={{ width: "40%", textAlign: "center" }}>Đôi B</TableCell>
+                      <TableCell sx={{ width: "40%", textAlign: "center" }}>
+                        {entityWord} A
+                      </TableCell>
+                      <TableCell sx={{ width: "40%", textAlign: "center" }}>
+                        {entityWord} B
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -411,9 +442,9 @@ export default function AdminMatchesListGrouped() {
                 <Typography>
                   <strong>Người thắng:</strong>{" "}
                   {detail?.winner === "A"
-                    ? "Đôi A"
+                    ? `${entityWord} A`
                     : detail?.winner === "B"
-                    ? "Đôi B"
+                    ? `${entityWord} B`
                     : "Chưa xác định"}
                 </Typography>
                 <Typography>

@@ -210,6 +210,12 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       // giữ data cũ khi đổi trang cho mượt
       keepUnusedDataFor: 30,
     }),
+    resetMatchChain: builder.mutation({
+      query: (matchId) => ({
+        url: `/admin/matches/${matchId}/reset-chain`,
+        method: "POST",
+      }),
+    }),
   }),
 });
 
@@ -242,4 +248,5 @@ export const {
   useUploadAvatarMutation,
   useListMatchGroupsQuery,
   useListMatchesPagedQuery,
+  useResetMatchChainMutation,
 } = tournamentsApiSlice;
