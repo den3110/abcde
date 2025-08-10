@@ -19,12 +19,13 @@ import AdminBracketsPage from "layouts/tournament/AdminBracketsPage";
 import AdminMatchesList from "layouts/match/AdminMatchesList";
 
 // 🆕 Referee
-import RefereeMatches from "layouts/match/RefereeMatches";
 
 import Icon from "@mui/material/Icon";
 import AdminTournamentMatches from "layouts/tournament/AdminTournamentMatches";
 import BracketViewPage from "layouts/tournament/BracketViewPage";
 import TournamentBracketView from "layouts/tournament/TournamentBracketView";
+import AdminRefereeConsole from "layouts/tournament/referee/AdminRefereeConsole";
+import RefereeMatches from "layouts/tournament/referee/RefereeMatches";
 
 const routes = [
   // Dashboard
@@ -166,6 +167,36 @@ const routes = [
     component: <TournamentBracketView />,
     private: true,
     roles: ["admin"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Referee Console (Match)",
+    key: "admin-referee-console-match",
+    route: "/admin/referee/matches/:matchId",
+    component: <AdminRefereeConsole />,
+    private: true,
+    roles: ["admin", "referee"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Referee Console",
+    key: "admin-referee-console",
+    route: "/admin/referee/console",
+    component: <AdminRefereeConsole />,
+    private: true,
+    roles: ["admin", "referee"],
+  },
+  {
+    type: "collapse",
+    name: "Referee",
+    key: "referee-matches",
+    icon: <Icon fontSize="small">sports_score</Icon>,
+    route: "/referee/matches",
+    component: <RefereeMatches />,
+    private: true,
+    roles: ["referee"], // chỉ trọng tài thấy
   },
 ];
 

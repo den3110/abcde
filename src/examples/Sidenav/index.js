@@ -26,7 +26,7 @@ import {
 } from "context";
 
 // Redux
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { logout as clearAuth } from "slices/authSlice";
 import { useLogoutMutation } from "slices/authApiSlice";
 import { apiSlice } from "slices/apiSlice";
@@ -41,6 +41,26 @@ function clearAllCookies() {
   });
 }
 
+// helpers role
+const getUserRoles = (user) => {
+  if (!user) return [];
+  if (Array.isArray(user.roles)) return user.roles;
+  if (typeof user.role === "string") return [user.role];
+  return [];
+};
+const canView = (route, user) => {
+  // route không private -> ai cũng xem được
+  if (!route.private) return route.show !== false;
+  // private -> cần đăng nhập
+  if (!user) return false;
+  // nếu có roles -> phải khớp ít nhất 1
+  if (route.roles && route.roles.length > 0) {
+    const roles = getUserRoles(user);
+    return roles.some((r) => route.roles.includes(r));
+  }
+  return true;
+};
+
 function Sidenav({ color, brand, brandName, routes, ...rest }) {
   const [controller, dispatchCtrl] = useMaterialUIController();
   const { miniSidenav, transparentSidenav, whiteSidenav, darkMode, sidenavColor } = controller;
@@ -49,7 +69,9 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
   const dispatch = useDispatch();
   const [logoutApi] = useLogoutMutation();
 
-  const collapseName = location.pathname.replace("/", "");
+  // 🆕 lấy user để lọc menu theo role
+  const { userInfo } = useSelector((s) => s.auth || {});
+
   let textColor = "white";
   if (transparentSidenav || (whiteSidenav && !darkMode)) {
     textColor = "dark";
@@ -70,11 +92,18 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
     return () => window.removeEventListener("resize", handleMiniSidenav);
   }, [dispatchCtrl, transparentSidenav, whiteSidenav]);
 
-  // Build menu items
+  // Build menu items (lọc theo role + private + show)
   const renderRoutes = routes
-    .filter((r) => r.show !== false)
-    .map(({ type, name, icon, title, noCollapse, key, href, route }) => {
+    .filter((r) => r.show !== false) // vẫn tôn trọng show=false để ẩn form/edit
+    .map((cfg) => {
+      const { type, name, icon, title, noCollapse, key, href, route } = cfg;
+
       if (type === "collapse") {
+        // 🆕 chặn hiển thị nếu không đủ quyền
+        if (!canView(cfg, userInfo)) return null;
+
+        const active = route ? location.pathname.startsWith(route) : false;
+
         return href ? (
           <Link
             href={href}
@@ -83,24 +112,16 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             rel="noreferrer"
             sx={{ textDecoration: "none" }}
           >
-            <SidenavCollapse
-              name={name}
-              icon={icon}
-              active={key === collapseName}
-              noCollapse={noCollapse}
-            />
+            <SidenavCollapse name={name} icon={icon} active={active} noCollapse={noCollapse} />
           </Link>
         ) : (
           <NavLink key={key} to={route} style={{ textDecoration: "none" }}>
-            <SidenavCollapse
-              name={name}
-              icon={icon}
-              active={key === collapseName}
-              noCollapse={noCollapse}
-            />
+            <SidenavCollapse name={name} icon={icon} active={active} noCollapse={noCollapse} />
           </NavLink>
         );
       }
+
+      // Title/Divider: hiển thị bình thường (không gắn role)
       if (type === "title") {
         return (
           <MDTypography
@@ -119,6 +140,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           </MDTypography>
         );
       }
+
       if (type === "divider") {
         return (
           <Divider
@@ -130,6 +152,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           />
         );
       }
+
       return null;
     });
 
@@ -138,7 +161,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
     try {
       await logoutApi().unwrap();
     } catch {
-      // ignore API errors
+      // ignore
     }
     clearAllCookies();
     localStorage.removeItem("userInfo");
@@ -189,7 +212,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
       {/* Menu items */}
       <List>{renderRoutes}</List>
 
-      {/* Logout button */}
+      {/* Logout */}
       <MDBox p={2} mt="auto">
         <MDButton
           variant="gradient"

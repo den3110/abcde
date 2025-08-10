@@ -16,17 +16,69 @@ import {
   IconButton,
   Divider,
   Grid,
+  Chip,
+  TableContainer,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
+  Paper,
 } from "@mui/material";
-import { ArrowBack, Info as InfoIcon } from "@mui/icons-material";
+import { ArrowBack, Info as InfoIcon, Refresh as RefreshIcon } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
 
-import { useListAllMatchesQuery } from "slices/tournamentsApiSlice"; // fetch all matches
-import { useGetTournamentQuery } from "slices/tournamentsApiSlice"; // get tournament info
-import { useGetMatchQuery } from "slices/tournamentsApiSlice"; // get one match detail
+import {
+  useListAllMatchesQuery, // fetch all matches
+  useGetTournamentQuery, // get tournament info
+  useGetMatchQuery, // get one match detail
+} from "slices/tournamentsApiSlice";
 
+/* ---------------- helpers ---------------- */
+const idOf = (x) => String(x?._id ?? x ?? "");
+const normType = (t) => {
+  const s = String(t || "").toLowerCase();
+  if (s === "single" || s === "singles") return "single";
+  if (s === "double" || s === "doubles") return "double";
+  return "double";
+};
+const maskPhone = (p) => {
+  const s = String(p || "");
+  if (s.length < 6) return s || "—";
+  const head = s.slice(0, 3);
+  const tail = s.slice(-3);
+  return `${s}`;
+};
+const statusChip = (s) =>
+  s === "live"
+    ? { color: "warning", label: "Đang diễn ra" }
+    : s === "finished"
+    ? { color: "success", label: "Đã kết thúc" }
+    : { color: "default", label: "Chưa diễn ra" };
+
+const pairLabel = (reg, eventType = "double") => {
+  if (!reg) return "—";
+  const p1 = reg.player1?.fullName || reg.player1?.name || "N/A";
+  const p2 = reg.player2?.fullName || reg.player2?.name || "";
+  return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
+};
+
+const sideLabel = (m, side, eventType) => {
+  const pair = side === "A" ? m?.pairA : m?.pairB;
+  if (pair) return pairLabel(pair, eventType);
+  const prev = side === "A" ? m?.previousA : m?.previousB;
+  if (prev) {
+    const r = prev.round ?? "?";
+    const idx = (prev.order ?? 0) + 1;
+    return `Winner of R${r} #${idx}`;
+  }
+  return "—";
+};
+
+/* ---------------- component ---------------- */
 export default function AdminTournamentMatches() {
   const { id: tournamentId } = useParams();
   const nav = useNavigate();
@@ -38,7 +90,9 @@ export default function AdminTournamentMatches() {
     error: tourError,
   } = useGetTournamentQuery(tournamentId);
 
-  // 2. All matches (we'll client‐filter by tournamentId)
+  const eventType = normType(tour?.eventType);
+
+  // 2. All matches (client-filter by tournamentId)
   const {
     data: allMatches = [],
     isLoading: mtsLoading,
@@ -52,88 +106,132 @@ export default function AdminTournamentMatches() {
     data: detail,
     isLoading: detailLoading,
     error: detailError,
+    refetch: refetchDetail,
   } = useGetMatchQuery(detailId, { skip: !detailId });
 
   // 4. Snackbar
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
 
-  // combine loading & error
+  // errors
   useEffect(() => {
-    if (tourError) showSnack("error", tourError.message || "Không tải được giải");
+    if (tourError)
+      showSnack("error", tourError?.data?.message || tourError.message || "Không tải được giải");
   }, [tourError]);
   useEffect(() => {
-    if (mtsError) showSnack("error", mtsError.message || "Không tải được trận");
+    if (mtsError)
+      showSnack(
+        "error",
+        mtsError?.data?.message || mtsError.message || "Không tải được danh sách trận"
+      );
   }, [mtsError]);
 
   // 5. Filter & group matches by bracket within this tournament
   const grouped = useMemo(() => {
-    const filtered = allMatches.filter((m) => m.tournament._id === tournamentId);
+    const filtered = (allMatches || []).filter((m) => idOf(m?.tournament) === idOf(tournamentId));
+    // sort by bracket.order, then round, then order
+    filtered.sort(
+      (a, b) =>
+        (a?.bracket?.order ?? 0) - (b?.bracket?.order ?? 0) ||
+        (a?.round ?? 1) - (b?.round ?? 1) ||
+        (a?.order ?? 0) - (b?.order ?? 0)
+    );
     const map = {};
     filtered.forEach((m) => {
-      const bId = m.bracket._id;
-      const bName = m.bracket.name;
-      if (!map[bId]) map[bId] = { bracketName: bName, matches: [] };
+      const bId = idOf(m.bracket);
+      if (!map[bId]) {
+        map[bId] = {
+          bracketName: m?.bracket?.name || "—",
+          bracketType: m?.bracket?.type || "-",
+          stage: m?.bracket?.stage ?? "-",
+          matches: [],
+        };
+      }
       map[bId].matches.push(m);
     });
     return map;
   }, [allMatches, tournamentId]);
 
+  const refresh = () => {
+    refetchAll();
+    if (detailId) refetchDetail();
+  };
+
   return (
     <DashboardLayout>
       <DashboardNavbar />
+
       <Box p={3}>
+        {/* Header */}
         <Stack direction="row" spacing={1} alignItems="center" mb={2}>
           <IconButton onClick={() => nav(-1)}>
             <ArrowBack />
           </IconButton>
-          <Typography variant="h5">Trận đấu – {tour?.name || ""}</Typography>
+          <Typography variant="h5" sx={{ mr: 1 }}>
+            Trận đấu – {tour?.name || ""}
+          </Typography>
+          <Chip
+            size="small"
+            variant="outlined"
+            label={eventType === "single" ? "Giải đơn" : "Giải đôi"}
+            color={eventType === "single" ? "default" : "primary"}
+          />
+          <Box flexGrow={1} />
+          <IconButton onClick={refresh} title="Làm mới">
+            <RefreshIcon />
+          </IconButton>
         </Stack>
 
+        {/* Body */}
         {tourLoading || mtsLoading ? (
           <Box textAlign="center" py={6}>
             <CircularProgress />
           </Box>
+        ) : Object.keys(grouped).length === 0 ? (
+          <Alert severity="info">Chưa có trận đấu nào.</Alert>
         ) : (
-          Object.entries(grouped).map(([bId, { bracketName, matches }]) => (
+          Object.entries(grouped).map(([bId, { bracketName, bracketType, stage, matches }]) => (
             <Box key={bId} mb={3}>
-              <Typography variant="h6" gutterBottom>
-                📋 Bảng: {bracketName}
-              </Typography>
+              <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
+                <Typography variant="h6">📋 {bracketName}</Typography>
+                <Chip size="small" label={bracketType === "group" ? "Vòng bảng" : "Knockout"} />
+                <Chip size="small" variant="outlined" label={`Stage ${stage}`} />
+              </Stack>
               <Divider sx={{ mb: 2 }} />
+
               <Stack spacing={1}>
-                {matches.map((m) => (
-                  <Card key={m._id} sx={{ p: 2 }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                      <Box>
-                        <Typography>
-                          Vòng {m.round}:{" "}
-                          <strong>
-                            {m.pairA.player1.fullName} & {m.pairA.player2.fullName}
-                          </strong>{" "}
-                          vs{" "}
-                          <strong>
-                            {m.pairB.player1.fullName} & {m.pairB.player2.fullName}
-                          </strong>
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {m.status === "scheduled"
-                            ? "Chưa diễn ra"
-                            : m.status === "live"
-                            ? "Đang diễn ra"
-                            : "Đã kết thúc"}{" "}
-                          • best-of {m.rules.bestOf}, tới {m.rules.pointsToWin}
-                        </Typography>
-                      </Box>
-                      <IconButton onClick={() => setDetailId(m._id)}>
-                        <InfoIcon />
-                      </IconButton>
-                    </Stack>
-                  </Card>
-                ))}
-                {matches.length === 0 && (
-                  <Typography color="text.secondary">Chưa có trận đấu nào.</Typography>
-                )}
+                {matches.map((m) => {
+                  const chip = statusChip(m?.status);
+                  return (
+                    <Card key={m._id} sx={{ p: 2 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Box>
+                          <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
+                            <Typography variant="subtitle2" fontWeight={700}>
+                              R{m.round ?? 1} • #{m.order ?? 0}
+                            </Typography>
+                            <Chip size="small" color={chip.color} label={chip.label} />
+                          </Stack>
+                          <Typography>
+                            <strong>{sideLabel(m, "A", eventType)}</strong>
+                            <span style={{ opacity: 0.6 }}> &nbsp;vs&nbsp; </span>
+                            <strong>{sideLabel(m, "B", eventType)}</strong>
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            Best-of {m?.rules?.bestOf ?? "-"}, tới {m?.rules?.pointsToWin ?? "-"}{" "}
+                            {m?.rules?.winByTwo ? "(chênh 2)" : ""}
+                            {m?.referee?.name
+                              ? ` • Trọng tài: ${m.referee.name}`
+                              : " • Trọng tài: —"}
+                          </Typography>
+                        </Box>
+                        <IconButton onClick={() => setDetailId(m._id)}>
+                          <InfoIcon />
+                        </IconButton>
+                      </Stack>
+                    </Card>
+                  );
+                })}
               </Stack>
             </Box>
           ))
@@ -149,91 +247,127 @@ export default function AdminTournamentMatches() {
               <CircularProgress size={24} />
             </Box>
           ) : detailError ? (
-            <Alert severity="error">{detailError.message}</Alert>
+            <Alert severity="error">
+              {detailError?.data?.message || detailError?.error || "Không tải được chi tiết trận"}
+            </Alert>
           ) : detail ? (
-            <Box>
+            <>
               <Typography variant="h6" gutterBottom>
-                {detail.bracket.name} • Vòng {detail.round}
+                {detail?.tournament?.name} • {detail?.bracket?.name} (
+                {detail?.bracket?.type === "group" ? "Vòng bảng" : "Knockout"}) • Stage{" "}
+                {detail?.bracket?.stage ?? "-"} • Vòng {detail?.round ?? "-"} • #
+                {detail?.order ?? 0}
               </Typography>
               <Divider sx={{ mb: 2 }} />
+
               <Grid container spacing={2}>
-                {/* Đôi A */}
+                {/* Đội A */}
                 <Grid item xs={12} sm={6}>
-                  <Typography fontWeight="bold">Đôi A</Typography>
-                  <Typography>
-                    {detail.pairA.player1.fullName} & {detail.pairA.player2.fullName}
-                  </Typography>
-                  <Typography variant="caption">
-                    {detail.pairA.player1.phone}, {detail.pairA.player2.phone}
-                  </Typography>
-                  <Typography sx={{ mt: 1 }}>
-                    Điểm khóa: {detail.pairA.player1.score} + {detail.pairA.player2.score}
-                  </Typography>
+                  <Card variant="outlined" sx={{ p: 2 }}>
+                    <Typography fontWeight="bold" gutterBottom>
+                      Đội A
+                    </Typography>
+                    <Typography>{pairLabel(detail?.pairA, eventType)}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {eventType === "single"
+                        ? maskPhone(detail?.pairA?.player1?.phone)
+                        : `${maskPhone(detail?.pairA?.player1?.phone)} • ${maskPhone(
+                            detail?.pairA?.player2?.phone
+                          )}`}
+                    </Typography>
+                    <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">
+                      Điểm đăng ký:{" "}
+                      {eventType === "single"
+                        ? detail?.pairA?.player1?.score ?? "—"
+                        : `${detail?.pairA?.player1?.score ?? "—"} + ${
+                            detail?.pairA?.player2?.score ?? "—"
+                          }`}
+                    </Typography>
+                  </Card>
                 </Grid>
-                {/* Đôi B */}
+
+                {/* Đội B */}
                 <Grid item xs={12} sm={6}>
-                  <Typography fontWeight="bold">Đôi B</Typography>
-                  <Typography>
-                    {detail.pairB.player1.fullName} & {detail.pairB.player2.fullName}
-                  </Typography>
-                  <Typography variant="caption">
-                    {detail.pairB.player1.phone}, {detail.pairB.player2.phone}
-                  </Typography>
-                  <Typography sx={{ mt: 1 }}>
-                    Điểm khóa: {detail.pairB.player1.score} + {detail.pairB.player2.score}
-                  </Typography>
+                  <Card variant="outlined" sx={{ p: 2 }}>
+                    <Typography fontWeight="bold" gutterBottom>
+                      Đội B
+                    </Typography>
+                    <Typography>{pairLabel(detail?.pairB, eventType)}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {eventType === "single"
+                        ? maskPhone(detail?.pairB?.player1?.phone)
+                        : `${maskPhone(detail?.pairB?.player1?.phone)} • ${maskPhone(
+                            detail?.pairB?.player2?.phone
+                          )}`}
+                    </Typography>
+                    <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">
+                      Điểm đăng ký:{" "}
+                      {eventType === "single"
+                        ? detail?.pairB?.player1?.score ?? "—"
+                        : `${detail?.pairB?.player1?.score ?? "—"} + ${
+                            detail?.pairB?.player2?.score ?? "—"
+                          }`}
+                    </Typography>
+                  </Card>
                 </Grid>
               </Grid>
 
               {/* Bảng điểm các ván */}
-              <Typography variant="subtitle1" sx={{ mt: 3 }}>
+              <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>
                 Điểm từng ván
               </Typography>
-              <Box
-                component="table"
-                sx={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  mt: 1,
-                  "& th, td": { border: "1px solid #ddd", p: 1, textAlign: "center" },
-                }}
-              >
-                <Box component="thead">
-                  <Box component="tr">
-                    <Box component="th">Ván</Box>
-                    <Box component="th">Đôi A</Box>
-                    <Box component="th">Đôi B</Box>
-                  </Box>
-                </Box>
-                <Box component="tbody">
-                  {detail.gameScores.map((g, i) => (
-                    <Box component="tr" key={i}>
-                      <Box component="td">#{i + 1}</Box>
-                      <Box component="td">{g.a}</Box>
-                      <Box component="td">{g.b}</Box>
-                    </Box>
-                  ))}
-                </Box>
-              </Box>
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small" sx={{ tableLayout: "fixed", minWidth: 360 }}>
+                  <TableHead sx={{ display: "table-header-group" }}>
+                    <TableRow>
+                      <TableCell sx={{ width: 80, fontWeight: 700 }}>Ván</TableCell>
+                      <TableCell sx={{ fontWeight: 700, textAlign: "center" }}>Đội A</TableCell>
+                      <TableCell sx={{ fontWeight: 700, textAlign: "center" }}>Đội B</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {(detail?.gameScores || []).length ? (
+                      detail.gameScores.map((g, i) => (
+                        <TableRow key={i}>
+                          <TableCell>#{i + 1}</TableCell>
+                          <TableCell align="center">{g?.a ?? "—"}</TableCell>
+                          <TableCell align="center">{g?.b ?? "—"}</TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={3} align="center">
+                          Chưa có điểm ván nào.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
 
               {/* Thông tin bổ sung */}
-              <Typography sx={{ mt: 3 }}>
-                <strong>Trạng thái:</strong>{" "}
-                {detail.status === "scheduled"
-                  ? "Chưa diễn ra"
-                  : detail.status === "live"
-                  ? "Đang diễn ra"
-                  : "Đã kết thúc"}
-              </Typography>
-              <Typography>
-                <strong>Người thắng:</strong>{" "}
-                {detail.winner === "A"
-                  ? "Đôi A"
-                  : detail.winner === "B"
-                  ? "Đôi B"
-                  : "Chưa xác định"}
-              </Typography>
-            </Box>
+              <Stack spacing={0.5} sx={{ mt: 2 }}>
+                <Typography>
+                  <strong>Trạng thái:</strong>{" "}
+                  {detail?.status === "scheduled"
+                    ? "Chưa diễn ra"
+                    : detail?.status === "live"
+                    ? "Đang diễn ra"
+                    : "Đã kết thúc"}
+                </Typography>
+                <Typography>
+                  <strong>Người thắng:</strong>{" "}
+                  {detail?.winner === "A"
+                    ? "Đội A"
+                    : detail?.winner === "B"
+                    ? "Đội B"
+                    : "Chưa xác định"}
+                </Typography>
+                <Typography>
+                  <strong>Trọng tài:</strong> {detail?.referee?.name || "—"}
+                </Typography>
+              </Stack>
+            </>
           ) : null}
         </DialogContent>
         <DialogActions>

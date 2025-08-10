@@ -216,6 +216,83 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         method: "POST",
       }),
     }),
+    // 1) danh sách trận được phân cho referee hiện tại
+    listRefereeMatches: builder.query({
+      query: () => ({ url: `/referee/matches/assigned-to-me` }),
+      providesTags: (res = []) => [
+        ...res.map((m) => ({ type: "Match", id: m._id })),
+        { type: "Match", id: "ASSIGNED_LIST" },
+      ],
+    }),
+
+    // 3) referee cộng/trừ điểm (delta: +1|-1)
+    refereeIncPoint: builder.mutation({
+      query: ({ matchId, side, delta }) => ({
+        url: `/referee/matches/${matchId}/score`,
+        method: "PATCH",
+        body: { op: "inc", side, delta },
+      }),
+      async onQueryStarted({ matchId, side, delta }, { dispatch, queryFulfilled }) {
+        // cập nhật lạc quan cache của getMatch(matchId)
+        const patch = dispatch(
+          tournamentsApiSlice.util.updateQueryData("getMatch", matchId, (draft) => {
+            if (!draft.gameScores || !draft.gameScores.length) {
+              draft.gameScores = [{ a: 0, b: 0 }];
+            }
+            const i = Math.max(0, draft.gameScores.length - 1);
+            if (side === "A") draft.gameScores[i].a = (draft.gameScores[i].a || 0) + delta;
+            else draft.gameScores[i].b = (draft.gameScores[i].b || 0) + delta;
+          })
+        );
+        try {
+          await queryFulfilled; // ok thì giữ patch
+        } catch {
+          patch.undo(); // lỗi thì undo
+        }
+      },
+    }),
+
+    // (tuỳ chọn) set điểm tuyệt đối cho ván hiện tại
+    refereeSetGameScore: builder.mutation({
+      query: ({ matchId, gameIndex, a, b }) => ({
+        url: `/referee/matches/${matchId}/score`,
+        method: "PATCH",
+        body: { op: "setGame", gameIndex, a, b },
+      }),
+      async onQueryStarted({ matchId, gameIndex, a, b }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          tournamentsApiSlice.util.updateQueryData("getMatch", matchId, (draft) => {
+            if (!draft.gameScores) draft.gameScores = [];
+            draft.gameScores[gameIndex] = { a, b };
+          })
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+    }),
+
+    // 4) set status
+    refereeSetStatus: builder.mutation({
+      query: ({ matchId, status }) => ({
+        url: `/referee/matches/${matchId}/status`,
+        method: "PATCH",
+        body: { status },
+      }),
+      invalidatesTags: (_r, _e, { matchId }) => [{ type: "Match", id: matchId }],
+    }),
+
+    // 5) set winner (A|B|"")
+    refereeSetWinner: builder.mutation({
+      query: ({ matchId, winner }) => ({
+        url: `/referee/matches/${matchId}/winner`,
+        method: "PATCH",
+        body: { winner },
+      }),
+      invalidatesTags: (_r, _e, { matchId }) => [{ type: "Match", id: matchId }],
+    }),
   }),
 });
 
@@ -249,4 +326,9 @@ export const {
   useListMatchGroupsQuery,
   useListMatchesPagedQuery,
   useResetMatchChainMutation,
+  useListRefereeMatchesQuery,
+  useRefereeIncPointMutation,
+  useRefereeSetGameScoreMutation,
+  useRefereeSetStatusMutation,
+  useRefereeSetWinnerMutation,
 } = tournamentsApiSlice;
