@@ -57,6 +57,7 @@ export default function TournamentFormPage() {
     location: "",
     contactHtml: "",
     contentHtml: "",
+    maxPairs: 0,
   });
 
   // State hiển thị (frontend): giữ DD/MM/YYYY cho 4 field ngày
@@ -91,6 +92,7 @@ export default function TournamentFormPage() {
       scoreCap: Number(tour.scoreCap ?? 0),
       scoreGap: Number(tour.scoreGap ?? 0),
       singleCap: Number(tour.singleCap ?? 0),
+      maxPairs: Number(tour.maxPairs ?? 0),
       location: tour.location || "",
       contactHtml: tour.contactHtml || "",
       contentHtml: tour.contentHtml || "",
@@ -133,6 +135,7 @@ export default function TournamentFormPage() {
     location: form.location,
     contactHtml: form.contactHtml,
     contentHtml: form.contentHtml,
+    maxPairs: Number(form.maxPairs) || 0, // <-- NEW
   });
 
   const submit = async (e) => {
@@ -353,6 +356,7 @@ export default function TournamentFormPage() {
                 { n: "scoreCap", l: "Tổng điểm tối đa (đôi)" },
                 { n: "scoreGap", l: "Chênh lệch tối đa" },
                 { n: "singleCap", l: "Điểm tối đa 1 VĐV" },
+                { n: "maxPairs", l: "Số cặp/đội tối đa" },
               ].map((s) => (
                 <TextField
                   key={s.n}

@@ -1,5 +1,5 @@
 // src/layouts/match/AdminMatchesListGrouped.jsx
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, memo } from "react";
 import {
   Box,
   Typography,
@@ -32,6 +32,7 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Pagination,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
@@ -39,18 +40,163 @@ import {
   Info as InfoIcon,
 } from "@mui/icons-material";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
-import {
-  useListAllMatchesQuery,
-  useGetMatchQuery,
-  useAssignRefereeMutation,
-} from "slices/tournamentsApiSlice";
+import { useListMatchGroupsQuery, useListMatchesPagedQuery } from "slices/tournamentsApiSlice";
+import { useGetMatchQuery, useAssignRefereeMutation } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+import PropTypes from "prop-types";
+/* -------- BracketSection: gọi API theo trang ở BE -------- */
+const BracketSection = memo(function BracketSection({
+  tournamentId,
+  bracketId,
+  bracketName,
+  expanded, // chỉ fetch khi true
+  onOpenAssign,
+  onOpenDetail,
+}) {
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRpp] = useState(10);
+
+  const { data, isFetching, isLoading, error } = useListMatchesPagedQuery(
+    { tournament: tournamentId, bracket: bracketId, page, limit: rowsPerPage },
+    { skip: !expanded }
+  );
+
+  const total = data?.total || 0;
+  const list = data?.list || [];
+  const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
+  useEffect(() => {
+    if (page > totalPages) setPage(1);
+  }, [totalPages, page]);
+
+  const handleChangePage = useCallback((_e, v) => setPage(v), []);
+  const handleChangeRpp = useCallback((e) => {
+    const v = Number(e.target.value) || 10;
+    setRpp(v);
+    setPage(1);
+  }, []);
+
+  const from = total === 0 ? 0 : (page - 1) * rowsPerPage + 1;
+  const to = Math.min(page * rowsPerPage, total);
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        justifyContent="space-between"
+        alignItems={{ xs: "flex-start", sm: "center" }}
+        spacing={1}
+        sx={{ mb: 1 }}
+      >
+        <Typography variant="subtitle1">📋 Bảng: {bracketName}</Typography>
+
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Typography variant="caption" color="text.secondary">
+            {from}-{to}/{total}
+          </Typography>
+          <TextField
+            select
+            size="small"
+            label="Rows"
+            value={rowsPerPage}
+            onChange={handleChangeRpp}
+            sx={{ width: 100 }}
+          >
+            {[5, 10, 20, 50, 100].map((n) => (
+              <MenuItem key={n} value={n}>
+                {n}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Pagination
+            size="small"
+            page={page}
+            count={totalPages}
+            onChange={handleChangePage}
+            siblingCount={0}
+            boundaryCount={1}
+          />
+        </Stack>
+      </Stack>
+
+      {!expanded ? (
+        <Typography variant="body2" color="text.secondary">
+          Mở để tải trận…
+        </Typography>
+      ) : isLoading ? (
+        <Box textAlign="center" py={2}>
+          <CircularProgress size={20} />
+        </Box>
+      ) : error ? (
+        <Alert severity="error">{error?.data?.message || error.error || "Lỗi tải dữ liệu"}</Alert>
+      ) : list.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">
+          Không có trận nào
+        </Typography>
+      ) : (
+        <Stack spacing={1}>
+          {list.map((m) => {
+            const a1 = m?.pairA?.player1;
+            const a2 = m?.pairA?.player2;
+            const b1 = m?.pairB?.player1;
+            const b2 = m?.pairB?.player2;
+            return (
+              <Card key={m._id} sx={{ p: 2, opacity: isFetching ? 0.7 : 1 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Box>
+                    <Typography>
+                      Vòng {m.round}:{" "}
+                      <strong>
+                        {a1?.fullName || a1?.name || "??"} & {a2?.fullName || a2?.name || "??"}
+                      </strong>{" "}
+                      vs{" "}
+                      <strong>
+                        {b1?.fullName || b1?.name || "??"} & {b2?.fullName || b2?.name || "??"}
+                      </strong>
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Trạng thái:{" "}
+                      {m.status === "scheduled"
+                        ? "Chưa diễn ra"
+                        : m.status === "live"
+                        ? "Đang diễn ra"
+                        : "Đã kết thúc"}
+                      {" • "}best-of {m?.rules?.bestOf ?? "-"}, đến {m?.rules?.pointsToWin ?? "-"} (
+                      {m?.rules?.winByTwo ? "cần chênh 2" : "không cần chênh 2"})
+                    </Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">
+                      Trọng tài: {m?.referee?.name || "Chưa phân"}
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={1}>
+                    <IconButton onClick={() => onOpenDetail(m._id)} size="small">
+                      <InfoIcon />
+                    </IconButton>
+                    <IconButton onClick={() => onOpenAssign(m)} size="small">
+                      <EditIcon />
+                    </IconButton>
+                  </Stack>
+                </Stack>
+              </Card>
+            );
+          })}
+        </Stack>
+      )}
+    </Box>
+  );
+});
 
 export default function AdminMatchesListGrouped() {
-  // 1) Lấy toàn bộ trận
-  const { data: matches = [], isLoading, error, refetch } = useListAllMatchesQuery();
+  // Lấy skeleton nhóm: giải → các bracket
+  const {
+    data: groups = [],
+    isLoading: groupsLoading,
+    error: groupsError,
+  } = useListMatchGroupsQuery({});
+  // ref để biết accordion giải nào đang mở (để lazy fetch)
+  const [openTourIds, setOpenTourIds] = useState({});
+
   // 2) Lấy referees
   const { data: users = { users: [] } } = useGetUsersQuery({
     page: 1,
@@ -66,31 +212,11 @@ export default function AdminMatchesListGrouped() {
 
   // Mutation gán referee
   const [assignReferee, { isLoading: assigning }] = useAssignRefereeMutation();
-
-  useEffect(() => {
-    if (error) showSnack("error", error?.data?.message || error.error);
-  }, [error]);
-
-  // 3) Gom group theo tournament → bracket
-  const grouped = useMemo(() => {
-    const map = {};
-    matches.forEach((m) => {
-      const tId = m.tournament._id;
-      const tName = m.tournament.name;
-      const bId = m.bracket._id;
-      const bName = m.bracket.name;
-      if (!map[tId]) map[tId] = { tournamentName: tName, brackets: {} };
-      if (!map[tId].brackets[bId]) {
-        map[tId].brackets[bId] = { bracketName: bName, matches: [] };
-      }
-      map[tId].brackets[bId].matches.push(m);
-    });
-    return map;
-  }, [matches]);
-
-  // Dialog gán referee
-  const openAssign = (m) => setAssignDlg({ match: m, refereeId: m.referee?._id || "" });
-  const saveAssign = async () => {
+  const openAssign = useCallback(
+    (m) => setAssignDlg({ match: m, refereeId: m?.referee?._id || "" }),
+    []
+  );
+  const saveAssign = useCallback(async () => {
     try {
       await assignReferee({
         matchId: assignDlg.match._id,
@@ -98,11 +224,11 @@ export default function AdminMatchesListGrouped() {
       }).unwrap();
       showSnack("success", "Gán trọng tài thành công");
       setAssignDlg(null);
-      refetch();
+      // không cần refetch ở đây vì BracketSection tự fetch theo page; có thể trigger bằng thay đổi page/rpp nếu muốn
     } catch (e) {
-      showSnack("error", e?.data?.message || e.error || "Cập nhật thất bại");
+      showSnack("error", e?.data?.message || e?.error || "Cập nhật thất bại");
     }
-  };
+  }, [assignDlg, assignReferee]);
 
   // 4) Lấy chi tiết trận khi mở dialog Info
   const {
@@ -119,71 +245,44 @@ export default function AdminMatchesListGrouped() {
           Quản lý trận đấu
         </Typography>
 
-        {isLoading ? (
+        {groupsLoading ? (
           <Box textAlign="center" py={6}>
             <CircularProgress />
           </Box>
+        ) : groupsError ? (
+          <Alert severity="error">{groupsError?.data?.message || groupsError.error}</Alert>
+        ) : groups.length === 0 ? (
+          <Alert severity="info">Chưa có trận nào</Alert>
         ) : (
-          // Render từng tournament
-          Object.entries(grouped).map(([tId, tData]) => (
-            <Accordion key={tId} defaultExpanded sx={{ mb: 2 }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="h6">Giải: {tData.tournamentName}</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
-                {/* Render từng bracket */}
-                {Object.entries(tData.brackets).map(([bId, bData]) => (
-                  <Box key={bId} sx={{ mb: 3 }}>
-                    <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                      📋 Bảng: {bData.bracketName}
-                    </Typography>
-                    <Stack spacing={1}>
-                      {/* Render từng match */}
-                      {bData.matches.map((m) => (
-                        <Card key={m._id} sx={{ p: 2 }}>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Box>
-                              <Typography>
-                                Vòng {m.round}:{" "}
-                                <strong>
-                                  {m.pairA.player1.fullName} & {m.pairA.player2.fullName}
-                                </strong>{" "}
-                                vs{" "}
-                                <strong>
-                                  {m.pairB.player1.fullName} & {m.pairB.player2.fullName}
-                                </strong>
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                Trạng thái:{" "}
-                                {m.status === "scheduled"
-                                  ? "Chưa diễn ra"
-                                  : m.status === "live"
-                                  ? "Đang diễn ra"
-                                  : "Đã kết thúc"}
-                                {" • "}best‐of {m.rules.bestOf}, đến {m.rules.pointsToWin} (
-                                {m.rules.winByTwo ? "cần chênh 2" : "không cần chênh 2"})
-                              </Typography>
-                              <Typography variant="caption" display="block" color="text.secondary">
-                                Trọng tài: {m.referee?.name || "Chưa phân"}
-                              </Typography>
-                            </Box>
-                            <Stack direction="row" spacing={1}>
-                              <IconButton onClick={() => setDetailId(m._id)} size="small">
-                                <InfoIcon />
-                              </IconButton>
-                              <IconButton onClick={() => openAssign(m)} size="small">
-                                <EditIcon />
-                              </IconButton>
-                            </Stack>
-                          </Stack>
-                        </Card>
-                      ))}
-                    </Stack>
-                  </Box>
-                ))}
-              </AccordionDetails>
-            </Accordion>
-          ))
+          groups.map((g) => {
+            const tId = g.tournamentId;
+            const expanded = !!openTourIds[tId];
+            return (
+              <Accordion
+                key={tId}
+                expanded={expanded}
+                onChange={(_e, isExp) => setOpenTourIds((prev) => ({ ...prev, [tId]: isExp }))}
+                sx={{ mb: 2 }}
+              >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="h6">Giải: {g.tournamentName}</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  {g.brackets.map((b) => (
+                    <BracketSection
+                      key={b.bracketId}
+                      tournamentId={tId}
+                      bracketId={b.bracketId}
+                      bracketName={b.bracketName}
+                      expanded={expanded}
+                      onOpenAssign={openAssign}
+                      onOpenDetail={setDetailId}
+                    />
+                  ))}
+                </AccordionDetails>
+              </Accordion>
+            );
+          })
         )}
       </Box>
 
@@ -198,14 +297,11 @@ export default function AdminMatchesListGrouped() {
               id="select-referee"
               value={assignDlg?.refereeId || ""}
               onChange={(e) => setAssignDlg((d) => ({ ...d, refereeId: e.target.value }))}
-              label="Chọn trọng tài" // 👈 dòng này rất quan trọng
+              label="Chọn trọng tài"
               IconComponent={ArrowDropDownIcon}
               sx={{
                 minHeight: 56,
-                "& .MuiSelect-select": {
-                  display: "flex",
-                  alignItems: "center",
-                },
+                "& .MuiSelect-select": { display: "flex", alignItems: "center" },
               }}
             >
               <MenuItem value="">
@@ -213,7 +309,7 @@ export default function AdminMatchesListGrouped() {
               </MenuItem>
               {users.users.map((u) => (
                 <MenuItem key={u._id} value={u._id}>
-                  {u.name} ({u.nickname})
+                  {u.name} {u.nickname ? `(${u.nickname})` : ""}
                 </MenuItem>
               ))}
             </Select>
@@ -241,13 +337,10 @@ export default function AdminMatchesListGrouped() {
             <Alert severity="error">{detailError?.data?.message || detailError.error}</Alert>
           ) : detail ? (
             <>
-              {/* Header chung */}
               <Typography variant="h6" gutterBottom>
-                {detail.tournament.name} • {detail.bracket.name} • Vòng {detail.round}
+                {detail?.tournament?.name} • {detail?.bracket?.name} • Vòng {detail?.round}
               </Typography>
               <Divider sx={{ mb: 2 }} />
-
-              {/* Info đôi A/B */}
               <Grid container spacing={2}>
                 {["pairA", "pairB"].map((key) => {
                   const p = detail[key];
@@ -261,17 +354,20 @@ export default function AdminMatchesListGrouped() {
                           <Avatar sx={{ width: 48, height: 48 }} />
                           <Box>
                             <Typography>
-                              {p.player1.fullName} & {p.player2.fullName}
+                              {p?.player1?.fullName || p?.player1?.name || "??"} &{" "}
+                              {p?.player2?.fullName || p?.player2?.name || "??"}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {p.player1.phone} – {p.player2.phone}
+                              {p?.player1?.phone || "—"} – {p?.player2?.phone || "—"}
                             </Typography>
                           </Box>
                         </Stack>
-                        {/* Self scores */}
                         <Typography variant="body2" color="text.secondary">
-                          Điểm đăng ký: {p.player1.score} + {p.player2.score} ={" "}
-                          {p.player1.score + p.player2.score}
+                          Điểm đăng ký: {p?.player1?.score ?? "—"} + {p?.player2?.score ?? "—"} ={" "}
+                          {typeof p?.player1?.score === "number" &&
+                          typeof p?.player2?.score === "number"
+                            ? p.player1.score + p.player2.score
+                            : "—"}
                         </Typography>
                       </Paper>
                     </Grid>
@@ -279,7 +375,6 @@ export default function AdminMatchesListGrouped() {
                 })}
               </Grid>
 
-              {/* Bảng điểm ván đấu */}
               <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>
                 Bảng điểm từng ván
               </Typography>
@@ -293,39 +388,38 @@ export default function AdminMatchesListGrouped() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {detail.gameScores.map((g, i) => (
+                    {(detail?.gameScores || []).map((g, i) => (
                       <TableRow key={i}>
                         <TableCell>#{i + 1}</TableCell>
-                        <TableCell sx={{ textAlign: "center" }}>{g.a}</TableCell>
-                        <TableCell sx={{ textAlign: "center" }}>{g.b}</TableCell>
+                        <TableCell sx={{ textAlign: "center" }}>{g?.a ?? "—"}</TableCell>
+                        <TableCell sx={{ textAlign: "center" }}>{g?.b ?? "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </TableContainer>
 
-              {/* Phần thông tin phụ */}
               <Stack spacing={1} sx={{ mt: 3 }}>
                 <Typography>
                   <strong>Trạng thái:</strong>{" "}
-                  {detail.status === "scheduled"
+                  {detail?.status === "scheduled"
                     ? "Chưa diễn ra"
-                    : detail.status === "live"
+                    : detail?.status === "live"
                     ? "Đang diễn ra"
                     : "Đã kết thúc"}
                 </Typography>
                 <Typography>
                   <strong>Người thắng:</strong>{" "}
-                  {detail.winner === "A"
+                  {detail?.winner === "A"
                     ? "Đôi A"
-                    : detail.winner === "B"
+                    : detail?.winner === "B"
                     ? "Đôi B"
                     : "Chưa xác định"}
                 </Typography>
                 <Typography>
-                  <strong>Trọng tài:</strong> {detail.referee?.name || "Chưa phân"}
+                  <strong>Trọng tài:</strong> {detail?.referee?.name || "Chưa phân"}
                 </Typography>
-                {detail.note && (
+                {detail?.note && (
                   <Typography>
                     <strong>Ghi chú:</strong> {detail.note}
                   </Typography>
@@ -339,7 +433,6 @@ export default function AdminMatchesListGrouped() {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar */}
       <Snackbar
         open={snack.open}
         autoHideDuration={3000}
@@ -353,3 +446,16 @@ export default function AdminMatchesListGrouped() {
     </DashboardLayout>
   );
 }
+
+BracketSection.propTypes = {
+  tournamentId: PropTypes.string.isRequired,
+  bracketId: PropTypes.string.isRequired,
+  bracketName: PropTypes.string.isRequired,
+  expanded: PropTypes.bool, // optional
+  onOpenAssign: PropTypes.func.isRequired,
+  onOpenDetail: PropTypes.func.isRequired,
+};
+
+BracketSection.defaultProps = {
+  expanded: false,
+};

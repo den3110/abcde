@@ -145,7 +145,7 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: (r) => (r ? [{ type: "Match", id: r.bracket.toString() }] : []),
     }),
     listAllMatches: builder.query({
-      query: () => `/admin/matches`,
+      query: () => `/admin/matches/all`,
       providesTags: (result = [], error) =>
         result
           ? [...result.map((m) => ({ type: "Match", id: m._id })), { type: "Match", id: "LIST" }]
@@ -192,6 +192,24 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         };
       },
     }),
+    listMatchGroups: builder.query({
+      query: (params) => ({ url: "/admin/matches/groups", params }),
+    }),
+    listMatchesPaged: builder.query({
+      query: ({
+        tournament,
+        bracket,
+        status,
+        page = 1,
+        limit = 10,
+        sort = "round,order,-createdAt",
+      }) => ({
+        url: "/admin/matches",
+        params: { tournament, bracket, status, page, limit, sort },
+      }),
+      // giữ data cũ khi đổi trang cho mượt
+      keepUnusedDataFor: 30,
+    }),
   }),
 });
 
@@ -222,4 +240,6 @@ export const {
   useUpdateBracketMutation,
   useUpdateMatchMutation,
   useUploadAvatarMutation,
+  useListMatchGroupsQuery,
+  useListMatchesPagedQuery,
 } = tournamentsApiSlice;
