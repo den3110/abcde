@@ -44,10 +44,17 @@ import {
   useDeleteUserMutation,
   useUpdateUserInfoMutation,
   useReviewKycMutation,
+  useUpdateRankingMutation,
 } from "slices/adminApiSlice";
 import { setPage, setKeyword, setRole } from "slices/adminUiSlice";
-import { useUpdateRankingMutation } from "slices/adminApiSlice";
-// đặt phía trên file (hoặc import riêng)
+
+const GENDER_OPTIONS = [
+  { value: "unspecified", label: "--" },
+  { value: "male", label: "Nam" },
+  { value: "female", label: "Nữ" },
+  { value: "other", label: "Khác" },
+];
+// Provinces
 const PROVINCES = [
   "An Giang",
   "Bà Rịa-Vũng Tàu",
@@ -113,38 +120,44 @@ const PROVINCES = [
   "Vĩnh Phúc",
   "Yên Bái",
 ];
+
+// Helper
+const prettyDate = (d) => (d ? new Date(d).toLocaleDateString("vi-VN") : "—");
+
 export default function UserManagement() {
   const dispatch = useDispatch();
   const { page, keyword, role = "" } = useSelector((s) => s.adminUi);
 
-  /* ── mutations ── */
+  // mutations
   const [updateRoleMut] = useUpdateUserRoleMutation();
   const [updateInfoMut] = useUpdateUserInfoMutation();
   const [reviewKycMut] = useReviewKycMutation();
   const [deleteUserMut] = useDeleteUserMutation();
-  const [score, setScore] = useState(null);
   const [updateRanking] = useUpdateRankingMutation();
-  /* ── list ── */
+
+  const [score, setScore] = useState(null);
+
+  // list
   const { data, isFetching, refetch } = useGetUsersQuery({ page: page + 1, keyword, role });
 
-  /* ── dialogs ── */
+  // dialogs
   const [edit, setEdit] = useState(null);
   const [del, setDel] = useState(null);
   const [kyc, setKyc] = useState(null);
   const [zoom, setZoom] = useState(null);
 
-  /* ── Snackbar ── */
+  // Snackbar
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
 
-  /* ── search debounce ── */
+  // search debounce
   const [search, setSearch] = useState(keyword);
   useEffect(() => {
     const t = setTimeout(() => dispatch(setKeyword(search.trim())), 500);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, dispatch]);
 
-  /* ── helpers async ── */
+  // helpers async
   const handle = async (promise, successMsg) => {
     try {
       await promise;
@@ -155,7 +168,7 @@ export default function UserManagement() {
     }
   };
 
-  /* ── table ── */
+  // table
   const columns = [
     { Header: "Tên", accessor: "name", align: "left" },
     { Header: "Email", accessor: "email", align: "left" },
@@ -201,7 +214,6 @@ export default function UserManagement() {
             <MenuItem value="admin">Admin</MenuItem>
           </Select>
         ),
-
         cccd: (
           <Stack direction="row" spacing={1} justifyContent="center">
             <Chip
@@ -225,12 +237,11 @@ export default function UserManagement() {
             )}
           </Stack>
         ),
-
         act: (
           <Stack direction="row" spacing={1} justifyContent="center">
             <Tooltip title="Cập nhật điểm">
               <IconButton size="small" color="info" onClick={() => setScore({ ...u })}>
-                <VerifiedIcon fontSize="inherit" /> {/* dùng tạm icon này */}
+                <VerifiedIcon fontSize="inherit" />
               </IconButton>
             </Tooltip>
             <Tooltip title="Sửa">
@@ -250,12 +261,12 @@ export default function UserManagement() {
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
 
-  /* ── render ── */
+  // render
   return (
     <DashboardLayout>
       <DashboardNavbar />
 
-      {/* Thanh công cụ */}
+      {/* Toolbar */}
       <MDBox px={3} pt={4}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
           <TextField
@@ -272,9 +283,7 @@ export default function UserManagement() {
             onChange={(e) => dispatch(setRole(e.target.value))}
             displayEmpty
             renderValue={(selected) => {
-              if (selected === "") {
-                return "Tất cả"; // text mặc định khi value = ""
-              }
+              if (selected === "") return "Tất cả";
               return selected === "user"
                 ? "User"
                 : selected === "referee"
@@ -346,35 +355,106 @@ export default function UserManagement() {
       </Dialog>
 
       {/* KYC dialog */}
-      <Dialog open={!!kyc} onClose={() => setKyc(null)} maxWidth="sm" fullWidth>
+      <Dialog open={!!kyc} onClose={() => setKyc(null)} maxWidth="md" fullWidth>
         {kyc && (
           <>
             <DialogTitle>Kiểm tra CCCD</DialogTitle>
-            <DialogContent>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} mt={1}>
-                {["front", "back"].map((side) => (
-                  <Box key={side} flex={1} textAlign="center">
-                    <img
-                      src={kyc.cccdImages[side]}
-                      alt={side}
-                      style={{
-                        width: "100%",
-                        maxHeight: 260,
-                        objectFit: "contain",
-                        cursor: "zoom-in",
-                        border: "1px solid #ccc",
-                        borderRadius: 4,
+            <DialogContent dividers sx={{ pt: 2 }}>
+              <Grid container spacing={2}>
+                {/* LEFT: Ảnh CCCD */}
+                <Grid item xs={12} md={7}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                    {["front", "back"].map((side) => (
+                      <Box key={side} flex={1} textAlign="center">
+                        <img
+                          src={kyc.cccdImages?.[side]}
+                          alt={side}
+                          style={{
+                            width: "100%",
+                            maxHeight: 280,
+                            objectFit: "contain",
+                            cursor: "zoom-in",
+                            border: "1px solid #e0e0e0",
+                            borderRadius: 8,
+                            boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                          }}
+                          onClick={() => setZoom(kyc.cccdImages?.[side])}
+                        />
+                        <MDTypography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                          {side === "front" ? "Mặt trước" : "Mặt sau"}
+                        </MDTypography>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Grid>
+
+                {/* RIGHT: Thông tin đối chiếu */}
+                <Grid item xs={12} md={5}>
+                  <Card variant="outlined" sx={{ p: 2, height: "100%" }}>
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                      <Chip
+                        size="small"
+                        label={
+                          {
+                            unverified: "Chưa KYC",
+                            pending: "Chờ KYC",
+                            verified: "Đã KYC",
+                            rejected: "Từ chối",
+                          }[kyc.cccdStatus || "unverified"]
+                        }
+                        color={
+                          kyc.cccdStatus === "verified"
+                            ? "success"
+                            : kyc.cccdStatus === "pending"
+                            ? "warning"
+                            : kyc.cccdStatus === "rejected"
+                            ? "error"
+                            : "default"
+                        }
+                      />
+                    </Stack>
+
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: "140px 1fr",
+                        rowGap: 1,
+                        columnGap: 1.5,
+                        "& .label": { color: "text.secondary", fontSize: 14 },
+                        "& .value": { fontWeight: 600, fontSize: 15 },
                       }}
-                      onClick={() => setZoom(kyc.cccdImages[side])}
-                    />
-                    <MDTypography variant="caption">
-                      {side === "front" ? "Mặt trước" : "Mặt sau"}
-                    </MDTypography>
-                  </Box>
-                ))}
-              </Stack>
+                    >
+                      <Box className="label">Họ & tên</Box>
+                      <Box className="value">{kyc.name || "—"}</Box>
+
+                      <Box className="label">Ngày sinh</Box>
+                      <Box className="value">{prettyDate(kyc.dob)}</Box>
+
+                      <Box className="label">Số CCCD</Box>
+                      <Box className="value" sx={{ fontFamily: "monospace" }}>
+                        {kyc.cccd || "—"}
+                      </Box>
+
+                      <Box className="label">Tỉnh / Thành</Box>
+                      <Box className="value">{kyc.province || "—"}</Box>
+                    </Box>
+
+                    {kyc.note && (
+                      <Box sx={{ mt: 1.5, p: 1.25, bgcolor: "grey.50", borderRadius: 1 }}>
+                        <MDTypography variant="caption" color="text.secondary">
+                          Ghi chú
+                        </MDTypography>
+                        <MDTypography variant="button" display="block">
+                          {kyc.note}
+                        </MDTypography>
+                      </Box>
+                    )}
+                  </Card>
+                </Grid>
+              </Grid>
             </DialogContent>
-            <DialogActions>
+
+            <DialogActions sx={{ px: 2.5, py: 1.5 }}>
               <Button onClick={() => setKyc(null)}>Đóng</Button>
               <Button
                 color="error"
@@ -412,6 +492,7 @@ export default function UserManagement() {
             <DialogTitle>Sửa thông tin</DialogTitle>
             <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ marginTop: 20 }}></div>
+
               <TextField
                 label="Tên"
                 value={edit.name}
@@ -432,6 +513,21 @@ export default function UserManagement() {
                 value={edit.email}
                 onChange={(e) => setEdit({ ...edit, email: e.target.value })}
               />
+
+              {/* CCCD */}
+              <TextField
+                label="CCCD"
+                value={edit.cccd || ""}
+                onChange={(e) =>
+                  setEdit({
+                    ...edit,
+                    cccd: e.target.value.replace(/\D/g, "").slice(0, 12),
+                  })
+                }
+                inputProps={{ inputMode: "numeric", maxLength: 12, pattern: "\\d{12}" }}
+                helperText="Nhập đúng 12 chữ số"
+              />
+
               <TextField
                 label="DOB"
                 type="date"
@@ -439,21 +535,25 @@ export default function UserManagement() {
                 value={edit.dob ? edit.dob.slice(0, 10) : ""}
                 onChange={(e) => setEdit({ ...edit, dob: e.target.value })}
               />
-              <FormControl
-                fullWidth
-                size="small" // cứ để small
-                sx={{ ".MuiInputBase-root": { height: 40 } }} // ép cao
-              >
+
+              {/* Giới tính: dùng enum */}
+              <FormControl fullWidth size="small" sx={{ ".MuiInputBase-root": { height: 40 } }}>
                 <InputLabel id="gender-lbl">Giới tính</InputLabel>
                 <Select
                   labelId="gender-lbl"
                   label="Giới tính"
-                  value={edit.gender || "--"}
+                  value={
+                    ["male", "female", "unspecified", "other"].includes(edit.gender)
+                      ? edit.gender
+                      : "unspecified"
+                  }
                   onChange={(e) => setEdit({ ...edit, gender: e.target.value })}
                 >
-                  <MenuItem value="--">--</MenuItem>
-                  <MenuItem value="Nam">Nam</MenuItem>
-                  <MenuItem value="Nữ">Nữ</MenuItem>
+                  {GENDER_OPTIONS.map((opt) => (
+                    <MenuItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
 
@@ -476,6 +576,7 @@ export default function UserManagement() {
                 </Select>
               </FormControl>
             </DialogContent>
+
             <DialogActions>
               <Button onClick={() => setEdit(null)}>Huỷ</Button>
               <Button
@@ -488,8 +589,11 @@ export default function UserManagement() {
                         nickname: edit.nickname,
                         phone: edit.phone,
                         email: edit.email,
+                        cccd: edit.cccd,
                         dob: edit.dob,
-                        gender: edit.gender,
+                        gender: ["male", "female", "unspecified", "other"].includes(edit.gender)
+                          ? edit.gender
+                          : "unspecified",
                         province: edit.province,
                       },
                     }).unwrap(),
@@ -522,13 +626,14 @@ export default function UserManagement() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Cập nhật điểm */}
       <Dialog open={!!score} onClose={() => setScore(null)} maxWidth="xs" fullWidth>
         {score && (
           <>
             <DialogTitle>Cập nhật điểm</DialogTitle>
             <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
               <div style={{ marginTop: 20 }}></div>
-
               <TextField
                 label="Điểm đơn"
                 type="number"

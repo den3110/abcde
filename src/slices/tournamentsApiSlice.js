@@ -16,7 +16,7 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       providesTags: (r, e, id) => [{ type: "Tournament", id }],
     }),
     getRegistrations: builder.query({
-      query: (id) => `/tournaments/${id}/registrations`,
+      query: (id) => `/admin/tournaments/${id}/registrations`,
       providesTags: (r, e, id) => [{ type: "Registration", id }],
     }),
 
@@ -211,7 +211,7 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 30,
     }),
     resetMatchChain: builder.mutation({
-      query: (matchId) => ({
+      query: ({ matchId }) => ({
         url: `/admin/matches/${matchId}/reset-chain`,
         method: "POST",
       }),
@@ -293,6 +293,25 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (_r, _e, { matchId }) => [{ type: "Match", id: matchId }],
     }),
+    listTournamentManagers: builder.query({
+      query: (tournamentId) => `/tournaments/${tournamentId}/managers`,
+      providesTags: (res, err, id) => [{ type: "TManager", id }],
+    }),
+    addTournamentManager: builder.mutation({
+      query: ({ tournamentId, userId }) => ({
+        url: `/tournaments/${tournamentId}/managers`,
+        method: "POST",
+        body: { userId },
+      }),
+      invalidatesTags: (res, err, { tournamentId }) => [{ type: "TManager", id: tournamentId }],
+    }),
+    removeTournamentManager: builder.mutation({
+      query: ({ tournamentId, userId }) => ({
+        url: `/tournaments/${tournamentId}/managers/${userId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (res, err, { tournamentId }) => [{ type: "TManager", id: tournamentId }],
+    }),
   }),
 });
 
@@ -331,4 +350,7 @@ export const {
   useRefereeSetGameScoreMutation,
   useRefereeSetStatusMutation,
   useRefereeSetWinnerMutation,
+  useListTournamentManagersQuery,
+  useAddTournamentManagerMutation,
+  useRemoveTournamentManagerMutation,
 } = tournamentsApiSlice;

@@ -49,6 +49,7 @@ import {
   useUpdateBracketMutation,
   useUpdateMatchMutation,
 } from "slices/tournamentsApiSlice";
+import { useGetUsersQuery } from "slices/adminApiSlice";
 
 /* ===== Helpers cho đơn/đôi ===== */
 function normType(t) {
@@ -78,7 +79,15 @@ export default function AdminBracketsPage() {
 
   const evType = normType(tournament?.eventType);
   const isSingles = evType === "single";
+  // 2b) Danh sách trọng tài (role=referee)
+  const {
+    data: usersData,
+    isLoading: refsLoading,
+    error: refsError,
+  } = useGetUsersQuery({ page: 1, keyword: "", role: "referee" });
+  const referees = usersData?.users ?? [];
 
+  const refName = (u) => u?.fullName || u?.name || u?.email || "Referee";
   // 2) Các cặp đăng ký
   const {
     data: registrations = [],
@@ -134,7 +143,7 @@ export default function AdminBracketsPage() {
   const [rules, setRules] = useState({ bestOf: 3, pointsToWin: 11, winByTwo: true });
   const [newRound, setNewRound] = useState(1);
   const [newOrder, setNewOrder] = useState(0);
-
+  const [newReferee, setNewReferee] = useState("");
   // =============== Dialog tạo Vòng sau (chọn đội thủ công) ===============
   const [nextDlg, setNextDlg] = useState(false);
   const [nextDlgBracket, setNextDlgBracket] = useState(null);
@@ -164,7 +173,7 @@ export default function AdminBracketsPage() {
   const [emOldStatus, setEmOldStatus] = useState("scheduled");
   const [emOldWinner, setEmOldWinner] = useState("");
   const [emCascade, setEmCascade] = useState(false);
-
+  const [emReferee, setEmReferee] = useState("");
   // Nhóm match theo bracket
   const grouped = useMemo(() => {
     const key = (x) => String(x?._id ?? x); // normalize id
@@ -222,6 +231,7 @@ export default function AdminBracketsPage() {
     setRules({ bestOf: 3, pointsToWin: 11, winByTwo: true });
     setNewRound(1);
     setNewOrder(0);
+    setNewReferee("");
     setMatchDlg(true);
   };
 
@@ -232,7 +242,14 @@ export default function AdminBracketsPage() {
     try {
       await createMatch({
         bracketId: selBracket,
-        body: { round: newRound, order: newOrder, pairA, pairB, rules },
+        body: {
+          round: newRound,
+          order: newOrder,
+          pairA,
+          pairB,
+          rules,
+          referee: newReferee || undefined,
+        },
       }).unwrap();
       showSnack("success", "Đã tạo trận");
       setMatchDlg(false);
@@ -345,6 +362,7 @@ export default function AdminBracketsPage() {
     setEmOldStatus(mt.status || "scheduled");
     setEmOldWinner(mt.winner || "");
     setEmCascade(false);
+    setEmReferee(mt.referee?._id || mt.referee || "");
     setEditMatchDlg(true);
   };
 
@@ -372,6 +390,7 @@ export default function AdminBracketsPage() {
           },
           status: emStatus,
           winner: emStatus === "finished" ? emWinner : "",
+          referee: emReferee || null,
         },
       }).unwrap();
 
@@ -506,6 +525,15 @@ export default function AdminBracketsPage() {
                             best‐of {mt.rules.bestOf}, tới {mt.rules.pointsToWin}{" "}
                             {mt.rules.winByTwo ? "(chênh 2)" : ""} — trạng thái: {mt.status}
                             {mt.status === "finished" && mt.winner && <> — winner: {mt.winner}</>}
+                            {mt.referee && (
+                              <>
+                                {" "}
+                                — ref:{" "}
+                                {typeof mt.referee === "object"
+                                  ? refName(mt.referee)
+                                  : referees.find((r) => r._id === mt.referee)?.name || mt.referee}
+                              </>
+                            )}
                           </Typography>
                         </Box>
 
@@ -640,7 +668,28 @@ export default function AdminBracketsPage() {
                 </MenuItem>
               ))}
             </TextField>
-
+            <TextField
+              select
+              fullWidth
+              label="Trọng tài"
+              value={newReferee}
+              onChange={(e) => setNewReferee(e.target.value)}
+              sx={{
+                mt: 1,
+                "& .MuiInputBase-root": { minHeight: 56 },
+                "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
+              }}
+              helperText={refsError ? "Lỗi tải danh sách trọng tài" : ""}
+            >
+              <MenuItem value="">
+                <em>— Chưa gán —</em>
+              </MenuItem>
+              {referees.map((u) => (
+                <MenuItem key={u._id} value={u._id}>
+                  {u.name} {u.nickname ? `(${u.nickname})` : ""}
+                </MenuItem>
+              ))}
+            </TextField>
             <Grid container spacing={2} mt={1} p={2}>
               <Grid item xs={4}>
                 <TextField
@@ -730,7 +779,27 @@ export default function AdminBracketsPage() {
                 onChange={(e) => setEmOrder(Math.max(0, Number(e.target.value)))}
               />
             </Stack>
-
+            <TextField
+              select
+              fullWidth
+              label="Trọng tài"
+              value={emReferee}
+              onChange={(e) => setEmReferee(e.target.value)}
+              sx={{
+                mt: 1,
+                "& .MuiInputBase-root": { minHeight: 56 },
+                "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
+              }}
+            >
+              <MenuItem value="">
+                <em>— Chưa gán —</em>
+              </MenuItem>
+              {referees.map((u) => (
+                <MenuItem key={u._id} value={u._id}>
+                  {u.name} {u.nickname ? `(${u.nickname})` : ""}
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
               select
               fullWidth
@@ -1152,6 +1221,63 @@ export default function AdminBracketsPage() {
             }}
           >
             Tạo trận vòng {nextRound}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={editBracketDlg}
+        onClose={() => setEditBracketDlg(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Sửa Bracket</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            <TextField
+              label="Tên Bracket"
+              fullWidth
+              value={ebName}
+              onChange={(e) => setEbName(e.target.value)}
+            />
+
+            <FormControl fullWidth>
+              <InputLabel>Kiểu Bracket</InputLabel>
+              <Select
+                value={ebType}
+                label="Kiểu Bracket"
+                onChange={(e) => setEbType(e.target.value)}
+                sx={{
+                  mt: 1,
+                  "& .MuiInputBase-root": { minHeight: 56 },
+                  "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
+                }}
+              >
+                <MenuItem value="knockout">Knockout</MenuItem>
+                <MenuItem value="group">Vòng bảng</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Stage (số thứ tự)"
+              type="number"
+              fullWidth
+              value={ebStage}
+              onChange={(e) => setEbStage(Number(e.target.value))}
+            />
+
+            <TextField
+              label="Order (thứ tự hiển thị)"
+              type="number"
+              fullWidth
+              value={ebOrder}
+              onChange={(e) => setEbOrder(Number(e.target.value))}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditBracketDlg(false)}>Huỷ</Button>
+          <Button onClick={saveEditBracket} variant="contained" sx={{ color: "white !important" }}>
+            Lưu
           </Button>
         </DialogActions>
       </Dialog>

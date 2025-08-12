@@ -1,3 +1,4 @@
+// src/screens/admin/AdminTournamentRegistrations.jsx
 /* eslint-disable react/prop-types */
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -19,6 +20,9 @@ import {
   DialogContent,
   DialogActions,
   Button,
+  TextField,
+  Autocomplete,
+  Divider,
 } from "@mui/material";
 import { ArrowBack, Paid, MoneyOff, Delete as DeleteIcon } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
@@ -35,7 +39,11 @@ import {
   useGetRegistrationsQuery,
   useUpdatePaymentMutation,
   useDeleteRegistrationMutation,
+  useListTournamentManagersQuery,
+  useAddTournamentManagerMutation,
+  useRemoveTournamentManagerMutation,
 } from "slices/tournamentsApiSlice";
+import { useGetUsersQuery } from "slices/adminApiSlice";
 
 function normType(t) {
   const s = String(t || "").toLowerCase();
@@ -58,10 +66,21 @@ export default function AdminTournamentRegistrations() {
     refetch,
   } = useGetRegistrationsQuery(id);
 
+  // managers
+  const {
+    data: managers = [],
+    refetch: refetchManagers,
+    isFetching: managersLoading,
+  } = useListTournamentManagersQuery(id);
+
   /* ───── mutation ───── */
   const [updatePay] = useUpdatePaymentMutation();
   const [deleteReg] = useDeleteRegistrationMutation();
+  const [addManager] = useAddTournamentManagerMutation();
+  const [removeManager] = useRemoveTournamentManagerMutation();
+
   const [confirmDel, setConfirmDel] = useState(null); // reg obj or null
+
   /* ───── snackbar ───── */
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
@@ -69,6 +88,7 @@ export default function AdminTournamentRegistrations() {
   /* ───── pagination ───── */
   const [page, setPage] = useState(1);
   const perPage = 10;
+
   const totalPages = Math.ceil(regs.length / perPage);
   const paged = useMemo(() => regs.slice((page - 1) * perPage, page * perPage), [regs, page]);
 
@@ -97,7 +117,7 @@ export default function AdminTournamentRegistrations() {
     try {
       await updatePay({ regId: reg._id, status: next }).unwrap();
       showSnack("success", next === "Paid" ? "Payment confirmed" : "Payment undone");
-      refetch(); // refresh list
+      refetch();
     } catch (err) {
       showSnack("error", err?.data?.message || err.error || "Update failed");
     }
@@ -136,15 +156,55 @@ export default function AdminTournamentRegistrations() {
     );
   };
 
+  /* ───── Managers panel: search users ───── */
+  const [mgrKeyword, setMgrKeyword] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
+
+  const { data: userSearch, isFetching: searchingUsers } = useGetUsersQuery(
+    { page: 1, keyword: mgrKeyword, role: "" },
+    { skip: mgrKeyword.trim().length < 1 } // gõ mới search
+  );
+
+  const userOptions = (userSearch?.users || []).map((u) => ({
+    id: u._id,
+    label: `${u.nickname || u.name || ""} • ${u.phone || ""} • ${u.email}`,
+    name: u.name,
+    nickname: u.nickname,
+    phone: u.phone,
+    email: u.email,
+    avatar: u.avatar,
+  }));
+
+  const onAddManager = async () => {
+    if (!selectedUser?.id) return;
+    try {
+      await addManager({ tournamentId: id, userId: selectedUser.id }).unwrap();
+      showSnack("success", "Đã thêm người quản lý giải");
+      setSelectedUser(null);
+      setMgrKeyword("");
+      refetchManagers();
+    } catch (err) {
+      showSnack("error", err?.data?.message || err.error || "Thêm thất bại");
+    }
+  };
+
+  const onRemoveManager = async (uid) => {
+    try {
+      await removeManager({ tournamentId: id, userId: uid }).unwrap();
+      showSnack("success", "Đã xoá người quản lý");
+      refetchManagers();
+    } catch (err) {
+      showSnack("error", err?.data?.message || err.error || "Xoá thất bại");
+    }
+  };
+
   /* ───── DataTable config ───── */
   const columns = useMemo(() => {
     const base = [
       { Header: "#", accessor: "idx", align: "center", width: "6%" },
       { Header: isSingles ? "Athlete" : "Athlete 1", accessor: "ath1" },
     ];
-    if (!isSingles) {
-      base.push({ Header: "Athlete 2", accessor: "ath2" });
-    }
+    if (!isSingles) base.push({ Header: "Athlete 2", accessor: "ath2" });
     base.push(
       { Header: "Created", accessor: "created" },
       { Header: "Fee", accessor: "fee", align: "center" },
@@ -208,7 +268,127 @@ export default function AdminTournamentRegistrations() {
         )}
       </MDBox>
 
-      {/* content */}
+      {/* Managers panel */}
+      <MDBox px={3} pt={1} pb={2}>
+        <Card>
+          <MDBox p={2}>
+            <MDTypography variant="h6">Quản lý đăng ký giải đấu</MDTypography>
+            <Typography variant="caption" color="text.secondary">
+              Thêm người quản lý: có quyền xác nhận/huỷ lệ phí và xoá đăng ký cho giải này.
+            </Typography>
+
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              alignItems={{ xs: "stretch", sm: "center" }}
+              mt={2}
+            >
+              <Autocomplete
+                fullWidth
+                value={selectedUser}
+                onChange={(_, v) => setSelectedUser(v)}
+                onInputChange={(_, v) => setMgrKeyword(v)}
+                options={userOptions}
+                loading={searchingUsers}
+                filterOptions={(x) => x} // không filter client, rely server
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Tìm user theo SĐT / nickName / email"
+                    placeholder="Nhập để tìm…"
+                  />
+                )}
+                renderOption={(props, opt) => (
+                  <li {...props} key={opt.id}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Avatar src={opt.avatar || ""} sx={{ width: 28, height: 28 }} />
+                      <span>
+                        <b>{opt.nickname || opt.name}</b> • {opt.phone || "-"} • {opt.email}
+                      </span>
+                    </Stack>
+                  </li>
+                )}
+              />
+
+              <Button
+                sx={{ color: "white !important" }}
+                variant="contained"
+                onClick={onAddManager}
+                disabled={!selectedUser}
+              >
+                Thêm quản lý
+              </Button>
+            </Stack>
+
+            <Divider sx={{ my: 2 }} />
+
+            <MDTypography variant="subtitle2" gutterBottom>
+              Danh sách người quản lý
+            </MDTypography>
+
+            {managersLoading ? (
+              <Box textAlign="center" py={3}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : (
+              <DataTable
+                table={{
+                  columns: [
+                    { Header: "Người quản lý", accessor: "u", align: "left" },
+                    { Header: "Liên hệ", accessor: "c", align: "left" },
+                    { Header: "Thao tác", accessor: "act", align: "center", width: "10%" },
+                  ],
+                  rows: (managers || []).map((m) => ({
+                    u: (
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Avatar src={m.user?.avatar || ""} />
+                        <Box>
+                          <MDTypography variant="button">
+                            {m.user?.nickname || m.user?.name}
+                          </MDTypography>
+                          <div />
+                          <MDTypography variant="caption" color="text">
+                            ID: {m.user?._id}
+                          </MDTypography>
+                        </Box>
+                      </Stack>
+                    ),
+                    c: (
+                      <MDTypography variant="caption" color="text">
+                        {m.user?.phone || "-"} • {m.user?.email}
+                      </MDTypography>
+                    ),
+                    act: (
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        sx={{ color: "error.main" }}
+                        onClick={() => {
+                          const label =
+                            m?.user?.nickname || m?.user?.name || m?.user?.phone || m?.user?._id;
+                          if (window.confirm(`Xoá người quản lý "${label}"?`)) {
+                            onRemoveManager(m.user?._id);
+                          }
+                        }}
+                      >
+                        Xoá
+                      </Button>
+                    ),
+                  })),
+                }}
+                isSorted={false}
+                entriesPerPage={false}
+                showTotalEntries={false}
+                noEndBorder
+                canSearch={false}
+              />
+            )}
+          </MDBox>
+        </Card>
+      </MDBox>
+
+      {/* content: registrations */}
       <MDBox px={3} pb={3}>
         {regsLoading ? (
           <Box textAlign="center" py={6}>
@@ -230,7 +410,7 @@ export default function AdminTournamentRegistrations() {
 
                 {[r.player1, r.player2].filter(Boolean).map((pl) => (
                   <Stack
-                    key={pl.phone || pl.fullName}
+                    key={(pl.user || pl.fullName) + (pl.phone || "")}
                     direction="row"
                     spacing={1}
                     alignItems="center"
