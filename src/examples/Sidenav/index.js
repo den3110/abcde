@@ -1,3 +1,4 @@
+// src/examples/Sidenav/index.jsx
 /* eslint-disable react/prop-types */
 import { useEffect } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
@@ -34,6 +35,7 @@ import { apiSlice } from "slices/apiSlice";
 // Icons
 import LogoutIcon from "@mui/icons-material/Logout";
 
+/* ───────────────── helpers ───────────────── */
 function clearAllCookies() {
   document.cookie.split(";").forEach((cookie) => {
     const name = cookie.split("=")[0].trim();
@@ -48,8 +50,9 @@ const getUserRoles = (user) => {
   if (typeof user.role === "string") return [user.role];
   return [];
 };
+
 const canView = (route, user) => {
-  // route không private -> ai cũng xem được
+  // route không private -> ai cũng xem được (trừ khi show=false)
   if (!route.private) return route.show !== false;
   // private -> cần đăng nhập
   if (!user) return false;
@@ -61,17 +64,20 @@ const canView = (route, user) => {
   return true;
 };
 
+/* ───────────────── component ───────────────── */
 function Sidenav({ color, brand, brandName, routes, ...rest }) {
   const [controller, dispatchCtrl] = useMaterialUIController();
   const { miniSidenav, transparentSidenav, whiteSidenav, darkMode, sidenavColor } = controller;
+
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const [logoutApi] = useLogoutMutation();
 
-  // 🆕 lấy user để lọc menu theo role
+  // lấy user để lọc menu theo role
   const { userInfo } = useSelector((s) => s.auth || {});
 
+  // màu chữ theo nền
   let textColor = "white";
   if (transparentSidenav || (whiteSidenav && !darkMode)) {
     textColor = "dark";
@@ -81,11 +87,13 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
 
   const closeSidenav = () => setMiniSidenav(dispatchCtrl, true);
 
+  // phản ứng theo độ rộng màn hình
   useEffect(() => {
     function handleMiniSidenav() {
-      setMiniSidenav(dispatchCtrl, window.innerWidth < 1200);
-      setTransparentSidenav(dispatchCtrl, window.innerWidth < 1200 ? false : transparentSidenav);
-      setWhiteSidenav(dispatchCtrl, window.innerWidth < 1200 ? false : whiteSidenav);
+      const isNarrow = window.innerWidth < 1200;
+      setMiniSidenav(dispatchCtrl, isNarrow);
+      setTransparentSidenav(dispatchCtrl, isNarrow ? false : transparentSidenav);
+      setWhiteSidenav(dispatchCtrl, isNarrow ? false : whiteSidenav);
     }
     window.addEventListener("resize", handleMiniSidenav);
     handleMiniSidenav();
@@ -99,7 +107,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
       const { type, name, icon, title, noCollapse, key, href, route } = cfg;
 
       if (type === "collapse") {
-        // 🆕 chặn hiển thị nếu không đủ quyền
+        // chặn hiển thị nếu không đủ quyền
         if (!canView(cfg, userInfo)) return null;
 
         const active = route ? location.pathname.startsWith(route) : false;
@@ -111,11 +119,17 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             target="_blank"
             rel="noreferrer"
             sx={{ textDecoration: "none" }}
+            aria-label={`Mở ${name} trong tab mới`}
           >
             <SidenavCollapse name={name} icon={icon} active={active} noCollapse={noCollapse} />
           </Link>
         ) : (
-          <NavLink key={key} to={route} style={{ textDecoration: "none" }}>
+          <NavLink
+            key={key}
+            to={route}
+            style={{ textDecoration: "none" }}
+            aria-label={`Đi tới ${name}`}
+          >
             <SidenavCollapse name={name} icon={icon} active={active} noCollapse={noCollapse} />
           </NavLink>
         );
@@ -156,12 +170,12 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
       return null;
     });
 
-  // Logout handler
+  // Đăng xuất
   const handleLogout = async () => {
     try {
       await logoutApi().unwrap();
     } catch {
-      // ignore
+      // bỏ qua lỗi logout server
     }
     clearAllCookies();
     localStorage.removeItem("userInfo");
@@ -186,11 +200,23 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           p={1.625}
           onClick={closeSidenav}
           sx={{ cursor: "pointer" }}
+          aria-label="Đóng thanh điều hướng"
+          title="Đóng"
         >
+          {/* lưu ý: Icon dùng tên biểu tượng, không phải text hiển thị */}
           <Icon sx={{ fontWeight: "bold" }}>close</Icon>
         </MDBox>
-        <MDBox component={NavLink} to="/" display="flex" alignItems="center">
-          {brand && <MDBox component="img" src={brand} alt="Brand" width="2rem" />}
+
+        <MDBox
+          component={NavLink}
+          to="/"
+          display="flex"
+          alignItems="center"
+          aria-label="Về trang chủ"
+          title="Trang chủ"
+          style={{ textDecoration: "none" }}
+        >
+          {brand && <MDBox component="img" src={brand} alt="Logo" width="2rem" />}
           <MDBox
             width={!brandName && "100%"}
             sx={(theme) => sidenavLogoLabel(theme, { miniSidenav })}
@@ -209,10 +235,10 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
         }
       />
 
-      {/* Menu items */}
+      {/* Menu */}
       <List>{renderRoutes}</List>
 
-      {/* Logout */}
+      {/* Nút đăng xuất */}
       <MDBox p={2} mt="auto">
         <MDButton
           variant="gradient"
@@ -220,6 +246,8 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           fullWidth
           onClick={handleLogout}
           startIcon={<LogoutIcon />}
+          aria-label="Đăng xuất"
+          title="Đăng xuất"
         >
           Đăng xuất
         </MDButton>

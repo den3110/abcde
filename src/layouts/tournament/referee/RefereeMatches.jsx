@@ -65,8 +65,15 @@ export default function RefereeMatches() {
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   // danh sách trận của referee hiện tại
-  const { data: myMatches = [], isLoading, error, refetch } = useListRefereeMatchesQuery();
+  // const { data: myMatches = [], isLoading, error, refetch } = useListRefereeMatchesQuery();
+  const {
+    data: resp = { items: [], total: 0, page: 1, totalPages: 1 },
+    isLoading,
+    error,
+    refetch,
+  } = useListRefereeMatchesQuery({ page: 1, pageSize: 1000 }); // hoặc 200/500 tuỳ quy mô
 
+  const myMatches = resp.items ?? [];
   // socket realtime
   const socket = useSocket();
   useEffect(() => {
@@ -98,7 +105,7 @@ export default function RefereeMatches() {
 
   const filtered = useMemo(() => {
     const key = q.trim().toLowerCase();
-    const arr = (myMatches || []).filter((m) => {
+    const arr = myMatches.filter((m) => {
       const okStatus = status === "all" ? true : m.status === status;
       if (!okStatus) return false;
       if (!key) return true;
@@ -187,8 +194,8 @@ export default function RefereeMatches() {
                 <Box>
                   <Typography variant="h6">{detail?.tournament?.name}</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Bracket {detail?.bracket?.name} ({detail?.bracket?.type}) • Stage{" "}
-                    {detail?.bracket?.stage} • R{detail?.round} • #{detail?.order ?? 0}
+                    Nhánh {detail?.bracket?.name} ({detail?.bracket?.type}) • Giai đoạn{" "}
+                    {detail?.bracket?.stage} • Vòng {detail?.round} • Trận #{detail?.order ?? 0}
                   </Typography>
                 </Box>
                 <Chip size="small" color={chip.color} label={chip.label} />
@@ -369,8 +376,8 @@ export default function RefereeMatches() {
                           <Chip size="small" color={chip.color} label={chip.label} />
                         </Stack>
                         <Typography variant="body2" color="text.secondary">
-                          Bracket {m.bracket?.name} ({m.bracket?.type}) • Stage {m.bracket?.stage} •
-                          &nbsp;R{m.round} • #{m.order ?? 0}
+                          Nhánh {m.bracket?.name} ({m.bracket?.type}) • Giai đoạn {m.bracket?.stage}{" "}
+                          • &nbsp;Vòng {m.round} • Trận #{m.order ?? 0}
                         </Typography>
                         <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
                           {pairLabel(m.pairA, evType)} <span style={{ opacity: 0.6 }}>vs</span>{" "}

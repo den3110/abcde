@@ -9,17 +9,16 @@ import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
 import UserManagement from "layouts/user/UserListPage";
 
-// 🆕 Admin tournament pages
+// 🆕 Trang quản trị giải đấu
 import TournamentsListPage from "layouts/tournament/TournamentsListPage";
 import TournamentFormPage from "layouts/tournament/TournamentFormPage";
 import AdminTournamentRegistrations from "layouts/tournament/AdminTournamentRegistrations";
 import AdminBracketsPage from "layouts/tournament/AdminBracketsPage";
 
-// 🆕 Matches (admin)
+// 🆕 Trận đấu (admin)
 import AdminMatchesList from "layouts/match/AdminMatchesList";
 
-// 🆕 Referee
-
+// 🆕 Trọng tài
 import Icon from "@mui/material/Icon";
 import AdminTournamentMatches from "layouts/tournament/AdminTournamentMatches";
 import BracketViewPage from "layouts/tournament/BracketViewPage";
@@ -31,7 +30,7 @@ const routes = [
   // Dashboard
   {
     type: "collapse",
-    name: "Dashboard",
+    name: "Bảng điều khiển",
     key: "dashboard",
     icon: <Icon fontSize="small">dashboard</Icon>,
     route: "/dashboard",
@@ -39,11 +38,11 @@ const routes = [
     private: true,
   },
 
-  // Auth (ẩn)
+  // Xác thực (ẩn)
   {
     show: false,
     type: "collapse",
-    name: "Sign In",
+    name: "Đăng nhập",
     key: "sign-in",
     icon: <Icon fontSize="small">login</Icon>,
     route: "/authentication/sign-in",
@@ -52,17 +51,17 @@ const routes = [
   {
     show: false,
     type: "collapse",
-    name: "Sign Up",
+    name: "Đăng ký",
     key: "sign-up",
     icon: <Icon fontSize="small">assignment</Icon>,
     route: "/authentication/sign-up",
     component: <SignUp />,
   },
 
-  // User management (Admin)
+  // Quản lý người dùng (Admin)
   {
     type: "collapse",
-    name: "User Management",
+    name: "Quản lý người dùng",
     key: "user-management",
     icon: <Icon fontSize="small">people</Icon>,
     route: "/users",
@@ -71,10 +70,10 @@ const routes = [
     roles: ["admin"],
   },
 
-  // Tournaments (Admin)
+  // Giải đấu (Admin)
   {
     type: "collapse",
-    name: "Tournaments",
+    name: "Giải đấu",
     key: "tournaments",
     icon: <Icon fontSize="small">emoji_events</Icon>,
     route: "/admin/tournaments",
@@ -85,7 +84,7 @@ const routes = [
   {
     show: false,
     type: "collapse",
-    name: "Create Tournament",
+    name: "Tạo giải đấu",
     key: "tournament-new",
     route: "/admin/tournaments/new",
     component: <TournamentFormPage />,
@@ -95,7 +94,7 @@ const routes = [
   {
     show: false,
     type: "collapse",
-    name: "Edit Tournament",
+    name: "Sửa giải đấu",
     key: "tournament-edit",
     route: "/admin/tournaments/:id/edit",
     component: <TournamentFormPage />,
@@ -105,7 +104,7 @@ const routes = [
   {
     show: false,
     type: "collapse",
-    name: "Registrations",
+    name: "Danh sách đăng ký",
     key: "tournament-registrations",
     route: "/admin/tournaments/:id/registrations",
     component: <AdminTournamentRegistrations />,
@@ -113,11 +112,11 @@ const routes = [
     roles: ["admin"],
   },
 
-  // Brackets per tournament (Admin)
+  // Nhánh/Bảng đấu theo giải (Admin)
   {
     show: false,
     type: "collapse",
-    name: "Brackets",
+    name: "Nhánh/Bảng đấu",
     key: "tournament-brackets",
     route: "/admin/tournaments/:id/brackets",
     component: <AdminBracketsPage />,
@@ -125,10 +124,10 @@ const routes = [
     roles: ["admin"],
   },
 
-  // Matches (Admin)
+  // Trận đấu (Admin)
   {
     type: "collapse",
-    name: "Matches",
+    name: "Trận đấu",
     key: "admin-matches",
     icon: <Icon fontSize="small">sports_tennis</Icon>,
     route: "/admin/matches",
@@ -137,21 +136,11 @@ const routes = [
     roles: ["admin"],
   },
 
-  // Referee view
-  // {
-  //   type: "collapse",
-  //   name: "Referee",
-  //   key: "referee-matches",
-  //   icon: <Icon fontSize="small">sports_score</Icon>,
-  //   route: "/referee/matches",
-  //   component: <RefereeMatches />,
-  //   private: true,
-  //   roles: ["referee", "admin"],
-  // },
+  // Màn hình cho trọng tài và các view liên quan
   {
     show: false,
     type: "collapse",
-    name: "Tournament Matches",
+    name: "Trận đấu của giải",
     key: "tournament-matches",
     route: "/admin/tournaments/:id/matches",
     component: <AdminTournamentMatches />,
@@ -161,7 +150,7 @@ const routes = [
   {
     show: false,
     type: "collapse",
-    name: "Bracket View",
+    name: "Xem sơ đồ nhánh",
     key: "tournament-bracket-view",
     route: "/admin/tournaments/:id/bracket",
     component: <TournamentBracketView />,
@@ -171,7 +160,7 @@ const routes = [
   {
     show: false,
     type: "collapse",
-    name: "Referee Console (Match)",
+    name: "Bảng điều khiển trọng tài (Trận)",
     key: "admin-referee-console-match",
     route: "/admin/referee/matches/:matchId",
     component: <AdminRefereeConsole />,
@@ -181,7 +170,7 @@ const routes = [
   {
     show: false,
     type: "collapse",
-    name: "Referee Console",
+    name: "Bảng điều khiển trọng tài",
     key: "admin-referee-console",
     route: "/admin/referee/console",
     component: <AdminRefereeConsole />,
@@ -190,7 +179,7 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Referee",
+    name: "Trọng tài",
     key: "referee-matches",
     icon: <Icon fontSize="small">sports_score</Icon>,
     route: "/referee/matches",

@@ -218,11 +218,26 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
     }),
     // 1) danh sách trận được phân cho referee hiện tại
     listRefereeMatches: builder.query({
-      query: () => ({ url: `/referee/matches/assigned-to-me` }),
-      providesTags: (res = []) => [
-        ...res.map((m) => ({ type: "Match", id: m._id })),
-        { type: "Match", id: "ASSIGNED_LIST" },
-      ],
+      query: ({ page = 1, pageSize = 10 } = {}) => ({
+        url: `/referee/matches/assigned-to-me`,
+        params: { page, pageSize },
+      }),
+      // (khuyến nghị) Chuẩn hoá response -> luôn có shape phân trang
+      transformResponse: (res) => {
+        if (Array.isArray(res)) {
+          return { items: res, page: 1, pageSize: res.length, total: res.length, totalPages: 1 };
+        }
+        return res;
+      },
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        `${endpointName}-${queryArgs?.page || 1}-${queryArgs?.pageSize || 10}`,
+      providesTags: (result) =>
+        result?.items
+          ? [
+              ...result.items.map((m) => ({ type: "Match", id: m._id })),
+              { type: "Match", id: "ASSIGNED_LIST" },
+            ]
+          : [{ type: "Match", id: "ASSIGNED_LIST" }],
     }),
 
     // 3) referee cộng/trừ điểm (delta: +1|-1)
@@ -232,24 +247,34 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         method: "PATCH",
         body: { op: "inc", side, delta },
       }),
+
+      // ✅ Optimistic update chi tiết trận
       async onQueryStarted({ matchId, side, delta }, { dispatch, queryFulfilled }) {
-        // cập nhật lạc quan cache của getMatch(matchId)
+        const s = (side || "A").toUpperCase(); // chuẩn hoá
         const patch = dispatch(
           tournamentsApiSlice.util.updateQueryData("getMatch", matchId, (draft) => {
             if (!draft.gameScores || !draft.gameScores.length) {
               draft.gameScores = [{ a: 0, b: 0 }];
             }
             const i = Math.max(0, draft.gameScores.length - 1);
-            if (side === "A") draft.gameScores[i].a = (draft.gameScores[i].a || 0) + delta;
-            else draft.gameScores[i].b = (draft.gameScores[i].b || 0) + delta;
+            if (s === "A") {
+              const next = (draft.gameScores[i].a || 0) + delta;
+              draft.gameScores[i].a = Math.max(0, next); // tránh âm
+            } else {
+              const next = (draft.gameScores[i].b || 0) + delta;
+              draft.gameScores[i].b = Math.max(0, next);
+            }
           })
         );
         try {
-          await queryFulfilled; // ok thì giữ patch
+          await queryFulfilled; // giữ patch nếu OK
         } catch {
-          patch.undo(); // lỗi thì undo
+          patch.undo(); // rollback nếu lỗi
         }
       },
+
+      // ✅ Refetch lại getMatch(matchId) để đồng bộ với server
+      invalidatesTags: (_res, _err, { matchId }) => [{ type: "Match", id: matchId }],
     }),
 
     // (tuỳ chọn) set điểm tuyệt đối cho ván hiện tại

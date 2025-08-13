@@ -21,6 +21,7 @@ import {
   Snackbar,
   Alert,
   Zoom,
+  LinearProgress,
 } from "@mui/material";
 import {
   PlayArrow,
@@ -38,6 +39,7 @@ import { keyframes } from "@emotion/react";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
+import { Pagination } from "@mui/material";
 
 import {
   useListRefereeMatchesQuery,
@@ -175,20 +177,27 @@ function ScoreBurst({ show, color = "primary.main" }) {
 }
 
 export default function AdminRefereeConsole() {
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
   // Sidebar list
   const {
-    data: myMatches = [],
+    data: myMatchesResp = { items: [], total: 0, page: 1, totalPages: 1 },
     isLoading: listLoading,
     error: listErr,
     refetch: refetchList,
-  } = useListRefereeMatchesQuery();
+  } = useListRefereeMatchesQuery({ page, pageSize });
+
+  const myMatches = myMatchesResp.items ?? [];
+  const totalPages = myMatchesResp.totalPages || 1;
 
   const [selectedId, setSelectedId] = useState(null);
 
   // Detail
   const {
     data: match,
-    isFetching: detailFetching,
+    isLoading: detailLoading, // ✅ chỉ spinner lần đầu
+    isFetching: detailFetching, // ✅ refetch nền, không che UI
     error: detailErr,
     refetch: refetchDetail,
   } = useGetMatchQuery(selectedId, { skip: !selectedId });
@@ -209,20 +218,41 @@ export default function AdminRefereeConsole() {
 
     socket.emit("match:join", { matchId: selectedId });
 
+    // const onPatched = (payload) => {
+    //   if (payload?.matchId === selectedId) refetchDetail();
+    // };
+    // socket.on("match:patched", onPatched);
+    // socket.on("score:updated", onPatched);
+    // socket.on("status:updated", onPatched);
+    // socket.on("winner:updated", onPatched);
+    // socket.on("match:update", onPatched);
+    // socket.on("match:snapshot", onPatched);
     const onPatched = (payload) => {
-      if (payload?.matchId === selectedId) refetchDetail();
+      const id = payload?.matchId || payload?.data?._id || payload?._id;
+      if (id === selectedId) {
+        // nhẹ hơn refetch: cập nhật thẳng cache RTK Query (nếu muốn)
+        // dispatch(tournamentsApi.util.updateQueryData('getMatch', selectedId, (draft) => {
+        //   if (payload.data) Object.assign(draft, payload.data);
+        // }));
+        refetchDetail(); // hoặc giữ nguyên cách bạn đang làm
+      }
     };
-    socket.on("match:patched", onPatched);
-    socket.on("score:updated", onPatched);
+    // ⚠️ KHÔNG refetch theo score:updated (đã optimistic + invalidates)
     socket.on("status:updated", onPatched);
     socket.on("winner:updated", onPatched);
+    socket.on("match:patched", onPatched);
     socket.on("match:update", onPatched);
     socket.on("match:snapshot", onPatched);
 
     return () => {
       socket.emit("match:leave", { matchId: selectedId });
+      // socket.off("match:patched", onPatched);
+      // socket.off("score:updated", onPatched);
+      // socket.off("status:updated", onPatched);
+      // socket.off("winner:updated", onPatched);
+      // socket.off("match:update", onPatched);
+      // socket.off("match:snapshot", onPatched);
       socket.off("match:patched", onPatched);
-      socket.off("score:updated", onPatched);
       socket.off("status:updated", onPatched);
       socket.off("winner:updated", onPatched);
       socket.off("match:update", onPatched);
@@ -410,50 +440,62 @@ export default function AdminRefereeConsole() {
               Chưa có trận nào được phân.
             </Alert>
           ) : (
-            <List
-              dense
-              subheader={
-                <ListSubheader component="div">Nhấn để mở console chấm điểm</ListSubheader>
-              }
-              sx={{ maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}
-            >
-              {myMatches.map((m) => {
-                const chip = statusChip(m.status);
-                return (
-                  <ListItemButton
-                    key={m._id}
-                    selected={selectedId === m._id}
-                    onClick={() => setSelectedId(m._id)}
-                  >
-                    <ListItemText
-                      primary={
-                        <Stack direction="row" alignItems="center" spacing={1}>
-                          <Typography variant="body2" fontWeight={700}>
-                            {m.tournament?.name || "Giải ?"}
-                          </Typography>
-                          <Chip size="small" color={chip.color} label={chip.label} />
-                        </Stack>
-                      }
-                      secondary={
-                        <>
-                          <Typography variant="caption" display="block">
-                            Bracket: {m.bracket?.name} ({m.bracket?.type}) • Stage{" "}
-                            {m.bracket?.stage}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            R{m.round} • #{m.order ?? 0}
-                          </Typography>
-                          <Typography variant="caption" display="block">
-                            {pairLabel(m.pairA, m.tournament?.eventType)} vs{" "}
-                            {pairLabel(m.pairB, m.tournament?.eventType)}
-                          </Typography>
-                        </>
-                      }
-                    />
-                  </ListItemButton>
-                );
-              })}
-            </List>
+            <>
+              <List
+                dense
+                subheader={
+                  <ListSubheader component="div">Nhấn để mở console chấm điểm</ListSubheader>
+                }
+                sx={{ maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}
+              >
+                {myMatches.map((m) => {
+                  const chip = statusChip(m.status);
+                  return (
+                    <ListItemButton
+                      key={m._id}
+                      selected={selectedId === m._id}
+                      onClick={() => setSelectedId(m._id)}
+                    >
+                      <ListItemText
+                        primary={
+                          <Stack direction="row" alignItems="center" spacing={1}>
+                            <Typography variant="body2" fontWeight={700}>
+                              {m.tournament?.name || "Giải ?"}
+                            </Typography>
+                            <Chip size="small" color={chip.color} label={chip.label} />
+                          </Stack>
+                        }
+                        secondary={
+                          <>
+                            <Typography variant="caption" display="block">
+                              Bracket: {m.bracket?.name} ({m.bracket?.type}) • Stage{" "}
+                              {m.bracket?.stage}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              R{m.round} • #{m.order ?? 0}
+                            </Typography>
+                            <Typography variant="caption" display="block">
+                              {pairLabel(m.pairA, m.tournament?.eventType)} vs{" "}
+                              {pairLabel(m.pairB, m.tournament?.eventType)}
+                            </Typography>
+                          </>
+                        }
+                      />
+                    </ListItemButton>
+                  );
+                })}
+              </List>
+              {/* Pagination */}
+              <Box display="flex" justifyContent="center" py={1}>
+                <Pagination
+                  count={totalPages}
+                  page={page}
+                  onChange={(_, val) => setPage(val)}
+                  size="small"
+                  color="primary"
+                />
+              </Box>
+            </>
           )}
         </Card>
 
@@ -462,7 +504,7 @@ export default function AdminRefereeConsole() {
           <Box display="grid" placeItems="center" minHeight={400}>
             <Typography>Chọn một trận ở bên trái để bắt đầu chấm điểm.</Typography>
           </Box>
-        ) : detailFetching ? (
+        ) : detailLoading && !match ? (
           <Box textAlign="center" py={6}>
             {/* Ẩn đi để tăng ux */}
             <CircularProgress />
@@ -474,7 +516,12 @@ export default function AdminRefereeConsole() {
         ) : (
           <Stack spacing={2}>
             {/* Header */}
-            <Card sx={{ p: 2 }}>
+            <Card sx={{ p: 2, position: "relative" }}>
+              {detailFetching && (
+                <>
+                  {/* <LinearProgress sx={{ position: "absolute", left: 0, right: 0, top: 0 }} /> */}
+                </>
+              )}
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Box>
                   <Typography variant="h5" fontWeight={700}>
@@ -482,12 +529,12 @@ export default function AdminRefereeConsole() {
                     {pairLabel(match.pairB, eventType)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {match.tournament?.name} • Bracket {match.bracket?.name} ({match.bracket?.type})
-                    • Stage {match.bracket?.stage} • R{match.round} • #{match.order ?? 0}
+                    {match.tournament?.name} • Nhánh {match.bracket?.name} ({match.bracket?.type}) •
+                    Giai đoạn {match.bracket?.stage} • Ván {match.round} • Trận #{match.order ?? 0}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Best-of {rules.bestOf} • Tới {rules.pointsToWin}{" "}
-                    {rules.winByTwo ? "(phải chênh 2)" : "(không cần chênh 2)"}
+                    Thắng {Math.ceil(rules.bestOf / 2)}/{rules.bestOf} ván • Tới {rules.pointsToWin}{" "}
+                    điểm {rules.winByTwo ? "(phải hơn 2 điểm)" : "(không cần hơn 2 điểm)"}
                   </Typography>
                 </Box>
                 <Stack direction="row" spacing={1} alignItems="center">
@@ -522,7 +569,12 @@ export default function AdminRefereeConsole() {
             </Card>
 
             {/* Big scoreboard */}
-            <Card sx={{ p: 2 }}>
+            <Card sx={{ p: 2, position: "relative" }}>
+              {detailFetching && (
+                <>
+                  {/* <LinearProgress sx={{ position: "absolute", left: 0, right: 0, top: 0 }} /> */}
+                </>
+              )}
               <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="stretch">
                 {/* Team A */}
                 <Paper

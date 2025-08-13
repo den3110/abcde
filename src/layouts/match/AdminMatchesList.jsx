@@ -171,8 +171,13 @@ const BracketSection = memo(function BracketSection({
                         : m.status === "live"
                         ? "Đang diễn ra"
                         : "Đã kết thúc"}
-                      {" • "}best-of {m?.rules?.bestOf ?? "-"}, tới {m?.rules?.pointsToWin ?? "-"} (
-                      {m?.rules?.winByTwo ? "cần chênh 2" : "không cần chênh 2"})
+                      {" • "}
+                      Thắng{" "}
+                      {m?.rules?.bestOf
+                        ? Math.ceil(m.rules.bestOf / 2) + "/" + m.rules.bestOf
+                        : "-"}{" "}
+                      ván, tới {m?.rules?.pointsToWin ?? "-"} điểm (
+                      {m?.rules?.winByTwo ? "phải hơn 2 điểm" : "không cần hơn 2 điểm"})
                     </Typography>
                     <Typography variant="caption" display="block" color="text.secondary">
                       Trọng tài: {m?.referee?.name || "Chưa phân"}

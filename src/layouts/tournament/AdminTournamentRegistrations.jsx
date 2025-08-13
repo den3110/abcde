@@ -107,7 +107,7 @@ export default function AdminTournamentRegistrations() {
     if (regsError) {
       showSnack("error", regsError?.data?.message || regsError.error);
     } else if (!regsLoading) {
-      showSnack("info", `Loaded ${regs.length} registration${regs.length === 1 ? "" : "s"}`);
+      showSnack("info", `Đã tải ${regs.length} lượt đăng ký`);
     }
   }, [regsLoading, regsError, regs.length]);
 
@@ -116,10 +116,13 @@ export default function AdminTournamentRegistrations() {
     const next = reg.payment.status === "Paid" ? "Unpaid" : "Paid";
     try {
       await updatePay({ regId: reg._id, status: next }).unwrap();
-      showSnack("success", next === "Paid" ? "Payment confirmed" : "Payment undone");
+      showSnack(
+        "success",
+        next === "Paid" ? "Đã xác nhận thanh toán" : "Đã huỷ xác nhận thanh toán"
+      );
       refetch();
     } catch (err) {
-      showSnack("error", err?.data?.message || err.error || "Update failed");
+      showSnack("error", err?.data?.message || err.error || "Cập nhật thất bại");
     }
   };
 
@@ -127,11 +130,11 @@ export default function AdminTournamentRegistrations() {
     if (!confirmDel) return;
     try {
       await deleteReg(confirmDel._id).unwrap();
-      showSnack("success", "Registration deleted");
+      showSnack("success", "Đã xoá đăng ký");
       setConfirmDel(null);
       refetch();
     } catch (err) {
-      showSnack("error", err?.data?.message || err.error || "Delete failed");
+      showSnack("error", err?.data?.message || err.error || "Xoá thất bại");
     }
   };
 
@@ -202,13 +205,13 @@ export default function AdminTournamentRegistrations() {
   const columns = useMemo(() => {
     const base = [
       { Header: "#", accessor: "idx", align: "center", width: "6%" },
-      { Header: isSingles ? "Athlete" : "Athlete 1", accessor: "ath1" },
+      { Header: isSingles ? "Vận động viên" : "Vận động viên 1", accessor: "ath1" },
     ];
-    if (!isSingles) base.push({ Header: "Athlete 2", accessor: "ath2" });
+    if (!isSingles) base.push({ Header: "Vận động viên 2", accessor: "ath2" });
     base.push(
-      { Header: "Created", accessor: "created" },
-      { Header: "Fee", accessor: "fee", align: "center" },
-      { Header: "Actions", accessor: "act", align: "center" }
+      { Header: "Ngày đăng ký", accessor: "created" },
+      { Header: "Lệ phí", accessor: "fee", align: "center" },
+      { Header: "Thao tác", accessor: "act", align: "center" }
     );
     return base;
   }, [isSingles]);
@@ -226,7 +229,7 @@ export default function AdminTournamentRegistrations() {
           <Chip
             size="small"
             color={r.payment.status === "Paid" ? "success" : "default"}
-            label={r.payment.status}
+            label={r.payment.status === "Paid" ? "Đã thanh toán" : "Chưa thanh toán"}
           />
         ),
         act: (
@@ -234,11 +237,13 @@ export default function AdminTournamentRegistrations() {
             <IconButton
               color={r.payment.status === "Paid" ? "error" : "success"}
               onClick={() => handleToggle(r)}
-              title={r.payment.status === "Paid" ? "Mark unpaid" : "Confirm payment"}
+              title={
+                r.payment.status === "Paid" ? "Đánh dấu chưa thanh toán" : "Xác nhận thanh toán"
+              }
             >
               {r.payment.status === "Paid" ? <MoneyOff /> : <Paid />}
             </IconButton>
-            <IconButton color="error" onClick={() => setConfirmDel(r)} title="Delete registration">
+            <IconButton color="error" onClick={() => setConfirmDel(r)} title="Xoá đăng ký">
               <DeleteIcon />
             </IconButton>
           </>
@@ -255,10 +260,10 @@ export default function AdminTournamentRegistrations() {
       {/* header */}
       <MDBox px={3} pt={3}>
         <Stack direction="row" spacing={1} alignItems="center" mb={1}>
-          <IconButton onClick={() => nav(-1)}>
+          <IconButton onClick={() => nav(-1)} aria-label="Quay lại">
             <ArrowBack />
           </IconButton>
-          <MDTypography variant="h5">Registrations</MDTypography>
+          <MDTypography variant="h5">Danh sách đăng ký</MDTypography>
         </Stack>
         {tour && (
           <Typography variant="caption" color="text.secondary" fontSize={16}>
@@ -294,7 +299,7 @@ export default function AdminTournamentRegistrations() {
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label="Tìm user theo SĐT / nickName / email"
+                    label="Tìm người dùng theo SĐT / nickname / email"
                     placeholder="Nhập để tìm…"
                   />
                 )}
@@ -404,7 +409,7 @@ export default function AdminTournamentRegistrations() {
                   <Chip
                     size="small"
                     color={r.payment.status === "Paid" ? "success" : "default"}
-                    label={r.payment.status}
+                    label={r.payment.status === "Paid" ? "Đã thanh toán" : "Chưa thanh toán"}
                   />
                 </Stack>
 
@@ -435,15 +440,15 @@ export default function AdminTournamentRegistrations() {
                     <IconButton
                       color={r.payment.status === "Paid" ? "error" : "success"}
                       onClick={() => handleToggle(r)}
-                      title={r.payment.status === "Paid" ? "Mark unpaid" : "Confirm payment"}
+                      title={
+                        r.payment.status === "Paid"
+                          ? "Đánh dấu chưa thanh toán"
+                          : "Xác nhận thanh toán"
+                      }
                     >
                       {r.payment.status === "Paid" ? <MoneyOff /> : <Paid />}
                     </IconButton>
-                    <IconButton
-                      color="error"
-                      onClick={() => setConfirmDel(r)}
-                      title="Delete registration"
-                    >
+                    <IconButton color="error" onClick={() => setConfirmDel(r)} title="Xoá đăng ký">
                       <DeleteIcon />
                     </IconButton>
                   </Stack>
@@ -493,7 +498,7 @@ export default function AdminTournamentRegistrations() {
 
       {/* Confirm delete */}
       <Dialog open={!!confirmDel} onClose={() => setConfirmDel(null)}>
-        <DialogTitle>Delete registration?</DialogTitle>
+        <DialogTitle>Xoá đăng ký?</DialogTitle>
         <DialogContent>
           {isSingles ? (
             <>
