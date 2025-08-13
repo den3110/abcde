@@ -51,7 +51,7 @@ import {
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
 
-/* ===== Helpers cho đơn/đôi ===== */
+/* ===== Helpers cho đơn/đôi (giữ nguyên) ===== */
 function normType(t) {
   const s = String(t || "").toLowerCase();
   if (s === "single" || s === "singles") return "single";
@@ -70,7 +70,7 @@ export default function AdminBracketsPage() {
   const { id: tournamentId } = useParams();
   const navigate = useNavigate();
 
-  // 1) Thông tin giải
+  // 1) Thông tin giải (giữ nguyên)
   const {
     data: tournament,
     isLoading: loadingT,
@@ -79,23 +79,24 @@ export default function AdminBracketsPage() {
 
   const evType = normType(tournament?.eventType);
   const isSingles = evType === "single";
-  // 2b) Danh sách trọng tài (role=referee)
+
+  // 2b) Danh sách trọng tài (giữ nguyên)
   const {
     data: usersData,
     isLoading: refsLoading,
     error: refsError,
   } = useGetUsersQuery({ page: 1, keyword: "", role: "referee" });
   const referees = usersData?.users ?? [];
-
   const refName = (u) => u?.fullName || u?.name || u?.email || "Referee";
-  // 2) Các cặp đăng ký
+
+  // 2) Các cặp đăng ký (giữ nguyên)
   const {
     data: registrations = [],
     isLoading: regsLoading,
     error: regsError,
   } = useGetRegistrationsQuery(tournamentId);
 
-  // 3) Danh sách bracket
+  // 3) Danh sách bracket (giữ nguyên)
   const {
     data: brackets = [],
     isLoading: loadingB,
@@ -103,7 +104,7 @@ export default function AdminBracketsPage() {
     refetch: refetchBrackets,
   } = useListBracketsQuery(tournamentId);
 
-  // 4) Toàn bộ match (lọc theo giải)
+  // 4) Toàn bộ match (lọc theo giải) (giữ nguyên)
   const {
     data: allMatches = [],
     isLoading: loadingM,
@@ -116,7 +117,7 @@ export default function AdminBracketsPage() {
     [allMatches, tournamentId]
   );
 
-  // Mutations
+  // Mutations (giữ nguyên)
   const [createBracket] = useCreateBracketMutation();
   const [deleteBracket] = useDeleteBracketMutation();
   const [createMatch] = useCreateMatchMutation();
@@ -125,11 +126,11 @@ export default function AdminBracketsPage() {
   const [updateMatch] = useUpdateMatchMutation();
   const [resetMatchChain] = useResetMatchChainMutation();
 
-  // Snackbar
+  // Snackbar (giữ nguyên)
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
 
-  // =============== Dialog tạo Bracket ===============
+  // =============== Dialog tạo Bracket (giữ nguyên) ===============
   const [bracketDlg, setBracketDlg] = useState(false);
   const [newBracketName, setNewBracketName] = useState("");
   const [newBracketType, setNewBracketType] = useState("knockout");
@@ -144,14 +145,16 @@ export default function AdminBracketsPage() {
   const [newRound, setNewRound] = useState(1);
   const [newOrder, setNewOrder] = useState(0);
   const [newReferee, setNewReferee] = useState("");
-  // =============== Dialog tạo Vòng sau (chọn đội thủ công) ===============
+
+  const [newRatingDelta, setNewRatingDelta] = useState(0); // NEW: delta khi tạo match
+
+  // =============== Dialog tạo Vòng sau (giữ nguyên) ===============
   const [nextDlg, setNextDlg] = useState(false);
   const [nextDlgBracket, setNextDlgBracket] = useState(null);
   const [nextRound, setNextRound] = useState(2);
-  // pairs = [{ leftMatch, rightMatch, aRegId, bRegId }]
   const [pairs, setPairs] = useState([]);
 
-  // =============== Dialog sửa Bracket ===============
+  // =============== Dialog sửa Bracket (giữ nguyên) ===============
   const [editBracketDlg, setEditBracketDlg] = useState(false);
   const [ebId, setEbId] = useState("");
   const [ebName, setEbName] = useState("");
@@ -174,9 +177,14 @@ export default function AdminBracketsPage() {
   const [emOldWinner, setEmOldWinner] = useState("");
   const [emCascade, setEmCascade] = useState(false);
   const [emReferee, setEmReferee] = useState("");
-  // Nhóm match theo bracket
+
+  const [emRatingDelta, setEmRatingDelta] = useState(0); // NEW: delta khi sửa match
+  const [emRatingApplied, setEmRatingApplied] = useState(false); // NEW: đã áp dụng?
+  const [emRatingAppliedAt, setEmRatingAppliedAt] = useState(null); // NEW: thời điểm áp dụng
+
+  // Nhóm match theo bracket (giữ nguyên)
   const grouped = useMemo(() => {
-    const key = (x) => String(x?._id ?? x); // normalize id
+    const key = (x) => String(x?._id ?? x);
     const m = {};
     brackets.forEach((b) => (m[key(b._id)] = []));
     matches.forEach((mt) => {
@@ -189,7 +197,7 @@ export default function AdminBracketsPage() {
     return m;
   }, [brackets, matches]);
 
-  // =============== Handlers tạo/xoá ===============
+  // =============== Handlers tạo/xoá (giữ nguyên ngoài phần NEW) ===============
   const handleCreateBracket = async () => {
     if (!newBracketName.trim()) return showSnack("error", "Tên bracket không được để trống");
     try {
@@ -232,6 +240,7 @@ export default function AdminBracketsPage() {
     setNewRound(1);
     setNewOrder(0);
     setNewReferee("");
+    setNewRatingDelta(0); // NEW
     setMatchDlg(true);
   };
 
@@ -249,6 +258,7 @@ export default function AdminBracketsPage() {
           pairB,
           rules,
           referee: newReferee || undefined,
+          ratingDelta: Math.max(0, Number(newRatingDelta) || 0), // NEW: gửi delta
         },
       }).unwrap();
       showSnack("success", "Đã tạo trận");
@@ -270,7 +280,7 @@ export default function AdminBracketsPage() {
     }
   };
 
-  // ======== “Tạo vòng sau (chọn đội)” ========
+  // ======== “Tạo vòng sau (chọn đội)” (giữ nguyên) ========
   const openNextRoundDialog = (br) => {
     try {
       const k = (x) => String(x?._id ?? x);
@@ -313,7 +323,7 @@ export default function AdminBracketsPage() {
     }
   };
 
-  // ======== Mở/Sửa Bracket ========
+  // ======== Mở/Sửa Bracket (giữ nguyên) ========
   const openEditBracket = (br) => {
     setEbId(br._id);
     setEbName(br.name || "");
@@ -344,7 +354,7 @@ export default function AdminBracketsPage() {
     }
   };
 
-  // ======== Mở/Sửa Match ========
+  // ======== Mở/Sửa Match (có thêm phần NEW) ========
   const openEditMatch = (mt) => {
     setEmId(mt._id);
     setEmBracketId(mt.bracket?._id || mt.bracket);
@@ -363,6 +373,11 @@ export default function AdminBracketsPage() {
     setEmOldWinner(mt.winner || "");
     setEmCascade(false);
     setEmReferee(mt.referee?._id || mt.referee || "");
+
+    setEmRatingDelta(mt.ratingDelta ?? 0); // NEW
+    setEmRatingApplied(!!mt.ratingApplied); // NEW
+    setEmRatingAppliedAt(mt.ratingAppliedAt || null); // NEW
+
     setEditMatchDlg(true);
   };
 
@@ -391,11 +406,11 @@ export default function AdminBracketsPage() {
           status: emStatus,
           winner: emStatus === "finished" ? emWinner : "",
           referee: emReferee || null,
+          ratingDelta: Math.max(0, Number(emRatingDelta) || 0), // NEW: cập nhật delta
         },
       }).unwrap();
 
       if (emCascade) {
-        // ⬇️ sửa: truyền object { matchId }
         await resetMatchChain({ matchId: emId }).unwrap();
       }
 
@@ -407,10 +422,12 @@ export default function AdminBracketsPage() {
     }
   };
 
+  // (giữ nguyên)
   const loading = loadingT || regsLoading || loadingB || loadingM;
   const errorMsg = errorT || regsError || errorB || errorM;
   const idOf = (x) => String(x?._id ?? x);
 
+  // (giữ nguyên)
   const getSideLabel = (mt, side) => {
     const pair = side === "A" ? mt?.pairA : mt?.pairB;
     if (pair) return regName(pair, evType);
@@ -450,7 +467,7 @@ export default function AdminBracketsPage() {
           </Alert>
         ) : (
           <>
-            {/* Thông tin giải */}
+            {/* Thông tin giải (giữ nguyên) */}
             <Typography variant="h6" gutterBottom>
               {tournament.name} ({new Date(tournament.startDate).toLocaleDateString()} –{" "}
               {new Date(tournament.endDate).toLocaleDateString()}) •{" "}
@@ -458,7 +475,7 @@ export default function AdminBracketsPage() {
             </Typography>
             <Divider sx={{ mb: 2 }} />
 
-            {/* Nút tạo Bracket / Xem sơ đồ */}
+            {/* Nút tạo Bracket / Xem sơ đồ (giữ nguyên) */}
             <Button
               startIcon={<AddIcon />}
               variant="contained"
@@ -476,7 +493,7 @@ export default function AdminBracketsPage() {
               Xem Sơ đồ giải
             </Button>
 
-            {/* Danh sách Brackets & Matches */}
+            {/* Danh sách Brackets & Matches (giữ nguyên ngoài phần hiển thị Δ) */}
             <Stack spacing={3}>
               {brackets.map((br) => (
                 <Card key={br._id} variant="outlined" sx={{ p: 2 }}>
@@ -534,6 +551,14 @@ export default function AdminBracketsPage() {
                                   : referees.find((r) => r._id === mt.referee)?.name || mt.referee}
                               </>
                             )}
+                            {/* NEW: hiện Δ điểm và trạng thái đã áp dụng */}
+                            {typeof mt.ratingDelta !== "undefined" && (
+                              <>
+                                {" "}
+                                — Δ: {mt.ratingDelta ?? 0}
+                                {mt.ratingApplied ? " (đã áp dụng)" : ""}
+                              </>
+                            )}
                           </Typography>
                         </Box>
 
@@ -561,7 +586,7 @@ export default function AdminBracketsPage() {
         )}
       </Box>
 
-      {/* Dialog tạo Bracket */}
+      {/* Dialog tạo Bracket (giữ nguyên) */}
       <Dialog open={bracketDlg} onClose={() => setBracketDlg(false)} fullWidth maxWidth="sm">
         <DialogTitle>Tạo Bracket mới</DialogTitle>
         <DialogContent>
@@ -605,7 +630,7 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog tạo Match đơn lẻ */}
+      {/* Dialog tạo Match đơn lẻ (thêm ô nhập Δ) */}
       <Dialog open={matchDlg} onClose={() => setMatchDlg(false)} fullWidth maxWidth="sm">
         <DialogTitle>Tạo trận đấu</DialogTitle>
         <DialogContent>
@@ -668,6 +693,7 @@ export default function AdminBracketsPage() {
                 </MenuItem>
               ))}
             </TextField>
+
             <TextField
               select
               fullWidth
@@ -690,6 +716,7 @@ export default function AdminBracketsPage() {
                 </MenuItem>
               ))}
             </TextField>
+
             <Grid container spacing={2} mt={1} p={2}>
               <Grid item xs={4}>
                 <TextField
@@ -745,6 +772,19 @@ export default function AdminBracketsPage() {
                   <MenuItem value="no">Không</MenuItem>
                 </TextField>
               </Grid>
+
+              {/* NEW: nhập Δ điểm */}
+              <Grid item xs={12}>
+                <TextField
+                  label="Điểm cộng/trừ (rating delta)"
+                  type="number"
+                  fullWidth
+                  value={newRatingDelta}
+                  onChange={(e) => setNewRatingDelta(Math.max(0, Number(e.target.value) || 0))}
+                  inputProps={{ min: 0, step: 1 }}
+                  helperText="Cộng cho đội thắng, trừ đội thua. 0 = không áp dụng."
+                />
+              </Grid>
             </Grid>
           </Stack>
         </DialogContent>
@@ -760,7 +800,7 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog SỬA Match */}
+      {/* Dialog SỬA Match (thêm ô Δ + cảnh báo áp dụng) */}
       <Dialog open={editMatchDlg} onClose={() => setEditMatchDlg(false)} fullWidth maxWidth="sm">
         <DialogTitle>Sửa trận</DialogTitle>
         <DialogContent>
@@ -779,6 +819,7 @@ export default function AdminBracketsPage() {
                 onChange={(e) => setEmOrder(Math.max(0, Number(e.target.value)))}
               />
             </Stack>
+
             <TextField
               select
               fullWidth
@@ -800,6 +841,7 @@ export default function AdminBracketsPage() {
                 </MenuItem>
               ))}
             </TextField>
+
             <TextField
               select
               fullWidth
@@ -899,6 +941,28 @@ export default function AdminBracketsPage() {
                   <MenuItem value="no">Không</MenuItem>
                 </TextField>
               </Grid>
+
+              {/* NEW: nhập & cảnh báo Δ điểm */}
+              <Grid item xs={12}>
+                <TextField
+                  label="Điểm cộng/trừ (rating delta)"
+                  type="number"
+                  fullWidth
+                  value={emRatingDelta}
+                  onChange={(e) => setEmRatingDelta(Math.max(0, Number(e.target.value) || 0))}
+                  inputProps={{ min: 0, step: 1 }}
+                  helperText="Áp dụng khi set trận 'finished' + có 'winner'. 0 = không áp dụng."
+                />
+                {emRatingApplied && (
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    Điểm đã được áp dụng vào lịch sử (ratingApplied).{" "}
+                    {emRatingAppliedAt
+                      ? `Thời điểm: ${new Date(emRatingAppliedAt).toLocaleString()}`
+                      : ""}
+                    . Việc chỉnh “Δ” sau khi đã áp dụng sẽ không tự động sửa lại lịch sử cũ.
+                  </Alert>
+                )}
+              </Grid>
             </Grid>
 
             <Stack direction="row" spacing={2}>
@@ -978,10 +1042,13 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: Tạo vòng sau (chọn đội thủ công) */}
+      {/* Dialog: Tạo vòng sau (giữ nguyên) */}
       <Dialog open={nextDlg} onClose={() => setNextDlg(false)} fullWidth maxWidth="md">
         <DialogTitle>Tạo vòng {nextRound} (chọn đội)</DialogTitle>
         <DialogContent>
+          {/* ...giữ nguyên toàn bộ nội dung tạo vòng sau... */}
+          {/* (Không đổi gì phần logic cũ) */}
+          {/* BEGIN giữ nguyên */}
           {!nextDlgBracket ? (
             <Alert severity="warning">Chưa chọn bracket</Alert>
           ) : (
@@ -1137,6 +1204,7 @@ export default function AdminBracketsPage() {
               </Stack>
             </>
           )}
+          {/* END giữ nguyên */}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setNextDlg(false)}>Huỷ</Button>
@@ -1145,8 +1213,9 @@ export default function AdminBracketsPage() {
             variant="contained"
             disabled={!canCreateNext}
             onClick={async () => {
-              if (!nextDlgBracket) return;
+              // (giữ nguyên logic tạo vòng sau)
               try {
+                if (!nextDlgBracket) return;
                 let created = 0;
                 const idOf = (x) => String(x?._id ?? x);
 
@@ -1224,6 +1293,8 @@ export default function AdminBracketsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Dialog Sửa Bracket (giữ nguyên) */}
       <Dialog
         open={editBracketDlg}
         onClose={() => setEditBracketDlg(false)}
@@ -1282,7 +1353,7 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar */}
+      {/* Snackbar (giữ nguyên) */}
       <Snackbar
         open={snack.open}
         autoHideDuration={3000}

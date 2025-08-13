@@ -238,7 +238,7 @@ export default function AdminRefereeConsole() {
   /* ===== derived from detail ===== */
   const rules = match?.rules || { bestOf: 3, pointsToWin: 11, winByTwo: true };
   const eventType = (match?.tournament?.eventType || "double").toLowerCase();
-  console.log("eventType", eventType);
+  // console.log("eventType", eventType);
   const isSingles = eventType === "single";
   const isDoubles = !isSingles;
   const gs = match?.gameScores || [];
@@ -464,6 +464,7 @@ export default function AdminRefereeConsole() {
           </Box>
         ) : detailFetching ? (
           <Box textAlign="center" py={6}>
+            {/* Ẩn đi để tăng ux */}
             <CircularProgress />
           </Box>
         ) : detailErr ? (
@@ -713,7 +714,13 @@ export default function AdminRefereeConsole() {
                   </Paper>
 
                   {/* Optional: đổi giao thủ công nếu cần */}
-                  <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    flexWrap="wrap"
+                    alignItems="center"
+                    sx={{ rowGap: 1 }}
+                  >
                     <Button
                       size="small"
                       variant="outlined"
