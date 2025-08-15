@@ -151,6 +151,18 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
           ? [...result.map((m) => ({ type: "Match", id: m._id })), { type: "Match", id: "LIST" }]
           : [{ type: "Match", id: "LIST" }],
     }),
+    // slices/tournamentsApiSlice.js
+    listAllMatchesTournament: builder.query({
+      // params: { tournament?, bracket?, status? }
+      query: (params = {}) => {
+        const qs = new URLSearchParams(params).toString();
+        return `/admin/matches/all${qs ? `?${qs}` : ""}`;
+      },
+      providesTags: (result = []) =>
+        result
+          ? [...result.map((m) => ({ type: "Match", id: m._id })), { type: "Match", id: "LIST" }]
+          : [{ type: "Match", id: "LIST" }],
+    }),
     getMatch: builder.query({
       query: (matchId) => `/admin/matches/${matchId}`,
       providesTags: (r, e, id) => [{ type: "Match", id }],
@@ -337,6 +349,70 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (res, err, { tournamentId }) => [{ type: "TManager", id: tournamentId }],
     }),
+    // GET /api/tournaments?sportType=&groupId=&status=&q=
+    getTournaments: builder.query({
+      query: ({ sportType, groupId, status, q } = {}) => {
+        const params = new URLSearchParams();
+        if (sportType !== undefined && sportType !== null && sportType !== "") {
+          params.set("sportType", sportType);
+        }
+        if (groupId !== undefined && groupId !== null && groupId !== "") {
+          params.set("groupId", groupId);
+        }
+        if (status) params.set("status", status);
+        if (q) params.set("q", q);
+
+        const qs = params.toString();
+        return `/admin/tournaments${qs ? `?${qs}` : ""}`;
+      },
+      transformResponse: (res) => {
+        // chấp mọi kiểu trả về phổ biến: [], {tournaments:[]}, {list:[]}
+        if (Array.isArray(res)) return { tournaments: res };
+        if (res?.tournaments && Array.isArray(res.tournaments)) {
+          return { tournaments: res.tournaments, total: res.total };
+        }
+        if (res?.list && Array.isArray(res.list)) {
+          return { tournaments: res.list, total: res.total };
+        }
+        return { tournaments: [] };
+      },
+      providesTags: (result) =>
+        result?.tournaments
+          ? [
+              ...result.tournaments.map((t) => ({
+                type: "Tournaments",
+                id: t._id || t.id,
+              })),
+              { type: "Tournaments", id: "LIST" },
+            ]
+          : [{ type: "Tournaments", id: "LIST" }],
+      // tránh cache đè khi đổi filter
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        `${endpointName}:${JSON.stringify(queryArgs || {})}`,
+    }),
+
+    // GET /api/tournaments/:id/brackets
+    listTournamentBrackets: builder.query({
+      query: (tournamentId) => ({
+        url: `/admin/tournaments/${tournamentId}/brackets`,
+        method: "GET",
+      }),
+      transformResponse: (res) => {
+        if (Array.isArray(res)) return res;
+        if (res?.brackets && Array.isArray(res.brackets)) return res.brackets;
+        if (res?.list && Array.isArray(res.list)) return res.list;
+        return [];
+      },
+      providesTags: (result, error, tournamentId) => [
+        { type: "Brackets", id: `T_${tournamentId}` },
+        ...(Array.isArray(result)
+          ? result.map((b) => ({ type: "Bracket", id: b._id || b.id }))
+          : []),
+      ],
+      // key theo tournamentId để cache chuẩn
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        `${endpointName}:${String(queryArgs || "")}`,
+    }),
   }),
 });
 
@@ -378,4 +454,7 @@ export const {
   useListTournamentManagersQuery,
   useAddTournamentManagerMutation,
   useRemoveTournamentManagerMutation,
+  useGetTournamentsQuery,
+  useListTournamentBracketsQuery,
+  useListAllMatchesTournamentQuery,
 } = tournamentsApiSlice;

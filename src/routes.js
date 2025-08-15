@@ -21,10 +21,13 @@ import AdminMatchesList from "layouts/match/AdminMatchesList";
 // 🆕 Trọng tài
 import Icon from "@mui/material/Icon";
 import AdminTournamentMatches from "layouts/tournament/AdminTournamentMatches";
-import BracketViewPage from "layouts/tournament/BracketViewPage";
 import TournamentBracketView from "layouts/tournament/TournamentBracketView";
 import AdminRefereeConsole from "layouts/tournament/referee/AdminRefereeConsole";
 import RefereeMatches from "layouts/tournament/referee/RefereeMatches";
+
+// 🆕 Cấu hình thuật toán bốc thăm (Admin)
+import AlgoSettingsPage from "layouts/tournament/AlgoSettingsPage"; // <— THÊM DÒNG NÀY
+// nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
   // Dashboard
@@ -136,6 +139,18 @@ const routes = [
     roles: ["admin"],
   },
 
+  // 🆕 Tham số thuật toán (Admin)
+  {
+    type: "collapse",
+    name: "Tham số thuật toán",
+    key: "algo-settings",
+    icon: <Icon fontSize="small">tune</Icon>,
+    route: "/admin/algo-settings",
+    component: <AlgoSettingsPage />,
+    private: true,
+    roles: ["admin"],
+  },
+
   // Màn hình cho trọng tài và các view liên quan
   {
     show: false,
@@ -185,7 +200,7 @@ const routes = [
     route: "/referee/matches",
     component: <RefereeMatches />,
     private: true,
-    roles: ["referee"], // chỉ trọng tài thấy
+    roles: ["referee"],
   },
 ];
 
