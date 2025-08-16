@@ -30,13 +30,15 @@ import {
   Delete as DeleteIcon,
   TableChart as TableChartIcon,
   Edit as EditIcon,
+  TravelExplore as ExploreIcon,
 } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
+import { skipToken } from "@reduxjs/toolkit/query";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
-import { useResetMatchChainMutation } from "slices/tournamentsApiSlice";
 
+/* ===== existing slices ===== */
 import {
   useGetTournamentQuery,
   useGetRegistrationsQuery,
@@ -48,8 +50,17 @@ import {
   useDeleteMatchMutation,
   useUpdateBracketMutation,
   useUpdateMatchMutation,
+  useResetMatchChainMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
+
+/* ===== progression slice (mới) ===== */
+import {
+  useListSourcesForTargetQuery,
+  usePreviewAdvancementMutation,
+  useCommitAdvancementMutation,
+  usePrefillAdvancementMutation,
+} from "slices/progressionApiSlice";
 
 /* ===== Helpers cho đơn/đôi ===== */
 function normType(t) {
@@ -96,6 +107,14 @@ export default function AdminBracketsPage() {
     error: regsError,
   } = useGetRegistrationsQuery(tournamentId);
 
+  // reg index for fast lookup
+  const idOf = (x) => String(x?._id ?? x);
+  const regIndex = useMemo(() => {
+    const m = new Map();
+    (registrations || []).forEach((r) => m.set(idOf(r._id), r));
+    return m;
+  }, [registrations]);
+
   // 4) Danh sách bracket
   const {
     data: brackets = [],
@@ -121,17 +140,35 @@ export default function AdminBracketsPage() {
   const [updateMatch] = useUpdateMatchMutation();
   const [resetMatchChain] = useResetMatchChainMutation();
 
+  // Progression mutations
+  const [previewAdvancement, { isLoading: loadingPreview }] = usePreviewAdvancementMutation();
+  const [commitAdvancement, { isLoading: loadingCommit }] = useCommitAdvancementMutation();
+  const [prefillAdvancement, { isLoading: loadingPrefill }] = usePrefillAdvancementMutation();
+
+  /* =====================
+   *  STATE cho dialogs, inputs
+   * ===================== */
   // Snackbar
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
 
-  // =============== Dialog tạo Bracket ===============
+  // Dialog tạo Bracket
   const [bracketDlg, setBracketDlg] = useState(false);
   const [newBracketName, setNewBracketName] = useState("");
   const [newBracketType, setNewBracketType] = useState("knockout");
   const [newBracketStage, setNewBracketStage] = useState(1);
 
-  // =============== Dialog tạo Match đơn lẻ ===============
+  // Dialog sửa Bracket
+  const [editingBracket, setEditingBracket] = useState(null); // object hoặc null
+  const editBracketOpen = Boolean(editingBracket);
+  const [ebId, setEbId] = useState("");
+
+  const [ebName, setEbName] = useState("");
+  const [ebType, setEbType] = useState("knockout");
+  const [ebStage, setEbStage] = useState(1);
+  const [ebOrder, setEbOrder] = useState(0);
+
+  // Dialog tạo Match đơn lẻ
   const [matchDlg, setMatchDlg] = useState(false);
   const [selBracket, setSelBracket] = useState("");
   const [pairA, setPairA] = useState("");
@@ -140,24 +177,11 @@ export default function AdminBracketsPage() {
   const [newRound, setNewRound] = useState(1);
   const [newOrder, setNewOrder] = useState(0);
   const [newReferee, setNewReferee] = useState("");
-  const [newRatingDelta, setNewRatingDelta] = useState(0); // NEW
+  const [newRatingDelta, setNewRatingDelta] = useState(0);
 
-  // =============== Dialog tạo Vòng sau ===============
-  const [nextDlg, setNextDlg] = useState(false);
-  const [nextDlgBracket, setNextDlgBracket] = useState(null);
-  const [nextRound, setNextRound] = useState(2);
-  const [pairs, setPairs] = useState([]);
-
-  // =============== Dialog sửa Bracket ===============
-  const [editBracketDlg, setEditBracketDlg] = useState(false);
-  const [ebId, setEbId] = useState("");
-  const [ebName, setEbName] = useState("");
-  const [ebType, setEbType] = useState("knockout");
-  const [ebStage, setEbStage] = useState(1);
-  const [ebOrder, setEbOrder] = useState(0);
-
-  // =============== Dialog sửa Match ===============
-  const [editMatchDlg, setEditMatchDlg] = useState(false);
+  // Dialog sửa Match
+  const [editingMatch, setEditingMatch] = useState(null);
+  const editMatchOpen = Boolean(editingMatch);
   const [emId, setEmId] = useState("");
   const [emBracketId, setEmBracketId] = useState("");
   const [emRound, setEmRound] = useState(1);
@@ -175,11 +199,39 @@ export default function AdminBracketsPage() {
   const [emRatingApplied, setEmRatingApplied] = useState(false);
   const [emRatingAppliedAt, setEmRatingAppliedAt] = useState(null);
 
+  // Dialog tạo vòng sau thủ công
+  const [nextDlg, setNextDlg] = useState(false);
+  const [nextDlgBracket, setNextDlgBracket] = useState(null);
+  const [nextRound, setNextRound] = useState(2);
+  const [pairs, setPairs] = useState([]);
+  const canCreateNext = pairs.some(
+    (row) => (row.leftMatch && row.rightMatch) || (row.leftMatch && !row.rightMatch && row.bRegId)
+  );
+
+  // Dialog Advancement (mới)
+  const [advDlg, setAdvDlg] = useState(false);
+  const [advTarget, setAdvTarget] = useState(null); // bracket đích
+  const [advSourceId, setAdvSourceId] = useState("");
+  const [advMode, setAdvMode] = useState("GROUP_TOP"); // "GROUP_TOP" | "KO_ROUND_WINNERS"
+  const [advTopPerGroup, setAdvTopPerGroup] = useState(2);
+  const [advRound, setAdvRound] = useState(1); // dùng cho KO_ROUND_WINNERS
+  const [advLimit, setAdvLimit] = useState(0); // 0 = không giới hạn
+  const [advSeedMethod, setAdvSeedMethod] = useState("rating"); // rating|random|tiered
+  const [advPairing, setAdvPairing] = useState("standard"); // standard|snake
+  const [advFillMode, setAdvFillMode] = useState("pairs"); // pairs|pool
+  const [advPreview, setAdvPreview] = useState([]); // danh sách seeded
+
+  // Nguồn hợp lệ cho bracket đích
+  const {
+    data: advSourcesResp,
+    isLoading: loadingSources,
+    error: errorSources,
+  } = useListSourcesForTargetQuery(advDlg && advTarget ? advTarget._id : skipToken);
+  const advSources = advSourcesResp?.sources || [];
+
   /* =====================
    *  GROUPING UTILITIES
    * ===================== */
-  const idOf = (x) => String(x?._id ?? x);
-
   const getGroupKey = (m) => {
     const g = m.group ?? m.groupName ?? m.pool ?? m.table ?? m.groupLabel ?? null;
     if (typeof g === "string" && g.trim()) return g.trim();
@@ -196,8 +248,8 @@ export default function AdminBracketsPage() {
   // Nhóm match theo bracket (knockout dùng trực tiếp)
   const grouped = useMemo(() => {
     const m = {};
-    brackets.forEach((b) => (m[idOf(b._id)] = []));
-    matches.forEach((mt) => {
+    (brackets || []).forEach((b) => (m[idOf(b._id)] = []));
+    (matches || []).forEach((mt) => {
       const bid = idOf(mt.bracket);
       if (m[bid]) m[bid].push(mt);
     });
@@ -210,8 +262,8 @@ export default function AdminBracketsPage() {
   // Nhóm match theo BẢNG trong từng bracket (group stage)
   const groupedByGroup = useMemo(() => {
     const map = {};
-    brackets.forEach((b) => (map[idOf(b._id)] = {}));
-    matches.forEach((mt) => {
+    (brackets || []).forEach((b) => (map[idOf(b._id)] = {}));
+    (matches || []).forEach((mt) => {
       const bid = idOf(mt.bracket);
       const gk = getGroupKey(mt);
       if (!map[bid]) map[bid] = {};
@@ -325,7 +377,7 @@ export default function AdminBracketsPage() {
     }
   };
 
-  // ======== “Tạo vòng sau (chọn đội)” ========
+  // ======== “Tạo vòng sau (chọn đội)” — thủ công ========
   const openNextRoundDialog = (br) => {
     try {
       const list = grouped[idOf(br._id)] || [];
@@ -368,12 +420,12 @@ export default function AdminBracketsPage() {
   };
 
   const openEditBracket = (br) => {
+    setEditingBracket(br);
     setEbId(br._id);
     setEbName(br.name || "");
     setEbType(br.type || "knockout");
     setEbStage(br.stage ?? 1);
     setEbOrder(br.order ?? 0);
-    setEditBracketDlg(true);
   };
 
   const saveEditBracket = async () => {
@@ -382,10 +434,15 @@ export default function AdminBracketsPage() {
       await updateBracket({
         tournamentId,
         bracketId: ebId,
-        body: { name: ebName.trim(), type: ebType, stage: Number(ebStage), order: Number(ebOrder) },
+        body: {
+          name: ebName.trim(),
+          type: ebType,
+          stage: Number(ebStage),
+          order: Number(ebOrder),
+        },
       }).unwrap();
       showSnack("success", "Đã cập nhật Bracket");
-      setEditBracketDlg(false);
+      setEditingBracket(null);
       refetchBrackets();
     } catch (e) {
       showSnack("error", e?.data?.message || e.error);
@@ -393,6 +450,7 @@ export default function AdminBracketsPage() {
   };
 
   const openEditMatch = (mt) => {
+    setEditingMatch(mt);
     setEmId(mt._id);
     setEmBracketId(mt.bracket?._id || mt.bracket);
     setEmRound(mt.round ?? 1);
@@ -413,7 +471,6 @@ export default function AdminBracketsPage() {
     setEmRatingDelta(mt.ratingDelta ?? 0);
     setEmRatingApplied(!!mt.ratingApplied);
     setEmRatingAppliedAt(mt.ratingAppliedAt || null);
-    setEditMatchDlg(true);
   };
 
   const willDowngrade = emOldStatus === "finished" && emStatus !== "finished";
@@ -450,7 +507,7 @@ export default function AdminBracketsPage() {
       }
 
       showSnack("success", emCascade ? "Đã lưu & reset chuỗi trận sau" : "Đã lưu");
-      setEditMatchDlg(false);
+      setEditingMatch(null);
       refetchMatches();
     } catch (e) {
       showSnack("error", e?.data?.message || e.error);
@@ -459,10 +516,6 @@ export default function AdminBracketsPage() {
 
   const loading = loadingT || regsLoading || loadingB || loadingM;
   const errorMsg = errorT || regsError || errorB || errorM;
-
-  const canCreateNext = pairs.some(
-    (row) => (row.leftMatch && row.rightMatch) || (row.leftMatch && !row.rightMatch && row.bRegId)
-  );
 
   return (
     <DashboardLayout>
@@ -514,9 +567,10 @@ export default function AdminBracketsPage() {
                 <Card key={br._id} variant="outlined" sx={{ p: 2 }}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Typography variant="h6">
-                      {br.name} ({br.type === "group" ? "Vòng bảng" : "Knockout"}, stage {br.stage})
+                      {br.name} ({br.type === "group" ? "Vòng bảng" : "Knockout"}, stage {br.stage}
+                      {" • "}order {typeof br.order === "number" ? br.order : 0})
                     </Typography>
-                    <Stack direction="row" spacing={1}>
+                    <Stack direction="row" spacing={1} alignItems="center">
                       <Button
                         size="small"
                         onClick={() => openMatchDialog(br)}
@@ -525,11 +579,38 @@ export default function AdminBracketsPage() {
                         Tạo trận
                       </Button>
                       {br.type === "knockout" && (
-                        <Button size="small" onClick={() => openNextRoundDialog(br)}>
-                          Tạo vòng sau (chọn đội)
-                        </Button>
+                        <>
+                          <Button size="small" onClick={() => openNextRoundDialog(br)}>
+                            Tạo vòng sau (chọn đội)
+                          </Button>
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              setAdvTarget(br);
+                              setAdvDlg(true);
+                              setAdvSourceId("");
+                              setAdvMode("GROUP_TOP");
+                              setAdvTopPerGroup(2);
+                              setAdvRound(1);
+                              setAdvLimit(0);
+                              setAdvSeedMethod("rating");
+                              setAdvPairing("standard");
+                              setAdvFillMode("pairs");
+                              setAdvPreview([]);
+                            }}
+                            startIcon={<ExploreIcon />}
+                          >
+                            Lấy đội từ vòng trước
+                          </Button>
+                        </>
                       )}
-                      <IconButton onClick={() => openEditBracket(br)} title="Sửa bracket">
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditBracket(br);
+                        }}
+                        title="Sửa bracket"
+                      >
                         <EditIcon />
                       </IconButton>
                       <IconButton onClick={() => handleDeleteBracket(br)} title="Xoá bracket">
@@ -672,7 +753,13 @@ export default function AdminBracketsPage() {
                               </Typography>
                             </Box>
                             <Stack direction="row" spacing={0.5}>
-                              <IconButton onClick={() => openEditMatch(mt)} title="Sửa trận">
+                              <IconButton
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditMatch(mt);
+                                }}
+                                title="Sửa trận"
+                              >
                                 <EditIcon />
                               </IconButton>
                               <IconButton onClick={() => handleDeleteMatch(mt)} title="Xoá trận">
@@ -696,7 +783,7 @@ export default function AdminBracketsPage() {
         )}
       </Box>
 
-      {/* Dialog tạo Bracket */}
+      {/* Dialog: Tạo Bracket */}
       <Dialog open={bracketDlg} onClose={() => setBracketDlg(false)} fullWidth maxWidth="sm">
         <DialogTitle>Tạo Bracket mới</DialogTitle>
         <DialogContent>
@@ -740,7 +827,64 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog tạo Match đơn lẻ */}
+      {/* Dialog: SỬA Bracket (FIXED) */}
+      <Dialog
+        open={editBracketOpen}
+        onClose={() => setEditingBracket(null)}
+        fullWidth
+        maxWidth="sm"
+        keepMounted
+      >
+        <DialogTitle>Sửa Bracket</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            <TextField
+              label="Tên Bracket"
+              fullWidth
+              value={ebName}
+              onChange={(e) => setEbName(e.target.value)}
+            />
+            <FormControl fullWidth>
+              <InputLabel>Kiểu Bracket</InputLabel>
+              <Select
+                value={ebType}
+                label="Kiểu Bracket"
+                onChange={(e) => setEbType(e.target.value)}
+                sx={{
+                  mt: 1,
+                  "& .MuiInputBase-root": { minHeight: 56 },
+                  "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
+                }}
+              >
+                <MenuItem value="knockout">Knockout</MenuItem>
+                <MenuItem value="group">Vòng bảng</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              label="Stage (số thứ tự)"
+              type="number"
+              fullWidth
+              value={ebStage}
+              onChange={(e) => setEbStage(Number(e.target.value))}
+            />
+            <TextField
+              label="Order (thứ tự hiển thị)"
+              type="number"
+              fullWidth
+              value={ebOrder}
+              onChange={(e) => setEbOrder(Number(e.target.value))}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditingBracket(null)}>Huỷ</Button>
+          <Button onClick={saveEditBracket} variant="contained" sx={{ color: "white !important" }}>
+            Lưu
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog: Tạo Match đơn lẻ */}
       <Dialog open={matchDlg} onClose={() => setMatchDlg(false)} fullWidth maxWidth="sm">
         <DialogTitle>Tạo trận đấu</DialogTitle>
         <DialogContent>
@@ -909,8 +1053,14 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog SỬA Match */}
-      <Dialog open={editMatchDlg} onClose={() => setEditMatchDlg(false)} fullWidth maxWidth="sm">
+      {/* Dialog: SỬA Match */}
+      <Dialog
+        open={editMatchOpen}
+        onClose={() => setEditingMatch(null)}
+        fullWidth
+        maxWidth="sm"
+        keepMounted
+      >
         <DialogTitle>Sửa trận</DialogTitle>
         <DialogContent>
           <Stack spacing={2} mt={1}>
@@ -1142,14 +1292,14 @@ export default function AdminBracketsPage() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditMatchDlg(false)}>Huỷ</Button>
+          <Button onClick={() => setEditingMatch(null)}>Huỷ</Button>
           <Button onClick={saveEditMatch} variant="contained">
             Lưu
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: Tạo vòng sau */}
+      {/* Dialog: Tạo vòng sau thủ công */}
       <Dialog open={nextDlg} onClose={() => setNextDlg(false)} fullWidth maxWidth="md">
         <DialogTitle>Tạo vòng {nextRound} (chọn đội)</DialogTitle>
         <DialogContent>
@@ -1391,58 +1541,290 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog Sửa Bracket */}
-      <Dialog
-        open={editBracketDlg}
-        onClose={() => setEditBracketDlg(false)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Sửa Bracket</DialogTitle>
+      {/* Dialog: Lấy đội từ vòng trước (Progression) */}
+      <Dialog open={advDlg} onClose={() => setAdvDlg(false)} fullWidth maxWidth="md">
+        <DialogTitle>
+          Lấy đội từ vòng trước → {advTarget ? <b>{advTarget.name}</b> : "—"}
+        </DialogTitle>
         <DialogContent>
-          <Stack spacing={2} mt={1}>
-            <TextField
-              label="Tên Bracket"
-              fullWidth
-              value={ebName}
-              onChange={(e) => setEbName(e.target.value)}
-            />
-            <FormControl fullWidth>
-              <InputLabel>Kiểu Bracket</InputLabel>
-              <Select
-                value={ebType}
-                label="Kiểu Bracket"
-                onChange={(e) => setEbType(e.target.value)}
+          {!advTarget ? (
+            <Alert severity="warning">Chưa chọn bracket đích.</Alert>
+          ) : (
+            <Stack spacing={2} mt={1}>
+              <Alert severity="info">
+                Chọn bracket nguồn, chế độ lấy đội (Top N bảng / Đội thắng vòng KO), phương pháp
+                seeding & cách ghép cặp. Bạn có thể <b>Preview</b> trước khi Prefill/Commit.
+              </Alert>
+
+              {/* chọn bracket nguồn */}
+              <TextField
+                select
+                fullWidth
+                label="Bracket nguồn"
+                value={advSourceId}
+                onChange={(e) => setAdvSourceId(e.target.value)}
+                disabled={loadingSources}
+                helperText={
+                  errorSources
+                    ? "Lỗi tải danh sách nguồn"
+                    : "Chỉ hiển thị các bracket cùng giải & thứ tự trước target."
+                }
                 sx={{
                   mt: 1,
                   "& .MuiInputBase-root": { minHeight: 56 },
                   "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
                 }}
               >
-                <MenuItem value="knockout">Knockout</MenuItem>
-                <MenuItem value="group">Vòng bảng</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField
-              label="Stage (số thứ tự)"
-              type="number"
-              fullWidth
-              value={ebStage}
-              onChange={(e) => setEbStage(Number(e.target.value))}
-            />
-            <TextField
-              label="Order (thứ tự hiển thị)"
-              type="number"
-              fullWidth
-              value={ebOrder}
-              onChange={(e) => setEbOrder(Number(e.target.value))}
-            />
-          </Stack>
+                <MenuItem value="">
+                  <em>— Chưa chọn —</em>
+                </MenuItem>
+                {advSources.map((b) => (
+                  <MenuItem value={b._id} key={b._id}>
+                    {b.name} ({b.type}, stage {b.stage ?? "?"})
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              {/* mode */}
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  select
+                  label="Chế độ lấy đội"
+                  value={advMode}
+                  onChange={(e) => setAdvMode(e.target.value)}
+                  sx={{
+                    minWidth: 240,
+                    "& .MuiInputBase-root": { minHeight: 56 },
+                    "& .MuiSelect-select": { py: 2 },
+                  }}
+                >
+                  <MenuItem value="GROUP_TOP">TOP mỗi bảng (Group → Playoff)</MenuItem>
+                  <MenuItem value="KO_ROUND_WINNERS">Đội thắng vòng KO (Playoff → KO)</MenuItem>
+                </TextField>
+
+                {advMode === "GROUP_TOP" ? (
+                  <TextField
+                    type="number"
+                    label="Top mỗi bảng"
+                    value={advTopPerGroup}
+                    onChange={(e) => setAdvTopPerGroup(Math.max(1, Number(e.target.value) || 1))}
+                  />
+                ) : (
+                  <TextField
+                    type="number"
+                    label="Round (KO nguồn)"
+                    value={advRound}
+                    onChange={(e) => setAdvRound(Math.max(1, Number(e.target.value) || 1))}
+                    helperText="VD: winners của round 1"
+                  />
+                )}
+
+                <TextField
+                  type="number"
+                  label="Giới hạn tổng (tuỳ chọn)"
+                  value={advLimit}
+                  onChange={(e) => setAdvLimit(Math.max(0, Number(e.target.value) || 0))}
+                  helperText="0 = lấy hết"
+                />
+              </Stack>
+
+              {/* seeding & pairing */}
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  select
+                  label="Seed method"
+                  value={advSeedMethod}
+                  onChange={(e) => setAdvSeedMethod(e.target.value)}
+                  sx={{
+                    minWidth: 220,
+                    "& .MuiInputBase-root": { minHeight: 56 },
+                    "& .MuiSelect-select": { py: 2 },
+                  }}
+                >
+                  <MenuItem value="rating">rating (mặc định)</MenuItem>
+                  <MenuItem value="random">random</MenuItem>
+                  <MenuItem value="tiered">tiered</MenuItem>
+                </TextField>
+
+                <TextField
+                  select
+                  label="Ghép cặp"
+                  value={advPairing}
+                  onChange={(e) => setAdvPairing(e.target.value)}
+                  sx={{
+                    minWidth: 200,
+                    "& .MuiInputBase-root": { minHeight: 56 },
+                    "& .MuiSelect-select": { py: 2 },
+                  }}
+                >
+                  <MenuItem value="standard">1–N, 2–N-1, …</MenuItem>
+                  <MenuItem value="snake">snake (1–(N/2+1), 2–(N/2+2), …)</MenuItem>
+                </TextField>
+
+                <TextField
+                  select
+                  label="Prefill mode"
+                  value={advFillMode}
+                  onChange={(e) => setAdvFillMode(e.target.value)}
+                  sx={{
+                    minWidth: 200,
+                    "& .MuiInputBase-root": { minHeight: 56 },
+                    "& .MuiSelect-select": { py: 2 },
+                  }}
+                  helperText="pairs = điền cặp luôn; pool = bốc tay sau"
+                >
+                  <MenuItem value="pairs">pairs (điền cặp sẵn)</MenuItem>
+                  <MenuItem value="pool">pool (để bốc tay)</MenuItem>
+                </TextField>
+              </Stack>
+
+              {/* preview list */}
+              {!!advPreview?.length && (
+                <Box sx={{ mt: 1, p: 2, border: "1px solid #eee", borderRadius: 1 }}>
+                  <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+                    Preview seeded ({advPreview.length})
+                  </Typography>
+                  <Grid container spacing={1}>
+                    {advPreview.map((s, i) => {
+                      const reg = regIndex.get(idOf(s.regId));
+                      return (
+                        <Grid key={i} item xs={12} sm={6} md={4}>
+                          <Card variant="outlined" sx={{ p: 1 }}>
+                            <Typography variant="body2">
+                              <b>#{s.seed}</b> — {reg ? regName(reg, evType) : idOf(s.regId)}
+                            </Typography>
+                          </Card>
+                        </Grid>
+                      );
+                    })}
+                  </Grid>
+                </Box>
+              )}
+            </Stack>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditBracketDlg(false)}>Huỷ</Button>
-          <Button onClick={saveEditBracket} variant="contained" sx={{ color: "white !important" }}>
-            Lưu
+          <Button onClick={() => setAdvDlg(false)}>Đóng</Button>
+          <Button
+            variant="outlined"
+            onClick={async () => {
+              if (!advTarget || !advSourceId)
+                return showSnack("error", "Chọn bracket nguồn & đích.");
+              try {
+                const body =
+                  advMode === "GROUP_TOP"
+                    ? {
+                        fromBracket: advSourceId,
+                        mode: "GROUP_TOP",
+                        topPerGroup: Math.max(1, Number(advTopPerGroup) || 1),
+                        limit: Math.max(0, Number(advLimit) || 0),
+                        seedMethod: advSeedMethod,
+                      }
+                    : {
+                        fromBracket: advSourceId,
+                        mode: "KO_ROUND_WINNERS",
+                        round: Math.max(1, Number(advRound) || 1),
+                        limit: Math.max(0, Number(advLimit) || 0),
+                        seedMethod: advSeedMethod,
+                      };
+                const res = await previewAdvancement({ targetId: advTarget._id, body }).unwrap();
+                setAdvPreview(res?.seeded || []);
+                showSnack("success", `Preview: ${res?.count || 0} đội.`);
+              } catch (e) {
+                setAdvPreview([]);
+                showSnack("error", e?.data?.error || e?.data?.message || e.error);
+              }
+            }}
+            disabled={!advTarget || !advSourceId || loadingPreview}
+          >
+            {loadingPreview ? "Đang preview..." : "Preview"}
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={async () => {
+              if (!advTarget || !advSourceId)
+                return showSnack("error", "Chọn bracket nguồn & đích.");
+              try {
+                const body =
+                  advMode === "GROUP_TOP"
+                    ? {
+                        fromBracket: advSourceId,
+                        mode: "GROUP_TOP",
+                        topPerGroup: Math.max(1, Number(advTopPerGroup) || 1),
+                        limit: Math.max(0, Number(advLimit) || 0),
+                        seedMethod: advSeedMethod,
+                        fillMode: advFillMode,
+                        pairing: advPairing,
+                      }
+                    : {
+                        fromBracket: advSourceId,
+                        mode: "KO_ROUND_WINNERS",
+                        round: Math.max(1, Number(advRound) || 1),
+                        limit: Math.max(0, Number(advLimit) || 0),
+                        seedMethod: advSeedMethod,
+                        fillMode: advFillMode,
+                        pairing: advPairing,
+                      };
+                const res = await prefillAdvancement({ targetId: advTarget._id, body }).unwrap();
+                showSnack(
+                  "success",
+                  `Đã tạo DrawSession cho "${advTarget.name}". Entrants: ${res?.count || 0}${
+                    res?.drawId ? ` (drawId: ${res.drawId})` : ""
+                  }`
+                );
+                setAdvDlg(false);
+              } catch (e) {
+                showSnack("error", e?.data?.error || e?.data?.message || e.error);
+              }
+            }}
+            disabled={!advTarget || !advSourceId || loadingPrefill}
+          >
+            {loadingPrefill ? "Đang prefill..." : "Prefill DrawSession"}
+          </Button>
+          <Button
+            variant="contained"
+            sx={{ color: "white !important" }}
+            onClick={async () => {
+              if (!advTarget || !advSourceId)
+                return showSnack("error", "Chọn bracket nguồn & đích.");
+              try {
+                const body =
+                  advMode === "GROUP_TOP"
+                    ? {
+                        fromBracket: advSourceId,
+                        mode: "GROUP_TOP",
+                        topPerGroup: Math.max(1, Number(advTopPerGroup) || 1),
+                        limit: Math.max(0, Number(advLimit) || 0),
+                        seedMethod: advSeedMethod,
+                        pairing: advPairing,
+                        validateOnly: false,
+                      }
+                    : {
+                        fromBracket: advSourceId,
+                        mode: "KO_ROUND_WINNERS",
+                        round: Math.max(1, Number(advRound) || 1),
+                        limit: Math.max(0, Number(advLimit) || 0),
+                        seedMethod: advSeedMethod,
+                        pairing: advPairing,
+                        validateOnly: false,
+                      };
+                const res = await commitAdvancement({ targetId: advTarget._id, body }).unwrap();
+                showSnack(
+                  "success",
+                  `Đã commit vào "${advTarget.name}": tạo ${
+                    res?.matchesCreated ?? res?.created ?? 0
+                  } trận`
+                );
+                setAdvDlg(false);
+                refetchMatches();
+                refetchBrackets();
+              } catch (e) {
+                showSnack("error", e?.data?.error || e?.data?.message || e.error);
+              }
+            }}
+            disabled={!advTarget || !advSourceId || loadingCommit}
+          >
+            {loadingCommit ? "Đang commit..." : "Commit tạo trận ngay"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1458,7 +1840,6 @@ export default function AdminBracketsPage() {
           {snack.msg}
         </Alert>
       </Snackbar>
-
       <Footer />
     </DashboardLayout>
   );
