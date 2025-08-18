@@ -1,5 +1,5 @@
 // src/layouts/tournament/AdminBracketsPage.jsx
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -35,6 +35,7 @@ import {
 } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
 import { skipToken } from "@reduxjs/toolkit/query";
+
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
@@ -72,9 +73,9 @@ function normType(t) {
 }
 const regName = (reg, evType) => {
   if (!reg) return "—";
-  if (evType === "single") return reg.player1?.fullName || "N/A";
-  const a = reg.player1?.fullName || "N/A";
-  const b = reg.player2?.fullName || "N/A";
+  if (evType === "single") return reg?.player1?.fullName || "N/A";
+  const a = reg?.player1?.fullName || "N/A";
+  const b = reg?.player2?.fullName || "N/A";
   return `${a} & ${b}`;
 };
 
@@ -194,33 +195,33 @@ export default function AdminBracketsPage() {
   const [newBracketName, setNewBracketName] = useState("");
   const [newBracketType, setNewBracketType] = useState("knockout");
   const [newBracketStage, setNewBracketStage] = useState(1);
-  // NEW: order hiển thị khi tạo mới
+  // Order hiển thị khi tạo mới
   const [newBracketOrder, setNewBracketOrder] = useState(0);
-  // NEW: Quy mô (meta)
+  // Quy mô (2^n) & số vòng (n)
   const [newDrawSize, setNewDrawSize] = useState(0); // 2^n
   const [newMaxRounds, setNewMaxRounds] = useState(1); // n
-  // Gợi ý order = (max order hiện có) + 1 mỗi khi mở dialog
-  React.useEffect(() => {
+
+  // NEW: checkbox “Tự tạo quy mô giải đấu”
+  const [useCustomScale, setUseCustomScale] = useState(false);
+
+  // Gợi ý order mỗi khi mở dialog
+  useEffect(() => {
     if (!bracketDlg) return;
     const maxOrder = Math.max(0, ...(brackets || []).map((b) => Number(b.order) || 0));
     setNewBracketOrder(maxOrder + 1);
   }, [bracketDlg, brackets]);
-  // helper (nếu bạn chưa có)
-  // const toRounds = (size) => Math.max(1, Math.log2(ceilPow2(size)) | 0);
 
   // === auto layout (knockout)
   const [autoLayout, setAutoLayout] = useState(false);
   const [autoMode, setAutoMode] = useState("FROM_GROUPS"); // FROM_GROUPS | MANUAL_SCALE | AUTO_FROM_REGS
-
-  // Option 1 (lấy từ vòng trước là Group)
+  // Option 1 (từ vòng bảng)
   const [autoFromBracketId, setAutoFromBracketId] = useState("");
   const [autoTopPerGroup, setAutoTopPerGroup] = useState(2);
   const [autoSeedMethod, setAutoSeedMethod] = useState("rating"); // rating|random|tiered
   const [autoPairing, setAutoPairing] = useState("standard"); // standard|snake
   const [autoFillMode, setAutoFillMode] = useState("pool"); // pairs|pool
   const [autoTargetScale, setAutoTargetScale] = useState(""); // quy mô mục tiêu (tuỳ chọn)
-
-  // Option 2 (tự điền quy mô số đội)
+  // Option 2 (quy mô tay)
   const [manualScale, setManualScale] = useState(() => floorPow2(Math.max(2, regsCount)));
 
   // Nguồn Group phù hợp cho Option1: stage < stage đang tạo
@@ -242,10 +243,11 @@ export default function AdminBracketsPage() {
   const [ebType, setEbType] = useState("knockout");
   const [ebStage, setEbStage] = useState(1);
   const [ebOrder, setEbOrder] = useState(0);
-  // New
-  // NEW: meta
-  const [ebDrawSize, setEbDrawSize] = useState(0);
-  const [ebMaxRounds, setEbMaxRounds] = useState(1);
+  // meta
+  const [ebDrawSize, setEbDrawSize] = useState(0); // 2^n
+  const [ebMaxRounds, setEbMaxRounds] = useState(1); // n
+  // NEW: checkbox “Tự tạo quy mô giải đấu” cho dialog sửa
+  const [ebUseCustomScale, setEbUseCustomScale] = useState(false);
 
   /* =====================
    *  STATE: Tạo Match đơn lẻ
@@ -299,13 +301,13 @@ export default function AdminBracketsPage() {
   const [advDlg, setAdvDlg] = useState(false);
   const [advTarget, setAdvTarget] = useState(null);
   const [advSourceId, setAdvSourceId] = useState("");
-  const [advMode, setAdvMode] = useState("GROUP_TOP"); // GROUP_TOP | KO_ROUND_WINNERS
+  const [advMode, setAdvMode] = useState("GROUP_TOP");
   const [advTopPerGroup, setAdvTopPerGroup] = useState(2);
   const [advRound, setAdvRound] = useState(1);
-  const [advLimit, setAdvLimit] = useState(0); // 0 = all
+  const [advLimit, setAdvLimit] = useState(0);
   const [advSeedMethod, setAdvSeedMethod] = useState("rating");
   const [advPairing, setAdvPairing] = useState("standard");
-  const [advFillMode, setAdvFillMode] = useState("pairs"); // pairs|pool
+  const [advFillMode, setAdvFillMode] = useState("pairs");
   const [advPreview, setAdvPreview] = useState([]);
 
   // Nguồn hợp lệ cho bracket đích
@@ -316,29 +318,29 @@ export default function AdminBracketsPage() {
   } = useListSourcesForTargetQuery(advDlg && advTarget ? advTarget._id : skipToken);
   const advSources = advSourcesResp?.sources || [];
 
-  React.useEffect(() => {
-    // if (!bracketDlg) return;
-
-    // Ưu tiên dùng drawRounds nếu có (ví dụ khi mở dialog sửa KO bracket)
-    // tuỳ biến nguồn lấy: editingBracket?.drawRounds hoặc newDrawRounds nếu bạn có state đó
+  // Prefill defaults cho create/edit khi mở dialog
+  useEffect(() => {
     const roundsFromBracket = Number.isInteger(Number(editingBracket?.drawRounds))
       ? Number(editingBracket?.drawRounds)
       : 0;
+
     if (roundsFromBracket >= 1) {
+      // Nếu bracket đang sửa có drawRounds -> sync state edit
       setEbMaxRounds(roundsFromBracket);
-      setNewDrawSize(1 << roundsFromBracket); // 2^rounds
+      setEbDrawSize(1 << roundsFromBracket);
+      setEbUseCustomScale(true);
       return;
     }
 
-    // Không có drawRounds -> giữ hành vi cũ
+    // Không có drawRounds -> ước lượng theo paidCount/regsCount
     const sz = ceilPow2(Math.max(2, paidCount || regsCount || 2));
     setEbMaxRounds(toRounds(sz));
     setNewDrawSize(sz);
-    // eslint-disable-next-line
-  }, [bracketDlg, paidCount, regsCount, editingBracket?.drawRounds]);
+    setEbUseCustomScale(false); // default off cho edit nếu không có scale trước
+  }, [bracketDlg, paidCount, regsCount, editingBracket?.drawRounds]); // eslint-disable-line
 
   /* =====================
-   *  GROUPING
+   *  GROUPING (hiển thị)
    * ===================== */
   const getGroupKey = (m) => {
     const g = m.group ?? m.groupName ?? m.pool ?? m.table ?? m.groupLabel ?? null;
@@ -404,23 +406,23 @@ export default function AdminBracketsPage() {
   const handleCreateBracket = async () => {
     if (!newBracketName.trim()) return showSnack("error", "Tên bracket không được để trống");
     try {
-      // meta quy mô
+      // Base payload
       const bodyBase = {
         name: newBracketName.trim(),
         type: newBracketType,
         stage: newBracketStage,
-        order: Number(newBracketOrder), // NEW
-        drawRounds: newDrawSize, // <== quan trọng
-        meta:
-          newBracketType === "knockout"
-            ? {
-                drawSize: Number(newDrawSize) || undefined,
-                maxRounds: Number(newMaxRounds) || undefined,
-                expectedFirstRoundMatches:
-                  Number(newDrawSize) > 0 ? Number(newDrawSize) / 2 : undefined,
-              }
-            : undefined,
+        order: Number(newBracketOrder),
       };
+
+      // CHỈ gửi drawRounds/meta nếu tick “Tự tạo quy mô giải đấu” & kiểu knockout
+      if (newBracketType === "knockout" && useCustomScale) {
+        bodyBase.drawRounds = Number(newMaxRounds); // số vòng
+        bodyBase.meta = {
+          drawSize: Number(newDrawSize) || undefined, // 2^n
+          maxRounds: Number(newMaxRounds) || undefined,
+          expectedFirstRoundMatches: Number(newDrawSize) > 0 ? Number(newDrawSize) / 2 : undefined,
+        };
+      }
 
       const created = await createBracket({
         tourId: tournamentId,
@@ -604,6 +606,8 @@ export default function AdminBracketsPage() {
       setNewDrawSize(0);
       setNewMaxRounds(1);
       setNewBracketOrder(0);
+      setUseCustomScale(false); // reset checkbox
+
       // reset auto
       setAutoLayout(false);
       setAutoMode("FROM_GROUPS");
@@ -721,36 +725,44 @@ export default function AdminBracketsPage() {
     setEbStage(br.stage ?? 1);
     setEbOrder(br.order ?? 0);
 
-    // meta
+    // meta hiện tại
     const ds = Number(br?.meta?.drawSize) || 0;
     const mr = Number(br?.meta?.maxRounds) || (ds ? toRounds(ds) : 1);
     setEbDrawSize(ds);
     setEbMaxRounds(mr);
+
+    // Nếu bracket đã có cấu hình quy mô → bật checkbox
+    const hadScale =
+      (Number(br?.drawRounds) > 0 || !!br?.meta?.drawSize || !!br?.meta?.maxRounds) &&
+      br.type === "knockout";
+    setEbUseCustomScale(hadScale);
   };
 
   const saveEditBracket = async () => {
     if (!ebId) return;
     try {
+      // Chỉ gửi phần quy mô nếu bật checkbox và là knockout
+      const body = {
+        name: ebName.trim(),
+        type: ebType,
+        stage: Number(ebStage),
+        order: Number(ebOrder),
+      };
+
+      if (ebType === "knockout" && ebUseCustomScale) {
+        body.drawRounds = Number(ebMaxRounds); // số vòng
+        body.meta = {
+          ...(editingBracket?.meta || {}),
+          drawSize: Number(ebDrawSize) || undefined,
+          maxRounds: Number(ebMaxRounds) || undefined,
+          expectedFirstRoundMatches: Number(ebDrawSize) > 0 ? Number(ebDrawSize) / 2 : undefined,
+        };
+      }
+
       await updateBracket({
         tournamentId,
         bracketId: ebId,
-        body: {
-          name: ebName.trim(),
-          type: ebType,
-          stage: Number(ebStage),
-          order: Number(ebOrder),
-          drawRounds: ebMaxRounds,
-          meta:
-            ebType === "knockout"
-              ? {
-                  ...(editingBracket?.meta || {}),
-                  drawSize: Number(ebDrawSize) || undefined,
-                  maxRounds: Number(ebMaxRounds) || undefined,
-                  expectedFirstRoundMatches:
-                    Number(ebDrawSize) > 0 ? Number(ebDrawSize) / 2 : undefined,
-                }
-              : editingBracket?.meta || undefined,
-        },
+        body,
       }).unwrap();
       showSnack("success", "Đã cập nhật Bracket");
       setEditingBracket(null);
@@ -825,7 +837,7 @@ export default function AdminBracketsPage() {
   };
 
   /* =====================
-   *  NEXT ROUND CREATION
+   *  Misc handlers
    * ===================== */
   const handleDeleteMatch = async (mt) => {
     if (!window.confirm("Xoá trận này?")) return;
@@ -1152,7 +1164,7 @@ export default function AdminBracketsPage() {
               value={newBracketStage}
               onChange={(e) => setNewBracketStage(Number(e.target.value))}
             />
-            {/* NEW: Order khi tạo mới */}
+            {/* Order khi tạo mới */}
             <TextField
               label="Order (thứ tự hiển thị)"
               type="number"
@@ -1161,54 +1173,70 @@ export default function AdminBracketsPage() {
               onChange={(e) => setNewBracketOrder(Number(e.target.value))}
               helperText="Dùng để sắp xếp danh sách brackets. Nhỏ hiển thị trước."
             />
+
             {newBracketType === "knockout" && (
               <>
-                {/* NEW: Quy mô giải đấu */}
                 <Alert severity="info">
                   Quy mô dùng để vẽ khung & kiểm tra số đội. Mặc định dựa vào{" "}
                   <b>số đội đã thanh toán</b>. Hiện có: <b>{paidCount}</b> đội đã thanh toán.
                 </Alert>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                  <TextField
-                    select
-                    label="Số vòng tối đa (n)"
-                    value={newMaxRounds}
-                    onChange={(e) => {
-                      const n = Math.max(1, Number(e.target.value) || 1);
-                      setNewMaxRounds(n);
-                      setNewDrawSize(fromRounds(n));
-                    }}
-                    sx={{ minWidth: 200 }}
-                  >
-                    {roundsOptionsUpTo(Math.max(64, paidCount || regsCount || 16)).map((n) => (
-                      <MenuItem key={n} value={n}>
-                        {n} vòng (2^{n} = {1 << n} đội)
-                      </MenuItem>
-                    ))}
-                  </TextField>
 
-                  <TextField
-                    select
-                    label="Quy mô (2^n đội)"
-                    value={newDrawSize}
-                    onChange={(e) => {
-                      const v = Math.max(2, Number(e.target.value) || 2);
-                      const pow2 = ceilPow2(v);
-                      setNewDrawSize(pow2);
-                      setNewMaxRounds(toRounds(pow2));
-                    }}
-                    sx={{ minWidth: 240 }}
-                    helperText="2^n = số đội tham gia đã thanh toán"
-                  >
-                    {pow2OptionsUpTo(Math.max(128, paidCount || regsCount || 16)).map((n) => (
-                      <MenuItem key={n} value={n}>
-                        {n} đội (vòng 1 có {n / 2} cặp)
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                </Stack>
+                {/* NEW: checkbox bật/tắt self-scale */}
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={useCustomScale}
+                      onChange={(e) => setUseCustomScale(e.target.checked)}
+                    />
+                  }
+                  label="Tự tạo quy mô giải đấu"
+                />
+
+                {/* NEW: chỉ hiện 2 select khi đã tick */}
+                {useCustomScale && (
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                    <TextField
+                      select
+                      label="Số vòng tối đa (n)"
+                      value={newMaxRounds}
+                      onChange={(e) => {
+                        const n = Math.max(1, Number(e.target.value) || 1);
+                        setNewMaxRounds(n);
+                        setNewDrawSize(fromRounds(n));
+                      }}
+                      sx={{ minWidth: 200 }}
+                    >
+                      {roundsOptionsUpTo(Math.max(64, paidCount || regsCount || 16)).map((n) => (
+                        <MenuItem key={n} value={n}>
+                          {n} vòng (2^{n} = {1 << n} đội)
+                        </MenuItem>
+                      ))}
+                    </TextField>
+
+                    <TextField
+                      select
+                      label="Quy mô (2^n đội)"
+                      value={newDrawSize}
+                      onChange={(e) => {
+                        const v = Math.max(2, Number(e.target.value) || 2);
+                        const pow2 = ceilPow2(v);
+                        setNewDrawSize(pow2);
+                        setNewMaxRounds(toRounds(pow2));
+                      }}
+                      sx={{ minWidth: 240 }}
+                      helperText="2^n = số đội tham gia"
+                    >
+                      {pow2OptionsUpTo(Math.max(128, paidCount || regsCount || 16)).map((n) => (
+                        <MenuItem key={n} value={n}>
+                          {n} đội (vòng 1 có {n / 2} cặp)
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Stack>
+                )}
 
                 <Divider sx={{ my: 2 }} />
+
                 {/* Auto layout */}
                 <FormControlLabel
                   control={
@@ -1318,7 +1346,7 @@ export default function AdminBracketsPage() {
                           label="Quy mô mục tiêu (tuỳ chọn)"
                           value={String(autoTargetScale)}
                           onChange={(e) => setAutoTargetScale(e.target.value)}
-                          helperText="Để trống = tự làm tròn lên lũy thừa 2 gần nhất theo số đội lấy được."
+                          helperText="Để trống = tự làm tròn lên lũy thừa 2 gần nhất."
                           sx={{ minWidth: 260 }}
                         >
                           <MenuItem value="">
@@ -1333,8 +1361,8 @@ export default function AdminBracketsPage() {
 
                         <Alert severity="info">
                           Khi bấm <b>Tạo</b>: hệ thống tạo bracket, <b>commit</b> đội từ vòng bảng
-                          đã chọn vào bracket này theo seeding/pairing bạn chọn. Nếu thiếu slot →
-                          BYE; nếu thừa → vẫn tạo, đội thừa xử lý sau.
+                          đã chọn vào bracket này theo seeding/pairing bạn chọn. Thiếu slot → BYE;
+                          thừa → vẫn tạo, đội thừa xử lý sau.
                         </Alert>
                       </Stack>
                     )}
@@ -1455,48 +1483,63 @@ export default function AdminBracketsPage() {
                 <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
                   Quy mô giải đấu
                 </Typography>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                  <TextField
-                    select
-                    label="Số vòng tối đa (n)"
-                    value={ebMaxRounds}
-                    onChange={(e) => {
-                      const n = Math.max(1, Number(e.target.value) || 1);
-                      setEbMaxRounds(n);
-                      setEbDrawSize(fromRounds(n));
-                    }}
-                    sx={{ minWidth: 200 }}
-                  >
-                    {roundsOptionsUpTo(
-                      Math.max(128, ebDrawSize || paidCount || regsCount || 16)
-                    ).map((n) => (
-                      <MenuItem key={n} value={n}>
-                        {n} vòng (2^{n} = {1 << n} đội)
-                      </MenuItem>
-                    ))}
-                  </TextField>
 
-                  <TextField
-                    select
-                    label="Quy mô (2^n đội)"
-                    value={ebDrawSize}
-                    onChange={(e) => {
-                      const v = Math.max(2, Number(e.target.value) || 2);
-                      const pow2 = ceilPow2(v);
-                      setEbDrawSize(pow2);
-                      setEbMaxRounds(toRounds(pow2));
-                    }}
-                    sx={{ minWidth: 240 }}
-                  >
-                    {pow2OptionsUpTo(Math.max(128, ebDrawSize || paidCount || regsCount || 16)).map(
-                      (n) => (
+                {/* Checkbox bật/tắt self-scale */}
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={ebUseCustomScale}
+                      onChange={(e) => setEbUseCustomScale(e.target.checked)}
+                    />
+                  }
+                  label="Tự tạo quy mô giải đấu"
+                />
+
+                {/* Chỉ hiện 2 select khi tick */}
+                {ebUseCustomScale && (
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                    <TextField
+                      select
+                      label="Số vòng tối đa (n)"
+                      value={ebMaxRounds}
+                      onChange={(e) => {
+                        const n = Math.max(1, Number(e.target.value) || 1);
+                        setEbMaxRounds(n);
+                        setEbDrawSize(fromRounds(n));
+                      }}
+                      sx={{ minWidth: 200 }}
+                    >
+                      {roundsOptionsUpTo(
+                        Math.max(128, ebDrawSize || paidCount || regsCount || 16)
+                      ).map((n) => (
+                        <MenuItem key={n} value={n}>
+                          {n} vòng (2^{n} = {1 << n} đội)
+                        </MenuItem>
+                      ))}
+                    </TextField>
+
+                    <TextField
+                      select
+                      label="Quy mô (2^n đội)"
+                      value={ebDrawSize}
+                      onChange={(e) => {
+                        const v = Math.max(2, Number(e.target.value) || 2);
+                        const pow2 = ceilPow2(v);
+                        setEbDrawSize(pow2);
+                        setEbMaxRounds(toRounds(pow2));
+                      }}
+                      sx={{ minWidth: 240 }}
+                    >
+                      {pow2OptionsUpTo(
+                        Math.max(128, ebDrawSize || paidCount || regsCount || 16)
+                      ).map((n) => (
                         <MenuItem key={n} value={n}>
                           {n} đội (vòng 1 có {n / 2} cặp)
                         </MenuItem>
-                      )
-                    )}
-                  </TextField>
-                </Stack>
+                      ))}
+                    </TextField>
+                  </Stack>
+                )}
               </>
             )}
           </Stack>
@@ -1895,10 +1938,7 @@ export default function AdminBracketsPage() {
               </Alert>
             )}
 
-            <Tooltip
-              title="Bật để reset các trận phụ thuộc (nextMatch → …) trong nhánh."
-              placement="top-start"
-            >
+            <Tooltip title="Bật để reset các trận phụ thuộc (nextMatch → …) trong nhánh.">
               <span>
                 <FormControlLabel
                   control={
@@ -2007,18 +2047,11 @@ export default function AdminBracketsPage() {
                         <MenuItem value="">
                           <em>— Chưa chọn —</em>
                         </MenuItem>
-                        {[
-                          lm?.pairA && (
-                            <MenuItem key={`${lm._id}-A`} value={lm.pairA._id}>
-                              {regName(lm.pairA, evType)}
-                            </MenuItem>
-                          ),
-                          lm?.pairB && (
-                            <MenuItem key={`${lm._id}-B`} value={lm.pairB._id}>
-                              {regName(lm.pairB, evType)}
-                            </MenuItem>
-                          ),
-                        ].filter(Boolean)}
+                        {[lm?.pairA, lm?.pairB].filter(Boolean).map((x, i2) => (
+                          <MenuItem key={`${lm?._id}-${i2}`} value={x._id}>
+                            {regName(x, evType)}
+                          </MenuItem>
+                        ))}
                       </TextField>
 
                       <Divider sx={{ my: 2 }} />
@@ -2053,18 +2086,11 @@ export default function AdminBracketsPage() {
                           <em>— Chưa chọn —</em>
                         </MenuItem>
                         {rm
-                          ? [
-                              rm?.pairA && (
-                                <MenuItem key={`${rm._id}-A`} value={rm.pairA._id}>
-                                  {regName(rm.pairA, evType)}
-                                </MenuItem>
-                              ),
-                              rm?.pairB && (
-                                <MenuItem key={`${rm._id}-B`} value={rm.pairB._id}>
-                                  {regName(rm.pairB, evType)}
-                                </MenuItem>
-                              ),
-                            ].filter(Boolean)
+                          ? [rm?.pairA, rm?.pairB].filter(Boolean).map((x, i2) => (
+                              <MenuItem key={`${rm?._id}-${i2}`} value={x._id}>
+                                {regName(x, evType)}
+                              </MenuItem>
+                            ))
                           : otherTeams.map((t) => (
                               <MenuItem key={t._id} value={t._id}>
                                 {regName(t, evType)}
