@@ -24,6 +24,7 @@ import {
   FormControlLabel,
   Checkbox,
   Tooltip,
+  Chip,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -123,7 +124,7 @@ export default function AdminBracketsPage() {
     refetch: refetchBrackets,
   } = useListBracketsQuery(tournamentId);
 
-  // 5) Matches của đúng giải (KHÔNG lấy all rồi lọc)
+  // 5) Matches của đúng giải
   const {
     data: matches = [],
     isLoading: loadingM,
@@ -146,29 +147,109 @@ export default function AdminBracketsPage() {
   const [prefillAdvancement, { isLoading: loadingPrefill }] = usePrefillAdvancementMutation();
 
   /* =====================
-   *  STATE cho dialogs, inputs
+   *  Snackbar
    * ===================== */
-  // Snackbar
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
 
-  // Dialog tạo Bracket
+  /* =====================
+   *  Helpers pow2 + rounds + paid
+   * ===================== */
+  const floorPow2 = (n) => (n <= 1 ? 1 : 1 << Math.floor(Math.log2(n)));
+  const ceilPow2 = (n) => (n <= 1 ? 1 : 1 << Math.ceil(Math.log2(n)));
+  const pow2OptionsUpTo = (n) => {
+    const arr = [];
+    let x = 2;
+    const maxN = Math.max(2, n);
+    while (x <= maxN) {
+      arr.push(x);
+      x *= 2;
+    }
+    if (!arr.length) arr.push(2);
+    return arr;
+  };
+  const toRounds = (drawSize) => Math.max(1, Math.round(Math.log2(Math.max(2, drawSize))));
+  const fromRounds = (n) => 1 << Math.max(1, Number(n) || 1);
+  const roundsOptionsUpTo = (maxDraw) => {
+    const maxN = toRounds(Math.max(2, maxDraw));
+    return Array.from({ length: Math.max(1, maxN) }, (_, i) => i + 1);
+  };
+  const isPaidReg = (r) => {
+    const s = String(r?.payment?.status || r?.status || "").toLowerCase();
+    return (
+      r?.paid === true ||
+      r?.payment?.isPaid === true ||
+      s === "paid" ||
+      s === "completed" ||
+      s === "success"
+    );
+  };
+  const regsCount = registrations?.length || 0;
+  const paidCount = useMemo(() => (registrations || []).filter(isPaidReg).length, [registrations]);
+
+  /* =====================
+   *  STATE: Tạo Bracket
+   * ===================== */
   const [bracketDlg, setBracketDlg] = useState(false);
   const [newBracketName, setNewBracketName] = useState("");
   const [newBracketType, setNewBracketType] = useState("knockout");
   const [newBracketStage, setNewBracketStage] = useState(1);
+  // NEW: order hiển thị khi tạo mới
+  const [newBracketOrder, setNewBracketOrder] = useState(0);
+  // NEW: Quy mô (meta)
+  const [newDrawSize, setNewDrawSize] = useState(0); // 2^n
+  const [newMaxRounds, setNewMaxRounds] = useState(1); // n
+  // Gợi ý order = (max order hiện có) + 1 mỗi khi mở dialog
+  React.useEffect(() => {
+    if (!bracketDlg) return;
+    const maxOrder = Math.max(0, ...(brackets || []).map((b) => Number(b.order) || 0));
+    setNewBracketOrder(maxOrder + 1);
+  }, [bracketDlg, brackets]);
+  // helper (nếu bạn chưa có)
+  // const toRounds = (size) => Math.max(1, Math.log2(ceilPow2(size)) | 0);
 
-  // Dialog sửa Bracket
-  const [editingBracket, setEditingBracket] = useState(null); // object hoặc null
+  // === auto layout (knockout)
+  const [autoLayout, setAutoLayout] = useState(false);
+  const [autoMode, setAutoMode] = useState("FROM_GROUPS"); // FROM_GROUPS | MANUAL_SCALE | AUTO_FROM_REGS
+
+  // Option 1 (lấy từ vòng trước là Group)
+  const [autoFromBracketId, setAutoFromBracketId] = useState("");
+  const [autoTopPerGroup, setAutoTopPerGroup] = useState(2);
+  const [autoSeedMethod, setAutoSeedMethod] = useState("rating"); // rating|random|tiered
+  const [autoPairing, setAutoPairing] = useState("standard"); // standard|snake
+  const [autoFillMode, setAutoFillMode] = useState("pool"); // pairs|pool
+  const [autoTargetScale, setAutoTargetScale] = useState(""); // quy mô mục tiêu (tuỳ chọn)
+
+  // Option 2 (tự điền quy mô số đội)
+  const [manualScale, setManualScale] = useState(() => floorPow2(Math.max(2, regsCount)));
+
+  // Nguồn Group phù hợp cho Option1: stage < stage đang tạo
+  const groupSources = useMemo(
+    () =>
+      (brackets || []).filter(
+        (b) => b.type === "group" && (b.stage ?? 1) < Number(newBracketStage)
+      ),
+    [brackets, newBracketStage]
+  );
+
+  /* =====================
+   *  STATE: Sửa Bracket
+   * ===================== */
+  const [editingBracket, setEditingBracket] = useState(null);
   const editBracketOpen = Boolean(editingBracket);
   const [ebId, setEbId] = useState("");
-
   const [ebName, setEbName] = useState("");
   const [ebType, setEbType] = useState("knockout");
   const [ebStage, setEbStage] = useState(1);
   const [ebOrder, setEbOrder] = useState(0);
+  // New
+  // NEW: meta
+  const [ebDrawSize, setEbDrawSize] = useState(0);
+  const [ebMaxRounds, setEbMaxRounds] = useState(1);
 
-  // Dialog tạo Match đơn lẻ
+  /* =====================
+   *  STATE: Tạo Match đơn lẻ
+   * ===================== */
   const [matchDlg, setMatchDlg] = useState(false);
   const [selBracket, setSelBracket] = useState("");
   const [pairA, setPairA] = useState("");
@@ -179,7 +260,9 @@ export default function AdminBracketsPage() {
   const [newReferee, setNewReferee] = useState("");
   const [newRatingDelta, setNewRatingDelta] = useState(0);
 
-  // Dialog sửa Match
+  /* =====================
+   *  STATE: Sửa Match
+   * ===================== */
   const [editingMatch, setEditingMatch] = useState(null);
   const editMatchOpen = Boolean(editingMatch);
   const [emId, setEmId] = useState("");
@@ -199,7 +282,9 @@ export default function AdminBracketsPage() {
   const [emRatingApplied, setEmRatingApplied] = useState(false);
   const [emRatingAppliedAt, setEmRatingAppliedAt] = useState(null);
 
-  // Dialog tạo vòng sau thủ công
+  /* =====================
+   *  STATE: Tạo vòng sau thủ công
+   * ===================== */
   const [nextDlg, setNextDlg] = useState(false);
   const [nextDlgBracket, setNextDlgBracket] = useState(null);
   const [nextRound, setNextRound] = useState(2);
@@ -208,18 +293,20 @@ export default function AdminBracketsPage() {
     (row) => (row.leftMatch && row.rightMatch) || (row.leftMatch && !row.rightMatch && row.bRegId)
   );
 
-  // Dialog Advancement (mới)
+  /* =====================
+   *  STATE: Advancement (mới)
+   * ===================== */
   const [advDlg, setAdvDlg] = useState(false);
-  const [advTarget, setAdvTarget] = useState(null); // bracket đích
+  const [advTarget, setAdvTarget] = useState(null);
   const [advSourceId, setAdvSourceId] = useState("");
-  const [advMode, setAdvMode] = useState("GROUP_TOP"); // "GROUP_TOP" | "KO_ROUND_WINNERS"
+  const [advMode, setAdvMode] = useState("GROUP_TOP"); // GROUP_TOP | KO_ROUND_WINNERS
   const [advTopPerGroup, setAdvTopPerGroup] = useState(2);
-  const [advRound, setAdvRound] = useState(1); // dùng cho KO_ROUND_WINNERS
-  const [advLimit, setAdvLimit] = useState(0); // 0 = không giới hạn
-  const [advSeedMethod, setAdvSeedMethod] = useState("rating"); // rating|random|tiered
-  const [advPairing, setAdvPairing] = useState("standard"); // standard|snake
+  const [advRound, setAdvRound] = useState(1);
+  const [advLimit, setAdvLimit] = useState(0); // 0 = all
+  const [advSeedMethod, setAdvSeedMethod] = useState("rating");
+  const [advPairing, setAdvPairing] = useState("standard");
   const [advFillMode, setAdvFillMode] = useState("pairs"); // pairs|pool
-  const [advPreview, setAdvPreview] = useState([]); // danh sách seeded
+  const [advPreview, setAdvPreview] = useState([]);
 
   // Nguồn hợp lệ cho bracket đích
   const {
@@ -229,14 +316,35 @@ export default function AdminBracketsPage() {
   } = useListSourcesForTargetQuery(advDlg && advTarget ? advTarget._id : skipToken);
   const advSources = advSourcesResp?.sources || [];
 
+  React.useEffect(() => {
+    // if (!bracketDlg) return;
+
+    // Ưu tiên dùng drawRounds nếu có (ví dụ khi mở dialog sửa KO bracket)
+    // tuỳ biến nguồn lấy: editingBracket?.drawRounds hoặc newDrawRounds nếu bạn có state đó
+    const roundsFromBracket = Number.isInteger(Number(editingBracket?.drawRounds))
+      ? Number(editingBracket?.drawRounds)
+      : 0;
+    if (roundsFromBracket >= 1) {
+      setEbMaxRounds(roundsFromBracket);
+      setNewDrawSize(1 << roundsFromBracket); // 2^rounds
+      return;
+    }
+
+    // Không có drawRounds -> giữ hành vi cũ
+    const sz = ceilPow2(Math.max(2, paidCount || regsCount || 2));
+    setEbMaxRounds(toRounds(sz));
+    setNewDrawSize(sz);
+    // eslint-disable-next-line
+  }, [bracketDlg, paidCount, regsCount, editingBracket?.drawRounds]);
+
   /* =====================
-   *  GROUPING UTILITIES
+   *  GROUPING
    * ===================== */
   const getGroupKey = (m) => {
     const g = m.group ?? m.groupName ?? m.pool ?? m.table ?? m.groupLabel ?? null;
     if (typeof g === "string" && g.trim()) return g.trim();
     if (g && typeof g === "object") return g.name || g.code || g.label || g._id || "__UNGROUPED__";
-    if (typeof m.groupIndex === "number") return String.fromCharCode(65 + m.groupIndex); // 0->A
+    if (typeof m.groupIndex === "number") return String.fromCharCode(65 + m.groupIndex);
     return "__UNGROUPED__";
   };
   const formatGroupTitle = (key) => {
@@ -245,7 +353,6 @@ export default function AdminBracketsPage() {
     return `Bảng ${key}`;
   };
 
-  // Nhóm match theo bracket (knockout dùng trực tiếp)
   const grouped = useMemo(() => {
     const m = {};
     (brackets || []).forEach((b) => (m[idOf(b._id)] = []));
@@ -259,7 +366,6 @@ export default function AdminBracketsPage() {
     return m;
   }, [brackets, matches]);
 
-  // Nhóm match theo BẢNG trong từng bracket (group stage)
   const groupedByGroup = useMemo(() => {
     const map = {};
     (brackets || []).forEach((b) => (map[idOf(b._id)] = {}));
@@ -278,17 +384,13 @@ export default function AdminBracketsPage() {
     return map;
   }, [brackets, matches]);
 
-  // Label hiển thị 2 phía (support previousA/previousB)
   const getSideLabel = (mt, side) => {
     const pair = side === "A" ? mt?.pairA : mt?.pairB;
     if (pair) return regName(pair, evType);
-
     const prevId = side === "A" ? mt?.previousA : mt?.previousB;
     if (!prevId) return "—";
-
     const prev = matches?.find((m) => idOf(m?._id) === idOf(prevId));
     if (!prev) return "Thắng trận ?";
-
     if (prev?.status === "finished" && prev?.winner) {
       const reg = prev?.winner === "A" ? prev?.pairA : prev?.pairB;
       return `${regName(reg, evType)} (thắng R${prev?.round}-#${prev?.order ?? 0})`;
@@ -302,16 +404,219 @@ export default function AdminBracketsPage() {
   const handleCreateBracket = async () => {
     if (!newBracketName.trim()) return showSnack("error", "Tên bracket không được để trống");
     try {
-      await createBracket({
+      // meta quy mô
+      const bodyBase = {
+        name: newBracketName.trim(),
+        type: newBracketType,
+        stage: newBracketStage,
+        order: Number(newBracketOrder), // NEW
+        drawRounds: newDrawSize, // <== quan trọng
+        meta:
+          newBracketType === "knockout"
+            ? {
+                drawSize: Number(newDrawSize) || undefined,
+                maxRounds: Number(newMaxRounds) || undefined,
+                expectedFirstRoundMatches:
+                  Number(newDrawSize) > 0 ? Number(newDrawSize) / 2 : undefined,
+              }
+            : undefined,
+      };
+
+      const created = await createBracket({
         tourId: tournamentId,
-        body: { name: newBracketName.trim(), type: newBracketType, stage: newBracketStage },
+        body: bodyBase,
       }).unwrap();
+
+      // Auto layout (giữ nguyên logic cũ)
+      if (newBracketType === "knockout" && autoLayout && created?._id) {
+        if (autoMode === "FROM_GROUPS") {
+          if (!autoFromBracketId) {
+            showSnack("warning", "Chưa chọn bracket nguồn (vòng bảng). Bỏ qua auto layout.");
+          } else {
+            try {
+              const previewBody = {
+                fromBracket: autoFromBracketId,
+                mode: "GROUP_TOP",
+                topPerGroup: Math.max(1, Number(autoTopPerGroup) || 1),
+                limit: 0,
+                seedMethod: autoSeedMethod,
+              };
+              const preview = await previewAdvancement({
+                targetId: created._id,
+                body: previewBody,
+              }).unwrap();
+              const cnt = Number(preview?.count || (preview?.seeded?.length ?? 0) || 0);
+
+              let targetSlots =
+                Number(autoTargetScale) || ceilPow2(Math.max(2, cnt || Number(newDrawSize) || 2));
+              if (targetSlots < 2) targetSlots = 2;
+
+              const shortage = Math.max(0, targetSlots - cnt);
+              const surplus = Math.max(0, cnt - targetSlots);
+              if (surplus > 0) {
+                showSnack(
+                  "warning",
+                  `Nguồn có ${cnt} đội > quy mô ${targetSlots}. Vẫn tiếp tục; đội thừa xử lý sau.`
+                );
+              }
+
+              if (autoFillMode === "pool" || cnt < 2) {
+                const preBody = {
+                  fromBracket: autoFromBracketId,
+                  mode: "GROUP_TOP",
+                  topPerGroup: Math.max(1, Number(autoTopPerGroup) || 1),
+                  limit: 0,
+                  seedMethod: autoSeedMethod,
+                  fillMode: "pool",
+                  pairing: autoPairing,
+                };
+                const preRes = await prefillAdvancement({
+                  targetId: created._id,
+                  body: preBody,
+                }).unwrap();
+                if (cnt === 0) {
+                  showSnack(
+                    "info",
+                    "Nguồn chưa có đội đủ điều kiện (vòng bảng chưa kết thúc?). Đã tạo khung, chưa có entrant."
+                  );
+                } else {
+                  showSnack(
+                    "success",
+                    `Đã tạo khung & nạp ${preRes?.count ?? cnt} đội vào pool. Chưa tạo cặp.`
+                  );
+                }
+                if (shortage > 0)
+                  showSnack(
+                    "info",
+                    `Thiếu ${shortage} slot so với quy mô ${targetSlots} → BYE khi bốc cặp.`
+                  );
+              } else {
+                const commitBody = {
+                  fromBracket: autoFromBracketId,
+                  mode: "GROUP_TOP",
+                  topPerGroup: Math.max(1, Number(autoTopPerGroup) || 1),
+                  limit: 0,
+                  seedMethod: autoSeedMethod,
+                  pairing: autoPairing,
+                  fillMode: "pairs",
+                };
+                try {
+                  const commitRes = await commitAdvancement({
+                    targetId: created._id,
+                    body: commitBody,
+                  }).unwrap();
+                  if (shortage > 0)
+                    showSnack("info", `Thiếu ${shortage} slot so với quy mô ${targetSlots} → BYE.`);
+                  showSnack(
+                    "success",
+                    `Đã commit ${commitRes?.matchesCreated ?? commitRes?.created ?? 0} trận.`
+                  );
+                } catch (err) {
+                  const msg = err?.data?.error || err?.data?.message || String(err);
+                  if (/not enough entrants/i.test(msg)) {
+                    const preBody = {
+                      fromBracket: autoFromBracketId,
+                      mode: "GROUP_TOP",
+                      topPerGroup: Math.max(1, Number(autoTopPerGroup) || 1),
+                      limit: 0,
+                      seedMethod: autoSeedMethod,
+                      fillMode: "pool",
+                      pairing: autoPairing,
+                    };
+                    const preRes = await prefillAdvancement({
+                      targetId: created._id,
+                      body: preBody,
+                    }).unwrap();
+                    showSnack(
+                      "info",
+                      `Không đủ đội để tạo cặp ngay. Đã nạp ${preRes?.count ?? cnt} đội vào pool.`
+                    );
+                  } else {
+                    throw err;
+                  }
+                }
+              }
+            } catch (e) {
+              showSnack(
+                "error",
+                e?.data?.error || e?.data?.message || e.error || "Lỗi auto từ vòng bảng"
+              );
+            }
+          }
+        } else if (autoMode === "MANUAL_SCALE") {
+          const N = Number(manualScale);
+          const isPow2 = N >= 2 && (N & (N - 1)) === 0;
+          if (!isPow2) {
+            showSnack("error", "Quy mô phải là lũy thừa của 2 (ví dụ 4, 8, 16, 32…).");
+          } else {
+            const matchesToCreate = N / 2;
+            let ok = 0;
+            for (let i = 0; i < matchesToCreate; i++) {
+              await createMatch({
+                bracketId: created._id,
+                body: { round: 1, order: i, rules: { bestOf: 3, pointsToWin: 11, winByTwo: true } },
+              }).unwrap();
+              ok++;
+            }
+            if (regsCount < N) {
+              showSnack(
+                "info",
+                `Đăng ký ${regsCount} < quy mô ${N} → sẽ có ${N - regsCount} slot BYE ở vòng 1.`
+              );
+            } else if (regsCount > N) {
+              const thua = regsCount - N;
+              showSnack(
+                "warning",
+                `Đăng ký ${regsCount} > quy mô ${N} → thừa ${thua} đội. Cần vòng loại/loại bớt.`
+              );
+            }
+            showSnack("success", `Đã tạo ${ok} cặp (round 1) theo quy mô ${N}.`);
+          }
+        } else if (autoMode === "AUTO_FROM_REGS") {
+          const mainSlots = floorPow2(Math.max(2, regsCount));
+          const excess = Math.max(0, regsCount - mainSlots);
+          const matchesToCreate = mainSlots / 2;
+          let ok = 0;
+          for (let i = 0; i < matchesToCreate; i++) {
+            await createMatch({
+              bracketId: created._id,
+              body: { round: 1, order: i, rules: { bestOf: 3, pointsToWin: 11, winByTwo: true } },
+            }).unwrap();
+            ok++;
+          }
+          if (excess > 0) {
+            showSnack(
+              "info",
+              `Có ${excess} đội thừa so với main draw ${mainSlots} → cần vòng loại riêng cho ${
+                excess * 2
+              } đội tranh ${excess} suất.`
+            );
+          }
+          showSnack("success", `Đã tạo ${ok} cặp (round 1) cho main draw ${mainSlots}.`);
+        }
+      }
+
       showSnack("success", "Đã tạo mới Bracket");
       setBracketDlg(false);
       setNewBracketName("");
       setNewBracketType("knockout");
       setNewBracketStage(1);
+      setNewDrawSize(0);
+      setNewMaxRounds(1);
+      setNewBracketOrder(0);
+      // reset auto
+      setAutoLayout(false);
+      setAutoMode("FROM_GROUPS");
+      setAutoFromBracketId("");
+      setAutoTopPerGroup(2);
+      setAutoSeedMethod("rating");
+      setAutoPairing("standard");
+      setAutoFillMode("pool");
+      setAutoTargetScale("");
+      setManualScale(floorPow2(Math.max(2, regsCount)));
+
       refetchBrackets();
+      refetchMatches();
     } catch (e) {
       showSnack("error", e?.data?.message || e.error);
     }
@@ -360,17 +665,6 @@ export default function AdminBracketsPage() {
       }).unwrap();
       showSnack("success", "Đã tạo trận");
       setMatchDlg(false);
-      refetchMatches();
-    } catch (e) {
-      showSnack("error", e?.data?.message || e.error);
-    }
-  };
-
-  const handleDeleteMatch = async (mt) => {
-    if (!window.confirm("Xoá trận này?")) return;
-    try {
-      await deleteMatch(mt._id).unwrap();
-      showSnack("success", "Đã xóa trận");
       refetchMatches();
     } catch (e) {
       showSnack("error", e?.data?.message || e.error);
@@ -426,6 +720,12 @@ export default function AdminBracketsPage() {
     setEbType(br.type || "knockout");
     setEbStage(br.stage ?? 1);
     setEbOrder(br.order ?? 0);
+
+    // meta
+    const ds = Number(br?.meta?.drawSize) || 0;
+    const mr = Number(br?.meta?.maxRounds) || (ds ? toRounds(ds) : 1);
+    setEbDrawSize(ds);
+    setEbMaxRounds(mr);
   };
 
   const saveEditBracket = async () => {
@@ -439,6 +739,17 @@ export default function AdminBracketsPage() {
           type: ebType,
           stage: Number(ebStage),
           order: Number(ebOrder),
+          drawRounds: ebMaxRounds,
+          meta:
+            ebType === "knockout"
+              ? {
+                  ...(editingBracket?.meta || {}),
+                  drawSize: Number(ebDrawSize) || undefined,
+                  maxRounds: Number(ebMaxRounds) || undefined,
+                  expectedFirstRoundMatches:
+                    Number(ebDrawSize) > 0 ? Number(ebDrawSize) / 2 : undefined,
+                }
+              : editingBracket?.meta || undefined,
         },
       }).unwrap();
       showSnack("success", "Đã cập nhật Bracket");
@@ -475,7 +786,6 @@ export default function AdminBracketsPage() {
 
   const willDowngrade = emOldStatus === "finished" && emStatus !== "finished";
   const willChangeWinner = emStatus === "finished" && emWinner && emWinner !== emOldWinner;
-  const suggestCascade = willDowngrade || willChangeWinner;
 
   const saveEditMatch = async () => {
     if (!emId) return;
@@ -514,6 +824,23 @@ export default function AdminBracketsPage() {
     }
   };
 
+  /* =====================
+   *  NEXT ROUND CREATION
+   * ===================== */
+  const handleDeleteMatch = async (mt) => {
+    if (!window.confirm("Xoá trận này?")) return;
+    try {
+      await deleteMatch(mt._id).unwrap();
+      showSnack("success", "Đã xóa trận");
+      refetchMatches();
+    } catch (e) {
+      showSnack("error", e?.data?.message || e.error);
+    }
+  };
+
+  /* =====================
+   *  RENDER
+   * ===================== */
   const loading = loadingT || regsLoading || loadingB || loadingM;
   const errorMsg = errorT || regsError || errorB || errorM;
 
@@ -543,7 +870,7 @@ export default function AdminBracketsPage() {
             </Typography>
             <Divider sx={{ mb: 2 }} />
 
-            {/* Nút tạo Bracket / Xem sơ đồ */}
+            {/* Action buttons */}
             <Button
               startIcon={<AddIcon />}
               variant="contained"
@@ -569,6 +896,15 @@ export default function AdminBracketsPage() {
                     <Typography variant="h6">
                       {br.name} ({br.type === "group" ? "Vòng bảng" : "Knockout"}, stage {br.stage}
                       {" • "}order {typeof br.order === "number" ? br.order : 0})
+                      {br?.meta?.drawSize && br.type === "knockout" && (
+                        <Chip
+                          size="small"
+                          sx={{ ml: 1 }}
+                          label={`Quy mô: ${br.meta.drawSize} đội (${
+                            br.meta.maxRounds || toRounds(br.meta.drawSize)
+                          } vòng)`}
+                        />
+                      )}
                     </Typography>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Button
@@ -619,7 +955,7 @@ export default function AdminBracketsPage() {
                     </Stack>
                   </Stack>
 
-                  {/* LIST HIỂN THỊ: nếu là vòng bảng -> nhóm theo bảng */}
+                  {/* LIST HIỂN THỊ */}
                   <Stack spacing={1} sx={{ mt: 2 }}>
                     {br.type === "group" ? (
                       (() => {
@@ -711,7 +1047,6 @@ export default function AdminBracketsPage() {
                         );
                       })()
                     ) : (
-                      // Knockout: danh sách phẳng theo round/order
                       <>
                         {(grouped[idOf(br._id)] || []).map((mt) => (
                           <Stack
@@ -817,17 +1152,255 @@ export default function AdminBracketsPage() {
               value={newBracketStage}
               onChange={(e) => setNewBracketStage(Number(e.target.value))}
             />
+            {/* NEW: Order khi tạo mới */}
+            <TextField
+              label="Order (thứ tự hiển thị)"
+              type="number"
+              fullWidth
+              value={newBracketOrder}
+              onChange={(e) => setNewBracketOrder(Number(e.target.value))}
+              helperText="Dùng để sắp xếp danh sách brackets. Nhỏ hiển thị trước."
+            />
+            {newBracketType === "knockout" && (
+              <>
+                {/* NEW: Quy mô giải đấu */}
+                <Alert severity="info">
+                  Quy mô dùng để vẽ khung & kiểm tra số đội. Mặc định dựa vào{" "}
+                  <b>số đội đã thanh toán</b>. Hiện có: <b>{paidCount}</b> đội đã thanh toán.
+                </Alert>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                  <TextField
+                    select
+                    label="Số vòng tối đa (n)"
+                    value={newMaxRounds}
+                    onChange={(e) => {
+                      const n = Math.max(1, Number(e.target.value) || 1);
+                      setNewMaxRounds(n);
+                      setNewDrawSize(fromRounds(n));
+                    }}
+                    sx={{ minWidth: 200 }}
+                  >
+                    {roundsOptionsUpTo(Math.max(64, paidCount || regsCount || 16)).map((n) => (
+                      <MenuItem key={n} value={n}>
+                        {n} vòng (2^{n} = {1 << n} đội)
+                      </MenuItem>
+                    ))}
+                  </TextField>
+
+                  <TextField
+                    select
+                    label="Quy mô (2^n đội)"
+                    value={newDrawSize}
+                    onChange={(e) => {
+                      const v = Math.max(2, Number(e.target.value) || 2);
+                      const pow2 = ceilPow2(v);
+                      setNewDrawSize(pow2);
+                      setNewMaxRounds(toRounds(pow2));
+                    }}
+                    sx={{ minWidth: 240 }}
+                    helperText="2^n = số đội tham gia đã thanh toán"
+                  >
+                    {pow2OptionsUpTo(Math.max(128, paidCount || regsCount || 16)).map((n) => (
+                      <MenuItem key={n} value={n}>
+                        {n} đội (vòng 1 có {n / 2} cặp)
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+
+                <Divider sx={{ my: 2 }} />
+                {/* Auto layout */}
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={autoLayout}
+                      onChange={(e) => setAutoLayout(e.target.checked)}
+                    />
+                  }
+                  label="Tự tạo sơ đồ giải đấu trước (chỉ áp dụng Knockout)"
+                />
+
+                {autoLayout && (
+                  <Stack spacing={2} sx={{ mt: 1 }}>
+                    <TextField
+                      select
+                      label="Chế độ tạo sơ đồ"
+                      value={autoMode}
+                      onChange={(e) => setAutoMode(e.target.value)}
+                      sx={{ minWidth: 260 }}
+                    >
+                      <MenuItem value="FROM_GROUPS">
+                        Option 1 — Lấy đội đi tiếp từ vòng trước (vòng bảng)
+                      </MenuItem>
+                      <MenuItem value="MANUAL_SCALE">
+                        Option 2 — Tự điền quy mô số đội (2^n: 1/8, 1/16, …)
+                      </MenuItem>
+                      <MenuItem value="AUTO_FROM_REGS">
+                        Option 3 — Tự động theo số cặp đăng ký (nếu thừa → có vòng loại riêng)
+                      </MenuItem>
+                    </TextField>
+
+                    {autoMode === "FROM_GROUPS" && (
+                      <Stack spacing={2}>
+                        <TextField
+                          select
+                          fullWidth
+                          label="Bracket nguồn (vòng bảng)"
+                          value={autoFromBracketId}
+                          onChange={(e) => setAutoFromBracketId(e.target.value)}
+                          helperText={
+                            groupSources.length
+                              ? "Chọn vòng bảng có stage nhỏ hơn stage hiện tại."
+                              : "Không tìm thấy vòng bảng phù hợp (hãy tạo vòng bảng trước)."
+                          }
+                          sx={{
+                            mt: 1,
+                            "& .MuiInputBase-root": { minHeight: 56 },
+                            "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
+                          }}
+                        >
+                          <MenuItem value="">
+                            <em>— Chưa chọn —</em>
+                          </MenuItem>
+                          {groupSources.map((b) => (
+                            <MenuItem key={b._id} value={b._id}>
+                              {b.name} (stage {b.stage ?? 1})
+                            </MenuItem>
+                          ))}
+                        </TextField>
+
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                          <TextField
+                            type="number"
+                            label="Top mỗi bảng"
+                            value={autoTopPerGroup}
+                            onChange={(e) =>
+                              setAutoTopPerGroup(Math.max(1, Number(e.target.value) || 1))
+                            }
+                            sx={{ minWidth: 160 }}
+                          />
+                          <TextField
+                            select
+                            label="Seed method"
+                            value={autoSeedMethod}
+                            onChange={(e) => setAutoSeedMethod(e.target.value)}
+                            sx={{ minWidth: 200 }}
+                          >
+                            <MenuItem value="rating">rating</MenuItem>
+                            <MenuItem value="random">random</MenuItem>
+                            <MenuItem value="tiered">tiered</MenuItem>
+                          </TextField>
+                          <TextField
+                            select
+                            label="Ghép cặp"
+                            value={autoPairing}
+                            onChange={(e) => setAutoPairing(e.target.value)}
+                            sx={{ minWidth: 200 }}
+                          >
+                            <MenuItem value="standard">1–N, 2–N-1, …</MenuItem>
+                            <MenuItem value="snake">snake</MenuItem>
+                          </TextField>
+                          <TextField
+                            select
+                            label="Prefill mode"
+                            value={autoFillMode}
+                            onChange={(e) => setAutoFillMode(e.target.value)}
+                            helperText="pairs = điền cặp sẵn; pool = đổ danh sách để bốc tay sau"
+                            sx={{ minWidth: 200 }}
+                          >
+                            <MenuItem value="pairs">pairs</MenuItem>
+                            <MenuItem value="pool">pool</MenuItem>
+                          </TextField>
+                        </Stack>
+
+                        <TextField
+                          select
+                          label="Quy mô mục tiêu (tuỳ chọn)"
+                          value={String(autoTargetScale)}
+                          onChange={(e) => setAutoTargetScale(e.target.value)}
+                          helperText="Để trống = tự làm tròn lên lũy thừa 2 gần nhất theo số đội lấy được."
+                          sx={{ minWidth: 260 }}
+                        >
+                          <MenuItem value="">
+                            <em>— Để trống —</em>
+                          </MenuItem>
+                          {pow2OptionsUpTo(Math.max(64, regsCount || 16)).map((n) => (
+                            <MenuItem key={n} value={String(n)}>
+                              {n} đội (vòng 1 có {n / 2} cặp)
+                            </MenuItem>
+                          ))}
+                        </TextField>
+
+                        <Alert severity="info">
+                          Khi bấm <b>Tạo</b>: hệ thống tạo bracket, <b>commit</b> đội từ vòng bảng
+                          đã chọn vào bracket này theo seeding/pairing bạn chọn. Nếu thiếu slot →
+                          BYE; nếu thừa → vẫn tạo, đội thừa xử lý sau.
+                        </Alert>
+                      </Stack>
+                    )}
+
+                    {autoMode === "MANUAL_SCALE" && (
+                      <Stack spacing={2}>
+                        <TextField
+                          select
+                          label="Chọn quy mô (2^n đội)"
+                          value={manualScale}
+                          onChange={(e) => setManualScale(Number(e.target.value))}
+                          sx={{ minWidth: 260 }}
+                        >
+                          {pow2OptionsUpTo(Math.max(64, regsCount || 16)).map((n) => (
+                            <MenuItem key={n} value={n}>
+                              {n} đội (vòng 1 có {n / 2} cặp)
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                        <Alert severity="info">
+                          Sẽ tạo sẵn <b>{Math.max(1, Number(manualScale) / 2)}</b> trận ở vòng 1 (để
+                          trống slot, điền đội sau). Đăng ký hiện có: <b>{regsCount}</b>.
+                        </Alert>
+                      </Stack>
+                    )}
+
+                    {autoMode === "AUTO_FROM_REGS" && (
+                      <Stack spacing={2}>
+                        {(() => {
+                          const mainSlots = floorPow2(Math.max(2, regsCount));
+                          const excess = Math.max(0, regsCount - mainSlots);
+                          return (
+                            <Alert severity={excess > 0 ? "warning" : "info"}>
+                              Đăng ký hiện có: <b>{regsCount}</b> • Main draw dự kiến:{" "}
+                              <b>{mainSlots}</b> đội (vòng 1 có {mainSlots / 2} cặp).
+                              {excess > 0 && (
+                                <>
+                                  {" "}
+                                  Thừa <b>{excess}</b> đội → cần <b>vòng loại</b> cho{" "}
+                                  <b>{excess * 2}</b> đội tranh <b>{excess}</b> suất.
+                                </>
+                              )}
+                            </Alert>
+                          );
+                        })()}
+                      </Stack>
+                    )}
+                  </Stack>
+                )}
+              </>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBracketDlg(false)}>Huỷ</Button>
-          <Button onClick={handleCreateBracket} variant="contained">
+          <Button
+            onClick={handleCreateBracket}
+            variant="contained"
+            sx={{ color: "white !important" }}
+          >
             Tạo
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: SỬA Bracket (FIXED) */}
+      {/* Dialog: SỬA Bracket */}
       <Dialog
         open={editBracketOpen}
         onClose={() => setEditingBracket(null)}
@@ -874,6 +1447,58 @@ export default function AdminBracketsPage() {
               value={ebOrder}
               onChange={(e) => setEbOrder(Number(e.target.value))}
             />
+
+            {/* NEW: Quy mô khi sửa (chỉ knockout) */}
+            {ebType === "knockout" && (
+              <>
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+                  Quy mô giải đấu
+                </Typography>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                  <TextField
+                    select
+                    label="Số vòng tối đa (n)"
+                    value={ebMaxRounds}
+                    onChange={(e) => {
+                      const n = Math.max(1, Number(e.target.value) || 1);
+                      setEbMaxRounds(n);
+                      setEbDrawSize(fromRounds(n));
+                    }}
+                    sx={{ minWidth: 200 }}
+                  >
+                    {roundsOptionsUpTo(
+                      Math.max(128, ebDrawSize || paidCount || regsCount || 16)
+                    ).map((n) => (
+                      <MenuItem key={n} value={n}>
+                        {n} vòng (2^{n} = {1 << n} đội)
+                      </MenuItem>
+                    ))}
+                  </TextField>
+
+                  <TextField
+                    select
+                    label="Quy mô (2^n đội)"
+                    value={ebDrawSize}
+                    onChange={(e) => {
+                      const v = Math.max(2, Number(e.target.value) || 2);
+                      const pow2 = ceilPow2(v);
+                      setEbDrawSize(pow2);
+                      setEbMaxRounds(toRounds(pow2));
+                    }}
+                    sx={{ minWidth: 240 }}
+                  >
+                    {pow2OptionsUpTo(Math.max(128, ebDrawSize || paidCount || regsCount || 16)).map(
+                      (n) => (
+                        <MenuItem key={n} value={n}>
+                          {n} đội (vòng 1 có {n / 2} cặp)
+                        </MenuItem>
+                      )
+                    )}
+                  </TextField>
+                </Stack>
+              </>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1261,10 +1886,11 @@ export default function AdminBracketsPage() {
               </TextField>
             </Stack>
 
-            {suggestCascade && (
+            {(willDowngrade || willChangeWinner) && (
               <Alert severity="warning">
                 Bạn đang {willDowngrade ? "đổi trạng thái từ finished → " + emStatus : "đổi winner"}
-                .<br />
+                .
+                <br />
                 Có thể cần <b>reset các trận sau</b> trong nhánh này để nhất quán.
               </Alert>
             )}
@@ -1553,10 +2179,9 @@ export default function AdminBracketsPage() {
             <Stack spacing={2} mt={1}>
               <Alert severity="info">
                 Chọn bracket nguồn, chế độ lấy đội (Top N bảng / Đội thắng vòng KO), phương pháp
-                seeding & cách ghép cặp. Bạn có thể <b>Preview</b> trước khi Prefill/Commit.
+                seeding & cách ghép cặp. Có thể <b>Preview</b> trước khi Prefill/Commit.
               </Alert>
 
-              {/* chọn bracket nguồn */}
               <TextField
                 select
                 fullWidth
@@ -1585,7 +2210,6 @@ export default function AdminBracketsPage() {
                 ))}
               </TextField>
 
-              {/* mode */}
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <TextField
                   select
@@ -1628,7 +2252,6 @@ export default function AdminBracketsPage() {
                 />
               </Stack>
 
-              {/* seeding & pairing */}
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <TextField
                   select
@@ -1671,14 +2294,13 @@ export default function AdminBracketsPage() {
                     "& .MuiInputBase-root": { minHeight: 56 },
                     "& .MuiSelect-select": { py: 2 },
                   }}
-                  helperText="pairs = điền cặp luôn; pool = bốc tay sau"
+                  helperText="pairs = điền cặp luôn; pool = đổ danh sách để bốc tay sau"
                 >
                   <MenuItem value="pairs">pairs (điền cặp sẵn)</MenuItem>
                   <MenuItem value="pool">pool (để bốc tay)</MenuItem>
                 </TextField>
               </Stack>
 
-              {/* preview list */}
               {!!advPreview?.length && (
                 <Box sx={{ mt: 1, p: 2, border: "1px solid #eee", borderRadius: 1 }}>
                   <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>

@@ -25,13 +25,12 @@ import {
   useListAllMatchesQuery,
   useGetTournamentQuery,
 } from "slices/tournamentsApiSlice";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import Footer from "examples/Footer";
 
 // react-brackets
 import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
 import PropTypes from "prop-types";
+import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 /* ================= Helpers ================= */
 function normType(t) {
@@ -70,6 +69,22 @@ function roundTitleByCount(cnt) {
   if (cnt === 16) return "Vòng 1/16";
   return `Vòng (${cnt} trận)`;
 }
+const ceilPow2 = (n) => Math.pow(2, Math.ceil(Math.log2(Math.max(1, n || 1))));
+
+/* ===== Grouping helpers (dò tên bảng từ match) ===== */
+const UNGROUPED = "__UNGROUPED__";
+const getGroupKey = (m) => {
+  const g = m.group ?? m.groupName ?? m.pool ?? m.table ?? m.groupLabel ?? null;
+  if (typeof g === "string" && g.trim()) return g.trim();
+  if (g && typeof g === "object") return g.name || g.code || g.label || g._id || UNGROUPED;
+  if (typeof m.groupIndex === "number") return String.fromCharCode(65 + m.groupIndex); // 0->A
+  return UNGROUPED;
+};
+const formatGroupTitle = (key) => {
+  if (!key || key === UNGROUPED) return "Chưa phân bảng";
+  if (/^[A-Za-z]$/.test(key)) return `Bảng ${key.toUpperCase()}`;
+  return `Bảng ${key}`;
+};
 
 /* ======== Build rounds (có placeholder) cho react-brackets ======== */
 function placeholderSeed(r, idx, emptyLabel) {
@@ -135,6 +150,73 @@ function buildRoundsWithPlaceholders(
 
     return { title: roundTitleByCount(need), seeds };
   });
+}
+
+/* ======== Dựng khung dự kiến từ “Top 1 / Top 2 mỗi bảng” ======== */
+/** pairing "standard": 1–N, 2–(N-1), ... */
+function pairIndicesStandard(N) {
+  const half = N / 2;
+  const pairs = [];
+  for (let i = 0; i < half; i++) {
+    pairs.push([i, N - 1 - i]);
+  }
+  return pairs;
+}
+
+/** labels: mảng tên seed 1..K (K<=N), N = pow2 >= K */
+function buildRoundsFromLabels(labels, { emptyLabel = "Chưa có đội/VDV" } = {}) {
+  const K = Array.isArray(labels) ? labels.length : 0;
+  if (K < 2) return [];
+
+  const N = ceilPow2(K); // scale
+  const padded = Array.from({ length: N }, (_, i) => labels[i] || emptyLabel);
+  // Round 1 có N/2 trận
+  const pairs = pairIndicesStandard(N);
+  const round1Seeds = pairs.map(([a, b], idx) => ({
+    id: `proj-R1-${idx}`,
+    __match: null,
+    teams: [{ name: padded[a] }, { name: padded[b] }],
+  }));
+
+  const rounds = [{ title: roundTitleByCount(round1Seeds.length), seeds: round1Seeds }];
+
+  // Các round tiếp theo: chỉ tạo khung placeholder TBD
+  let matches = round1Seeds.length;
+  let r = 2;
+  while (matches > 1) {
+    matches = Math.floor(matches / 2);
+    rounds.push({
+      title: roundTitleByCount(matches),
+      seeds: Array.from({ length: matches }, (_, i) => ({
+        id: `proj-R${r}-${i}`,
+        __match: null,
+        teams: [{ name: "TBD" }, { name: "TBD" }],
+      })),
+    });
+    r += 1;
+  }
+  return rounds;
+}
+
+/** Lấy danh sách "Top 1 / Top 2" từ các bảng của bracket nguồn (group) */
+function makeProjectedLabelsFromGroupMatches(groupMatches, { topPerGroup = 2 } = {}) {
+  if (!Array.isArray(groupMatches) || !groupMatches.length) return [];
+  // gom theo bảng
+  const groups = {};
+  groupMatches.forEach((m) => {
+    const k = getGroupKey(m);
+    if (!groups[k]) groups[k] = true;
+  });
+  const keys = Object.keys(groups)
+    .filter((k) => k !== UNGROUPED)
+    .sort((a, b) => a.localeCompare(b, "vi", { numeric: true, sensitivity: "base" }));
+
+  // seed theo thứ tự: Top1 của từng bảng (A..), rồi Top2 của từng bảng (A..)
+  const labels = [];
+  for (let rank = 1; rank <= Math.max(1, topPerGroup); rank++) {
+    keys.forEach((k) => labels.push(`Top ${rank} ${formatGroupTitle(k)}`));
+  }
+  return labels;
 }
 
 /* ========== Custom seed (local theo eventType) ========== */
@@ -248,6 +330,11 @@ export default function TournamentBracketView() {
     [allMatches, tourId]
   );
 
+  // group và knockout
+  const groupStage = useMemo(() => (brackets || []).filter((b) => b.type === "group"), [brackets]);
+  const knockout = useMemo(() => (brackets || []).filter((b) => b.type === "knockout"), [brackets]);
+
+  // map bracket -> list matches
   const byBracket = useMemo(() => {
     const m = {};
     (brackets || []).forEach((b) => (m[b._id] = []));
@@ -258,6 +345,7 @@ export default function TournamentBracketView() {
     return m;
   }, [brackets, matches]);
 
+  // BXH group đơn giản (đếm win/loss)
   const groupStandings = useMemo(() => {
     const map = {};
     (brackets || [])
@@ -291,6 +379,7 @@ export default function TournamentBracketView() {
     return map;
   }, [brackets, byBracket]);
 
+  // label hiển thị A/B cho match
   const matchSideLabel = useCallback(
     (m, side /* 'A'|'B' */) => {
       const pair = side === "A" ? m.pairA : m.pairB;
@@ -299,9 +388,10 @@ export default function TournamentBracketView() {
       if (prev) return depLabel(prev);
       return emptyLabel;
     },
-    [evType] // emptyLabel is static per render
+    [evType]
   );
 
+  // rounds từ match KO thật (nếu đã commit)
   const buildRoundsForKnockout = useCallback(
     (bracketId) => {
       const brMatches = (byBracket[bracketId] || [])
@@ -318,38 +408,49 @@ export default function TournamentBracketView() {
     [byBracket, matchSideLabel, emptyLabel]
   );
 
+  // dự đoán khung KO từ vòng bảng (Top 1/2 mỗi bảng), dùng khi KO chưa có match
+  const getProjectedRoundsForKO = useCallback(
+    (koBracket) => {
+      // chọn bracket group có stage nhỏ hơn KO và lớn nhất (gần nhất)
+      const candidates = (groupStage || []).filter(
+        (g) =>
+          typeof g.stage === "number" &&
+          typeof koBracket.stage === "number" &&
+          g.stage < koBracket.stage
+      );
+      const source =
+        candidates.sort((a, b) => (b.stage ?? 0) - (a.stage ?? 0))[0] ||
+        (groupStage.length ? groupStage[0] : null);
+      if (!source) return { rounds: [], sourceName: null };
+
+      const gMatches = byBracket[source._id] || [];
+      const labels = makeProjectedLabelsFromGroupMatches(gMatches, { topPerGroup: 2 }); // mặc định Top 2
+      const rounds = buildRoundsFromLabels(labels, { emptyLabel });
+      return { rounds, sourceName: source.name || "Vòng bảng" };
+    },
+    [groupStage, byBracket, emptyLabel]
+  );
+
   const winnerPair = (m) => {
     if (!m || m.status !== "finished" || !m.winner) return null;
     return m.winner === "A" ? m.pairA : m.pairB;
-    // (pair object; render bằng safeRegName ở dưới)
   };
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <DashboardNavbar />
-        <Box textAlign="center" py={6}>
-          <CircularProgress />
-        </Box>
-      </DashboardLayout>
+      <Box p={3} textAlign="center">
+        <CircularProgress />
+      </Box>
     );
   }
 
   if (error) {
     return (
-      <DashboardLayout>
-        <DashboardNavbar />
-        <Box p={3}>
-          <Alert severity="error">
-            {error?.data?.message || error?.error || "Lỗi tải dữ liệu."}
-          </Alert>
-        </Box>
-      </DashboardLayout>
+      <Box p={3}>
+        <Alert severity="error">{error?.data?.message || error?.error || "Lỗi tải dữ liệu."}</Alert>
+      </Box>
     );
   }
-
-  const groupStage = (brackets || []).filter((b) => b.type === "group");
-  const knockout = (brackets || []).filter((b) => b.type === "knockout");
 
   const CustomSeedLocal = makeCustomSeed({ emptyLabel, entityWord });
 
@@ -465,15 +566,24 @@ export default function TournamentBracketView() {
 
         {/* ====== KNOCKOUT (react-brackets) ====== */}
         {knockout.map((b) => {
-          const rounds = buildRoundsForKnockout(b._id);
           const brMatches = byBracket[b._id] || [];
+          const hasRealKO = brMatches.length > 0;
+
+          // Nếu đã có trận KO thật: build từ match
+          // Nếu chưa: dựng khung dự kiến từ Top 1/2 mỗi bảng ở stage trước
+          const rounds = hasRealKO
+            ? buildRoundsForKnockout(b._id)
+            : getProjectedRoundsForKO(b).rounds;
+
+          const { sourceName } = hasRealKO ? { sourceName: null } : getProjectedRoundsForKO(b);
 
           const finalLike =
-            brMatches.find((m) => !m?.nextMatch) ||
-            brMatches.slice().sort((a, c) => (c.round || 1) - (a.round || 1))[0] ||
-            null;
+            hasRealKO &&
+            (brMatches.find((m) => !m?.nextMatch) ||
+              brMatches.slice().sort((a, c) => (c.round || 1) - (a.round || 1))[0] ||
+              null);
 
-          const champion = winnerPair(finalLike);
+          const champion = hasRealKO ? winnerPair(finalLike) : null;
 
           return (
             <Box key={b._id} mb={4}>
@@ -496,27 +606,35 @@ export default function TournamentBracketView() {
               {!rounds.length ? (
                 <Alert severity="info">Chưa có trận nào.</Alert>
               ) : (
-                <Card sx={{ p: 2, overflowX: "auto" }}>
-                  <Bracket
-                    rounds={rounds}
-                    renderSeedComponent={CustomSeedLocal}
-                    mobileBreakpoint={0}
-                  />
-                  <Divider sx={{ mt: 2 }} />
-                  <Box mt={1}>
-                    <Typography variant="caption" color="text.secondary">
-                      * Đậm + viền đỏ: {entityWord.toLowerCase()} thắng. Có vạch đỏ ở mép phải để
-                      gợi “đường thắng” sang vòng sau. Ô chung kết có biểu tượng cúp khi đã xác định
-                      vô địch.
-                    </Typography>
-                  </Box>
-                </Card>
+                <>
+                  {!hasRealKO && (
+                    <Alert severity="info" sx={{ mb: 1 }}>
+                      <b>Khung dự kiến</b> (chưa chốt): lấy mặc định <b>Top 1 & Top 2</b> từ{" "}
+                      <b>{sourceName || "vòng bảng"}</b>. Khi BXH chốt hoặc bạn Commit Advancement,
+                      các ô sẽ tự điền đội thật.
+                    </Alert>
+                  )}
+                  <Card sx={{ p: 2, overflowX: "auto" }}>
+                    <Bracket
+                      rounds={rounds}
+                      renderSeedComponent={makeCustomSeed({ emptyLabel, entityWord })}
+                      mobileBreakpoint={0}
+                    />
+                    <Divider sx={{ mt: 2 }} />
+                    <Box mt={1}>
+                      <Typography variant="caption" color="text.secondary">
+                        * Đậm + viền đỏ: {entityWord.toLowerCase()} thắng. Có vạch đỏ ở mép phải để
+                        gợi “đường thắng” sang vòng sau. Ô chung kết có biểu tượng cúp khi đã xác
+                        định vô địch.
+                      </Typography>
+                    </Box>
+                  </Card>
+                </>
               )}
             </Box>
           );
         })}
       </Box>
-      <Footer />
     </DashboardLayout>
   );
 }
