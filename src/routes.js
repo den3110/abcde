@@ -28,6 +28,9 @@ import RefereeMatches from "layouts/tournament/referee/RefereeMatches";
 // 🆕 Cấu hình thuật toán bốc thăm (Admin)
 import AlgoSettingsPage from "layouts/tournament/AlgoSettingsPage"; // <— THÊM DÒNG NÀY
 import AutoUserPage from "layouts/auto/AutoUserPage";
+import CmsHeroEditor from "layouts/CmsHeroEditor";
+import CmsContactEditor from "layouts/CmsContactEditor";
+import AdminRefereeMatches from "layouts/tournament/referee/AdminRefereeMatches";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -39,6 +42,7 @@ const routes = [
     icon: <Icon fontSize="small">dashboard</Icon>,
     route: "/dashboard",
     component: <Dashboard />,
+    roles: ["admin"],
     private: true,
   },
 
@@ -203,6 +207,17 @@ const routes = [
     private: true,
     roles: ["admin", "referee"],
   },
+  // 🆕 Trang admin: danh sách trận đã gán trọng tài (có lọc & autocomplete trọng tài)
+  {
+    type: "collapse",
+    name: "Trận trọng tài (Admin)",
+    key: "admin-referee-matches",
+    icon: <Icon fontSize="small">assignment_ind</Icon>,
+    route: "/admin/referee/matches",
+    component: <AdminRefereeMatches />,
+    private: true,
+    roles: ["admin"],
+  },
   {
     type: "collapse",
     name: "Trọng tài",
@@ -212,6 +227,26 @@ const routes = [
     component: <RefereeMatches />,
     private: true,
     roles: ["referee"],
+  },
+  {
+    type: "collapse",
+    name: "CMS Hero",
+    key: "cms-hero",
+    icon: <Icon fontSize="small">image</Icon>,
+    route: "/admin/cms/hero",
+    component: <CmsHeroEditor />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "CMS Contact",
+    key: "cms-contact",
+    icon: <Icon fontSize="small">contact_mail</Icon>,
+    route: "/admin/cms/contact",
+    component: <CmsContactEditor />,
+    private: true,
+    roles: ["admin"],
   },
 ];
 

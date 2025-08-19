@@ -33,15 +33,22 @@ import {
   InputLabel,
   Select,
   Pagination,
+  Tooltip,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
   Edit as EditIcon,
   Info as InfoIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
 } from "@mui/icons-material";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
-import { useListMatchGroupsQuery, useListMatchesPagedQuery } from "slices/tournamentsApiSlice";
-import { useGetMatchQuery, useAssignRefereeMutation } from "slices/tournamentsApiSlice";
+import {
+  useListMatchGroupsQuery,
+  useListMatchesPagedQuery,
+  useGetMatchQuery,
+  useAssignRefereeMutation,
+} from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -71,18 +78,35 @@ const BracketSection = memo(function BracketSection({
   expanded, // chỉ fetch khi true
   onOpenAssign,
   onOpenDetail,
+  highlightId,
+  statusFilter, // "all" | "scheduled" | "live" | "finished"
 }) {
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRpp] = useState(10);
 
-  const { data, isFetching, isLoading, error } = useListMatchesPagedQuery(
-    { tournament: tournamentId, bracket: bracketId, page, limit: rowsPerPage },
-    { skip: !expanded }
-  );
+  const queryArgs = useMemo(() => {
+    const args = { tournament: tournamentId, bracket: bracketId, page, limit: rowsPerPage };
+    if (statusFilter && statusFilter !== "all") args.status = statusFilter;
+    return args;
+  }, [tournamentId, bracketId, page, rowsPerPage, statusFilter]);
+
+  const { data, isFetching, isLoading, error } = useListMatchesPagedQuery(queryArgs, {
+    skip: !expanded,
+  });
 
   const total = data?.total || 0;
-  const list = data?.list || [];
-  const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
+  const listRaw = data?.list || [];
+  // Lọc client-side fallback nếu BE không hỗ trợ status (không hại nếu có)
+  const list =
+    statusFilter && statusFilter !== "all"
+      ? listRaw.filter((m) => (m?.status || "").toLowerCase() === statusFilter)
+      : listRaw;
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil((statusFilter && statusFilter !== "all" ? list.length : total) / rowsPerPage)
+  );
+
   useEffect(() => {
     if (page > totalPages) setPage(1);
   }, [totalPages, page]);
@@ -157,8 +181,21 @@ const BracketSection = memo(function BracketSection({
             const singles = isSinglesMatch(m);
             const labelA = sideLabel(m?.pairA, singles);
             const labelB = sideLabel(m?.pairB, singles);
+            const isHL = highlightId === m._id;
             return (
-              <Card key={m._id} sx={{ p: 2, opacity: isFetching ? 0.7 : 1 }}>
+              <Card
+                key={m._id}
+                sx={{
+                  p: 2,
+                  opacity: isFetching ? 0.7 : 1,
+                  border: "1px solid",
+                  borderColor: isHL ? "primary.main" : "divider",
+                  boxShadow: isHL ? 3 : 0,
+                  bgcolor: isHL ? "action.hover" : "background.paper",
+                  scrollMarginTop: "96px",
+                }}
+                id={isHL ? `match-${m._id}` : undefined}
+              >
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Box>
                     <Typography>
@@ -182,14 +219,21 @@ const BracketSection = memo(function BracketSection({
                     <Typography variant="caption" display="block" color="text.secondary">
                       Trọng tài: {m?.referee?.name || "Chưa phân"}
                     </Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">
+                      _id: {m._id}
+                    </Typography>
                   </Box>
                   <Stack direction="row" spacing={1}>
-                    <IconButton onClick={() => onOpenDetail(m._id)} size="small" title="Chi tiết">
-                      <InfoIcon />
-                    </IconButton>
-                    <IconButton onClick={() => onOpenAssign(m)} size="small" title="Gán trọng tài">
-                      <EditIcon />
-                    </IconButton>
+                    <Tooltip title="Chi tiết">
+                      <IconButton onClick={() => onOpenDetail(m._id)} size="small">
+                        <InfoIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Gán trọng tài">
+                      <IconButton onClick={() => onOpenAssign(m)} size="small">
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
                   </Stack>
                 </Stack>
               </Card>
@@ -201,6 +245,24 @@ const BracketSection = memo(function BracketSection({
   );
 });
 
+BracketSection.propTypes = {
+  tournamentId: PropTypes.string.isRequired,
+  bracketId: PropTypes.string.isRequired,
+  bracketName: PropTypes.string.isRequired,
+  expanded: PropTypes.bool,
+  onOpenAssign: PropTypes.func.isRequired,
+  onOpenDetail: PropTypes.func.isRequired,
+  highlightId: PropTypes.string,
+  statusFilter: PropTypes.string,
+};
+
+BracketSection.defaultProps = {
+  expanded: false,
+  highlightId: undefined,
+  statusFilter: "all",
+};
+
+/* ================== MAIN ================== */
 export default function AdminMatchesListGrouped() {
   // 1) skeleton nhóm: giải → các bracket
   const {
@@ -208,6 +270,13 @@ export default function AdminMatchesListGrouped() {
     isLoading: groupsLoading,
     error: groupsError,
   } = useListMatchGroupsQuery({});
+
+  // filter state (tournament / bracket / status)
+  const [tourFilter, setTourFilter] = useState("all");
+  const [bracketFilter, setBracketFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all"); // scheduled | live | finished
+
+  // điều khiển accordion open theo giải
   const [openTourIds, setOpenTourIds] = useState({});
 
   // 2) referees
@@ -242,6 +311,109 @@ export default function AdminMatchesListGrouped() {
     }
   }, [assignDlg, assignReferee]);
 
+  // ===== SEARCH BY _id =====
+  const [searchInput, setSearchInput] = useState("");
+  const [searchId, setSearchId] = useState(""); // trigger id
+  const {
+    data: foundMatch,
+    isFetching: searching,
+    error: searchError,
+  } = useGetMatchQuery(searchId, { skip: !searchId });
+
+  // highlight theo kết quả search
+  const [highlightId, setHighlightId] = useState(null);
+
+  useEffect(() => {
+    if (searchError && searchId) {
+      showSnack("error", "Không tìm thấy trận với _id đã nhập");
+    }
+  }, [searchError, searchId]);
+
+  useEffect(() => {
+    if (!foundMatch?._id) return;
+    const tId = foundMatch?.tournament?._id || foundMatch?.tournamentId || foundMatch?.tournament;
+    const bId = foundMatch?.bracket?._id || foundMatch?.bracketId || foundMatch?.bracket;
+
+    if (tId) {
+      setTourFilter(String(tId));
+      setOpenTourIds({ [tId]: true });
+    }
+    if (bId) setBracketFilter(String(bId));
+    setHighlightId(foundMatch._id);
+
+    // mở dialog chi tiết ngay cho tiện
+    setDetailId(foundMatch._id);
+
+    // cố gắng scroll tới card (nếu đang render)
+    setTimeout(() => {
+      const el = document.getElementById(`match-${foundMatch._id}`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 250);
+  }, [foundMatch]);
+
+  const handleSubmitSearch = useCallback(() => {
+    const v = (searchInput || "").trim();
+    if (!v) return;
+    setSearchId(v);
+  }, [searchInput]);
+
+  const clearSearch = useCallback(() => {
+    setSearchInput("");
+    setSearchId("");
+    setHighlightId(null);
+  }, []);
+
+  // ====== lọc groups theo filter chọn ======
+  const filteredGroups = useMemo(() => {
+    if (!groups?.length) return [];
+    let gs = groups;
+    if (tourFilter !== "all") {
+      gs = gs.filter((g) => String(g.tournamentId) === String(tourFilter));
+    }
+    // map để lọc bracket bên trong
+    if (bracketFilter !== "all") {
+      gs = gs
+        .map((g) => ({
+          ...g,
+          brackets: g.brackets.filter((b) => String(b.bracketId) === String(bracketFilter)),
+        }))
+        .filter((g) => g.brackets.length > 0);
+    }
+    return gs;
+  }, [groups, tourFilter, bracketFilter]);
+
+  // Khi đổi giải thì reset bracket filter
+  const handleTourChange = useCallback((e) => {
+    const v = e.target.value;
+    setTourFilter(v);
+    setBracketFilter("all");
+    if (v !== "all") setOpenTourIds({ [v]: true });
+  }, []);
+
+  // list tournament options & bracket options phụ thuộc tourFilter
+  const tourOptions = useMemo(() => {
+    return groups.map((g) => ({
+      id: g.tournamentId,
+      name: g.tournamentName,
+      brackets: g.brackets,
+    }));
+  }, [groups]);
+
+  const bracketOptions = useMemo(() => {
+    if (tourFilter === "all") {
+      // gom tất cả bracket (ít dùng) – nhưng vẫn cho "all"
+      const all = [];
+      groups.forEach((g) =>
+        g.brackets.forEach((b) =>
+          all.push({ id: b.bracketId, name: `${g.tournamentName} • ${b.bracketName}` })
+        )
+      );
+      return all;
+    }
+    const selected = groups.find((g) => String(g.tournamentId) === String(tourFilter));
+    return (selected?.brackets || []).map((b) => ({ id: b.bracketId, name: b.bracketName }));
+  }, [groups, tourFilter]);
+
   // chi tiết trận
   const {
     data: detail,
@@ -263,18 +435,150 @@ export default function AdminMatchesListGrouped() {
           Quản lý trận đấu
         </Typography>
 
+        {/* ===== Filter & Search Bar ===== */}
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={4}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Tìm theo Match _id"
+                placeholder="Nhập chính xác _id (ObjectId)"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmitSearch()}
+                InputProps={{
+                  endAdornment: (
+                    <Stack direction="row" spacing={0.5}>
+                      {searchInput ? (
+                        <IconButton size="small" onClick={clearSearch} title="Xoá">
+                          <ClearIcon fontSize="small" />
+                        </IconButton>
+                      ) : null}
+                      <IconButton
+                        size="small"
+                        onClick={handleSubmitSearch}
+                        disabled={searching}
+                        title="Tìm"
+                      >
+                        <SearchIcon fontSize="small" />
+                      </IconButton>
+                    </Stack>
+                  ),
+                }}
+              />
+              {searchId ? (
+                searching ? (
+                  <Typography variant="caption" color="text.secondary">
+                    Đang tìm…
+                  </Typography>
+                ) : foundMatch?._id ? (
+                  <Typography variant="caption" color="success.main">
+                    Đã định vị trận trong {foundMatch?.tournament?.name} /{" "}
+                    {foundMatch?.bracket?.name}
+                  </Typography>
+                ) : searchError ? (
+                  <Typography variant="caption" color="error.main">
+                    Không tìm thấy _id đã nhập
+                  </Typography>
+                ) : null
+              ) : null}
+            </Grid>
+
+            <Grid item xs={12} md={3}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="tour-filter-label">Giải</InputLabel>
+                <Select
+                  labelId="tour-filter-label"
+                  value={tourFilter}
+                  onChange={handleTourChange}
+                  label="Giải"
+                  IconComponent={ArrowDropDownIcon}
+                >
+                  <MenuItem value="all">Tất cả</MenuItem>
+                  {tourOptions.map((t) => (
+                    <MenuItem key={t.id} value={String(t.id)}>
+                      {t.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12} md={3}>
+              <FormControl
+                fullWidth
+                size="small"
+                disabled={tourFilter === "all" && bracketOptions.length === 0}
+              >
+                <InputLabel id="bracket-filter-label">Bracket</InputLabel>
+                <Select
+                  labelId="bracket-filter-label"
+                  value={bracketFilter}
+                  onChange={(e) => setBracketFilter(e.target.value)}
+                  label="Bracket"
+                  IconComponent={ArrowDropDownIcon}
+                >
+                  <MenuItem value="all">Tất cả</MenuItem>
+                  {bracketOptions.map((b) => (
+                    <MenuItem key={b.id} value={String(b.id)}>
+                      {b.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12} md={2}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="status-filter-label">Trạng thái</InputLabel>
+                <Select
+                  labelId="status-filter-label"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  label="Trạng thái"
+                  IconComponent={ArrowDropDownIcon}
+                >
+                  <MenuItem value="all">Tất cả</MenuItem>
+                  <MenuItem value="scheduled">Chưa diễn ra</MenuItem>
+                  <MenuItem value="live">Đang diễn ra</MenuItem>
+                  <MenuItem value="finished">Đã kết thúc</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12} md={12}>
+              <Stack direction="row" spacing={1}>
+                <Button
+                  variant="text"
+                  onClick={() => {
+                    setTourFilter("all");
+                    setBracketFilter("all");
+                    setStatusFilter("all");
+                    setOpenTourIds({});
+                    setHighlightId(null);
+                  }}
+                  startIcon={<ClearIcon />}
+                >
+                  Xoá bộ lọc
+                </Button>
+              </Stack>
+            </Grid>
+          </Grid>
+        </Paper>
+
         {groupsLoading ? (
           <Box textAlign="center" py={6}>
             <CircularProgress />
           </Box>
         ) : groupsError ? (
           <Alert severity="error">{groupsError?.data?.message || groupsError.error}</Alert>
-        ) : groups.length === 0 ? (
-          <Alert severity="info">Chưa có trận nào</Alert>
+        ) : filteredGroups.length === 0 ? (
+          <Alert severity="info">Không có dữ liệu theo bộ lọc</Alert>
         ) : (
-          groups.map((g) => {
+          filteredGroups.map((g) => {
             const tId = g.tournamentId;
-            const expanded = !!openTourIds[tId];
+            const expanded = !!openTourIds[tId] || tourFilter === String(tId);
             return (
               <Accordion
                 key={tId}
@@ -289,12 +593,14 @@ export default function AdminMatchesListGrouped() {
                   {g.brackets.map((b) => (
                     <BracketSection
                       key={b.bracketId}
-                      tournamentId={tId}
-                      bracketId={b.bracketId}
+                      tournamentId={String(tId)}
+                      bracketId={String(b.bracketId)}
                       bracketName={b.bracketName}
                       expanded={expanded}
                       onOpenAssign={openAssign}
                       onOpenDetail={setDetailId}
+                      highlightId={highlightId}
+                      statusFilter={statusFilter}
                     />
                   ))}
                 </AccordionDetails>
@@ -376,7 +682,6 @@ export default function AdminMatchesListGrouped() {
                           <Box>
                             <Typography>{sideLabel(p, singlesDetail)}</Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {/* mask phone */}
                               {singlesDetail
                                 ? maskPhone(p?.player1?.phone)
                                 : `${maskPhone(p?.player1?.phone)} – ${maskPhone(
@@ -455,6 +760,9 @@ export default function AdminMatchesListGrouped() {
                 <Typography>
                   <strong>Trọng tài:</strong> {detail?.referee?.name || "Chưa phân"}
                 </Typography>
+                <Typography>
+                  <strong>Match _id:</strong> {detail?._id}
+                </Typography>
                 {detail?.note && (
                   <Typography>
                     <strong>Ghi chú:</strong> {detail.note}
@@ -482,16 +790,3 @@ export default function AdminMatchesListGrouped() {
     </DashboardLayout>
   );
 }
-
-BracketSection.propTypes = {
-  tournamentId: PropTypes.string.isRequired,
-  bracketId: PropTypes.string.isRequired,
-  bracketName: PropTypes.string.isRequired,
-  expanded: PropTypes.bool, // optional
-  onOpenAssign: PropTypes.func.isRequired,
-  onOpenDetail: PropTypes.func.isRequired,
-};
-
-BracketSection.defaultProps = {
-  expanded: false,
-};

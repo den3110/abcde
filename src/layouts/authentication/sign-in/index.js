@@ -41,15 +41,27 @@ export default function SignIn() {
       const userInfo = { ...user, token };
 
       // Lưu vào Redux
-      dispatch(setCredentials({ user, token })); // ⬅️ action mới
+      dispatch(setCredentials({ user, token }));
 
       // Tuỳ chọn nhớ phiên
       if (remember) localStorage.setItem("userInfo", JSON.stringify(userInfo));
 
-      // Điều hướng
-      navigate(from, { replace: true });
+      // === Phần điều hướng theo role ===
+      // Thu thập role từ nhiều chỗ để an toàn
+      const roles = new Set([
+        ...(Array.isArray(user?.roles) ? user.roles : []),
+        ...(user?.role ? [user.role] : []),
+      ]);
+      if (user?.isAdmin) roles.add("admin");
+
+      const isAdmin = roles.has("admin");
+      const isReferee = roles.has("referee");
+
+      // referee-only -> về trang referee/matches
+      const redirectTo = isReferee && !isAdmin ? "/referee/matches" : from;
+
+      navigate(redirectTo, { replace: true });
     } catch (err) {
-      console.log(err);
       setError(err?.data?.message || "Login failed");
     }
   };

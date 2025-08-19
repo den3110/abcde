@@ -1,42 +1,134 @@
-/**
-=========================================================
-* PickleTour React - v2.2.0
-=========================================================
-
-* Product Page: https://www.creative-tim.com/product/material-dashboard-react
-* Copyright 2023 Creative Tim (https://www.creative-tim.com)
-
-Coded by www.creative-tim.com
-
- =========================================================
-
-* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*/
-
-// @mui material components
+// src/layouts/dashboard/index.jsx
 import Grid from "@mui/material/Grid";
-
-// PickleTour React components
+import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
-
-// PickleTour React example components
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
 import ReportsBarChart from "examples/Charts/BarCharts/ReportsBarChart";
 import ReportsLineChart from "examples/Charts/LineCharts/ReportsLineChart";
 import ComplexStatisticsCard from "examples/Cards/StatisticsCards/ComplexStatisticsCard";
+import Icon from "@mui/material/Icon";
+import { useMemo } from "react";
 
-// Data
-import reportsBarChartData from "layouts/dashboard/data/reportsBarChartData";
-import reportsLineChartData from "layouts/dashboard/data/reportsLineChartData";
+import { useGetDashboardMetricsQuery, useGetDashboardSeriesQuery } from "slices/dashboardApiSlice";
+import { fillSeries, toBarLineDataset } from "./utils/chartTransforms.js";
+import PropTypes from "prop-types";
 
-// Dashboard components
-import Projects from "layouts/dashboard/components/Projects";
-import OrdersOverview from "layouts/dashboard/components/OrdersOverview";
+// Simple Upcoming table
+function UpcomingCard({ items = [] }) {
+  return (
+    <Card>
+      <MDBox p={2}>
+        <MDBox variant="h6" fontWeight="bold">
+          Giải sắp diễn ra
+        </MDBox>
+      </MDBox>
+      <MDBox px={2} pb={2}>
+        {items.length === 0 ? (
+          <MDBox color="text" fontSize={14}>
+            Không có giải sắp tới
+          </MDBox>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th align="left">Tên</th>
+                <th align="left">Ngày</th>
+                <th align="right">Đã ĐK / Tối đa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((t) => (
+                <tr key={t._id}>
+                  <td style={{ padding: "8px 0" }}>{t.name}</td>
+                  <td>{new Date(t.startDate).toLocaleDateString()}</td>
+                  <td align="right">
+                    {t.registered ?? 0}
+                    {t.maxPairs ? ` / ${t.maxPairs}` : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </MDBox>
+    </Card>
+  );
+}
+
+// Simple TODOs card
+function TodosCard({ todos }) {
+  const rows = [
+    { icon: "sports", label: "Trận chưa gán trọng tài", value: todos?.needReferee ?? 0 },
+    { icon: "how_to_reg", label: "Đăng ký chờ duyệt", value: todos?.pendingApprovals ?? 0 },
+    { icon: "verified_user", label: "KYC chưa xác minh", value: todos?.pendingKyc ?? 0 },
+    { icon: "report", label: "Sự cố chưa xử lý", value: todos?.incidents ?? 0 },
+  ];
+  return (
+    <Card>
+      <MDBox p={2}>
+        <MDBox variant="h6" fontWeight="bold">
+          Công việc cần xử lý
+        </MDBox>
+      </MDBox>
+      <MDBox px={2} pb={2}>
+        {rows.map((r) => (
+          <MDBox
+            key={r.label}
+            display="flex"
+            alignItems="center"
+            justifyContent="space-between"
+            py={1}
+          >
+            <MDBox display="flex" alignItems="center" gap={1}>
+              <Icon fontSize="small">{r.icon}</Icon>
+              <span>{r.label}</span>
+            </MDBox>
+            <MDBox fontWeight="bold">{r.value}</MDBox>
+          </MDBox>
+        ))}
+      </MDBox>
+    </Card>
+  );
+}
 
 function Dashboard() {
-  const { sales, tasks } = reportsLineChartData;
+  const { data: metrics, isLoading: mLoading } = useGetDashboardMetricsQuery();
+  const { data: series, isLoading: sLoading } = useGetDashboardSeriesQuery({ days: 30 });
+
+  // KPI cards
+  const openTournaments = metrics?.cards?.openTournaments?.count ?? 0;
+  const openDelta = metrics?.cards?.openTournaments?.deltaPct ?? 0;
+
+  const regsToday = metrics?.cards?.newRegsToday?.count ?? 0;
+  const regsDelta = metrics?.cards?.newRegsToday?.deltaPct ?? 0;
+
+  const liveMatches = metrics?.cards?.liveMatches?.count ?? 0;
+  const unassigned = metrics?.cards?.unassigned?.count ?? 0;
+
+  // Charts
+  const barRegs = useMemo(() => {
+    if (!series?.range || !series?.regsDaily) return null;
+    const { labels, data } = fillSeries(series.range.start, series.range.end, series.regsDaily);
+    return toBarLineDataset({ title: "Đăng ký/ngày", labels, data });
+  }, [series]);
+
+  const lineUsers = useMemo(() => {
+    if (!series?.range || !series?.usersDaily) return null;
+    const { labels, data } = fillSeries(series.range.start, series.range.end, series.usersDaily);
+    return toBarLineDataset({ title: "Người dùng mới/ngày", labels, data });
+  }, [series]);
+
+  const lineFinished = useMemo(() => {
+    if (!series?.range || !series?.matchesFinished) return null;
+    const { labels, data } = fillSeries(
+      series.range.start,
+      series.range.end,
+      series.matchesFinished
+    );
+    return toBarLineDataset({ title: "Trận hoàn tất/ngày", labels, data });
+  }, [series]);
 
   return (
     <DashboardLayout>
@@ -47,110 +139,117 @@ function Dashboard() {
             <MDBox mb={1.5}>
               <ComplexStatisticsCard
                 color="dark"
-                icon="weekend"
-                title="Bookings"
-                count={281}
+                icon="emoji_events"
+                title="Giải đang mở"
+                count={mLoading ? "-" : openTournaments}
                 percentage={{
-                  color: "success",
-                  amount: "+55%",
-                  label: "than lask week",
+                  color: openDelta >= 0 ? "success" : "error",
+                  amount: `${openDelta >= 0 ? "+" : ""}${openDelta}%`,
+                  label: "so với tuần trước",
                 }}
               />
             </MDBox>
           </Grid>
+
           <Grid item xs={12} md={6} lg={3}>
             <MDBox mb={1.5}>
               <ComplexStatisticsCard
-                icon="leaderboard"
-                title="Today's Users"
-                count="2,300"
+                icon="assignment_ind"
+                title="Đăng ký hôm nay"
+                count={mLoading ? "-" : regsToday}
                 percentage={{
-                  color: "success",
-                  amount: "+3%",
-                  label: "than last month",
+                  color: regsDelta >= 0 ? "success" : "error",
+                  amount: `${regsDelta >= 0 ? "+" : ""}${regsDelta}%`,
+                  label: "so với hôm qua",
                 }}
               />
             </MDBox>
           </Grid>
+
           <Grid item xs={12} md={6} lg={3}>
             <MDBox mb={1.5}>
               <ComplexStatisticsCard
                 color="success"
-                icon="store"
-                title="Revenue"
-                count="34k"
-                percentage={{
-                  color: "success",
-                  amount: "+1%",
-                  label: "than yesterday",
-                }}
+                icon="live_tv"
+                title="Trận đang diễn ra"
+                count={mLoading ? "-" : String(liveMatches)}
+                percentage={{ color: "success", amount: "", label: "Cập nhật" }}
               />
             </MDBox>
           </Grid>
+
           <Grid item xs={12} md={6} lg={3}>
             <MDBox mb={1.5}>
               <ComplexStatisticsCard
                 color="primary"
-                icon="person_add"
-                title="Followers"
-                count="+91"
-                percentage={{
-                  color: "success",
-                  amount: "",
-                  label: "Just updated",
-                }}
+                icon="sports_handball"
+                title="Chưa gán trọng tài"
+                count={mLoading ? "-" : String(unassigned)}
+                percentage={{ color: "error", amount: "", label: "Cần xử lý" }}
               />
             </MDBox>
           </Grid>
         </Grid>
+
         <MDBox mt={4.5}>
           <Grid container spacing={3}>
             <Grid item xs={12} md={6} lg={4}>
               <MDBox mb={3}>
                 <ReportsBarChart
                   color="info"
-                  title="website views"
-                  description="Last Campaign Performance"
-                  date="campaign sent 2 days ago"
-                  chart={reportsBarChartData}
+                  title="Đăng ký theo ngày"
+                  description="30 ngày gần nhất"
+                  date={
+                    series?.updatedAt
+                      ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
+                      : ""
+                  }
+                  chart={barRegs || { labels: [], datasets: { label: "", data: [] } }}
                 />
               </MDBox>
             </Grid>
+
             <Grid item xs={12} md={6} lg={4}>
               <MDBox mb={3}>
                 <ReportsLineChart
                   color="success"
-                  title="daily sales"
-                  description={
-                    <>
-                      (<strong>+15%</strong>) increase in today sales.
-                    </>
+                  title="Người dùng mới"
+                  description="30 ngày gần nhất"
+                  date={
+                    series?.updatedAt
+                      ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
+                      : ""
                   }
-                  date="updated 4 min ago"
-                  chart={sales}
+                  chart={lineUsers || { labels: [], datasets: { label: "", data: [] } }}
                 />
               </MDBox>
             </Grid>
+
             <Grid item xs={12} md={6} lg={4}>
               <MDBox mb={3}>
                 <ReportsLineChart
                   color="dark"
-                  title="completed tasks"
-                  description="Last Campaign Performance"
-                  date="just updated"
-                  chart={tasks}
+                  title="Trận hoàn tất"
+                  description="30 ngày gần nhất"
+                  date={
+                    series?.updatedAt
+                      ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
+                      : ""
+                  }
+                  chart={lineFinished || { labels: [], datasets: { label: "", data: [] } }}
                 />
               </MDBox>
             </Grid>
           </Grid>
         </MDBox>
+
         <MDBox>
           <Grid container spacing={3}>
             <Grid item xs={12} md={6} lg={8}>
-              <Projects />
+              <UpcomingCard items={metrics?.upcoming || []} />
             </Grid>
             <Grid item xs={12} md={6} lg={4}>
-              <OrdersOverview />
+              <TodosCard todos={metrics?.todos} />
             </Grid>
           </Grid>
         </MDBox>
@@ -161,3 +260,40 @@ function Dashboard() {
 }
 
 export default Dashboard;
+
+UpcomingCard.propTypes = {
+  items: PropTypes.arrayOf(
+    PropTypes.shape({
+      _id: PropTypes.oneOfType([PropTypes.string, PropTypes.object]), // object nếu là ObjectId
+      name: PropTypes.string,
+      startDate: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
+      endDate: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
+      registrationDeadline: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
+      maxPairs: PropTypes.number,
+      status: PropTypes.string,
+      registered: PropTypes.number,
+    })
+  ),
+};
+
+UpcomingCard.defaultProps = {
+  items: [],
+};
+
+TodosCard.propTypes = {
+  todos: PropTypes.shape({
+    needReferee: PropTypes.number,
+    pendingApprovals: PropTypes.number,
+    pendingKyc: PropTypes.number,
+    incidents: PropTypes.number,
+  }),
+};
+
+TodosCard.defaultProps = {
+  todos: {
+    needReferee: 0,
+    pendingApprovals: 0,
+    pendingKyc: 0,
+    incidents: 0,
+  },
+};

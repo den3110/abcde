@@ -33,6 +33,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ClearAllIcon from "@mui/icons-material/ClearAll";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
@@ -59,21 +60,23 @@ function pairLabel(reg, eventType = "double") {
   return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
 }
 
+const ALL = "all";
+
 export default function RefereeMatches() {
   const nav = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  // danh sách trận của referee hiện tại
-  // const { data: myMatches = [], isLoading, error, refetch } = useListRefereeMatchesQuery();
+  // Lấy danh sách trận của trọng tài hiện tại
   const {
     data: resp = { items: [], total: 0, page: 1, totalPages: 1 },
     isLoading,
     error,
     refetch,
-  } = useListRefereeMatchesQuery({ page: 1, pageSize: 1000 }); // hoặc 200/500 tuỳ quy mô
+  } = useListRefereeMatchesQuery({ page: 1, pageSize: 1000 });
 
   const myMatches = resp.items ?? [];
+
   // socket realtime
   const socket = useSocket();
   useEffect(() => {
@@ -81,7 +84,7 @@ export default function RefereeMatches() {
     let tid = null;
     const safeRefetch = () => {
       if (tid) clearTimeout(tid);
-      tid = setTimeout(() => refetch(), 200); // debounce nhẹ
+      tid = setTimeout(() => refetch(), 200);
     };
     const onUpd = () => safeRefetch();
     socket.on("match:patched", onUpd);
@@ -97,17 +100,150 @@ export default function RefereeMatches() {
     };
   }, [socket, refetch]);
 
-  // search / filter / paginate
+  /** -------------------- FILTER STATE -------------------- **/
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState(ALL);
+  const [tournamentId, setTournamentId] = useState(ALL);
+  const [bracketId, setBracketId] = useState(ALL);
+  const [stage, setStage] = useState(ALL); // number | 'all'
+  const [round, setRound] = useState(ALL); // number | 'all'
+  const [matchId, setMatchId] = useState(ALL);
   const [page, setPage] = useState(1);
   const [rpp, setRpp] = useState(10);
 
+  // Options phụ thuộc dữ liệu
+  const tournamentOptions = useMemo(() => {
+    const map = new Map();
+    myMatches.forEach((m) => {
+      const t = m.tournament;
+      if (t?._id) map.set(String(t._id), t.name || "—");
+    });
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [myMatches]);
+
+  const bracketOptions = useMemo(() => {
+    const map = new Map();
+    myMatches.forEach((m) => {
+      const tId = String(m.tournament?._id || "");
+      if (!tId) return;
+      if (tournamentId !== ALL && tId !== tournamentId) return;
+      const b = m.bracket;
+      if (b?._id) map.set(String(b._id), b.name || "—");
+    });
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [myMatches, tournamentId]);
+
+  const stageOptions = useMemo(() => {
+    const set = new Set();
+    myMatches.forEach((m) => {
+      const tId = String(m.tournament?._id || "");
+      const bId = String(m.bracket?._id || "");
+      if (tournamentId !== ALL && tId !== tournamentId) return;
+      if (bracketId !== ALL && bId !== bracketId) return;
+      if (m.bracket?.stage != null) set.add(Number(m.bracket.stage));
+    });
+    return Array.from(set).sort((a, b) => a - b);
+  }, [myMatches, tournamentId, bracketId]);
+
+  const roundOptions = useMemo(() => {
+    const set = new Set();
+    myMatches.forEach((m) => {
+      const tId = String(m.tournament?._id || "");
+      const bId = String(m.bracket?._id || "");
+      if (tournamentId !== ALL && tId !== tournamentId) return;
+      if (bracketId !== ALL && bId !== bracketId) return;
+      if (stage !== ALL && Number(m.bracket?.stage) !== Number(stage)) return;
+      if (m.round != null) set.add(Number(m.round));
+    });
+    return Array.from(set).sort((a, b) => a - b);
+  }, [myMatches, tournamentId, bracketId, stage]);
+
+  const matchOptions = useMemo(() => {
+    const arr = [];
+    myMatches.forEach((m) => {
+      const tId = String(m.tournament?._id || "");
+      const bId = String(m.bracket?._id || "");
+      if (tournamentId !== ALL && tId !== tournamentId) return;
+      if (bracketId !== ALL && bId !== bracketId) return;
+      if (stage !== ALL && Number(m.bracket?.stage) !== Number(stage)) return;
+      if (round !== ALL && Number(m.round) !== Number(round)) return;
+      const evType = (m.tournament?.eventType || "double").toLowerCase();
+      const label = `${m.code || `Trận #${m.order ?? ""}`} — ${pairLabel(
+        m.pairA,
+        evType
+      )} vs ${pairLabel(m.pairB, evType)}`;
+      arr.push({ id: String(m._id), label });
+    });
+    // Sort: theo order trong vòng
+    arr.sort((a, b) => a.label.localeCompare(b.label));
+    return arr;
+  }, [myMatches, tournamentId, bracketId, stage, round]);
+
+  // Khi đổi filter cha → reset con
+  const onChangeTournament = (val) => {
+    setTournamentId(val);
+    setBracketId(ALL);
+    setStage(ALL);
+    setRound(ALL);
+    setMatchId(ALL);
+    setPage(1);
+  };
+  const onChangeBracket = (val) => {
+    setBracketId(val);
+    setStage(ALL);
+    setRound(ALL);
+    setMatchId(ALL);
+    setPage(1);
+  };
+  const onChangeStage = (val) => {
+    setStage(val);
+    setRound(ALL);
+    setMatchId(ALL);
+    setPage(1);
+  };
+  const onChangeRound = (val) => {
+    setRound(val);
+    setMatchId(ALL);
+    setPage(1);
+  };
+  const onChangeMatch = (val) => {
+    setMatchId(val);
+    setPage(1);
+  };
+
+  const resetFilters = () => {
+    setQ("");
+    setStatus(ALL);
+    setTournamentId(ALL);
+    setBracketId(ALL);
+    setStage(ALL);
+    setRound(ALL);
+    setMatchId(ALL);
+    setPage(1);
+  };
+
+  /** -------------------- APPLY FILTERS -------------------- **/
   const filtered = useMemo(() => {
     const key = q.trim().toLowerCase();
+
     const arr = myMatches.filter((m) => {
-      const okStatus = status === "all" ? true : m.status === status;
-      if (!okStatus) return false;
+      // status
+      if (status !== ALL && m.status !== status) return false;
+
+      // tournament / bracket / stage / round / match
+      const tId = String(m.tournament?._id || "");
+      const bId = String(m.bracket?._id || "");
+      if (tournamentId !== ALL && tId !== tournamentId) return false;
+      if (bracketId !== ALL && bId !== bracketId) return false;
+      if (stage !== ALL && Number(m.bracket?.stage) !== Number(stage)) return false;
+      if (round !== ALL && Number(m.round) !== Number(round)) return false;
+      if (matchId !== ALL && String(m._id) !== matchId) return false;
+
+      // text search
       if (!key) return true;
       const evType = (m.tournament?.eventType || "double").toLowerCase();
       const hay = `${m.code || ""} ${m.tournament?.name || ""} ${m.bracket?.name || ""} ${pairLabel(
@@ -116,6 +252,7 @@ export default function RefereeMatches() {
       )} ${pairLabel(m.pairB, evType)} ${m.status || ""}`.toLowerCase();
       return hay.includes(key);
     });
+
     // sort: tournament name → bracket stage → round → order
     arr.sort((a, b) => {
       const tn = (a.tournament?.name || "").localeCompare(b.tournament?.name || "");
@@ -126,8 +263,9 @@ export default function RefereeMatches() {
       if (r) return r;
       return (a.order ?? 0) - (b.order ?? 0);
     });
+
     return arr;
-  }, [myMatches, q, status]);
+  }, [myMatches, q, status, tournamentId, bracketId, stage, round, matchId]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rpp));
   const paged = filtered.slice((page - 1) * rpp, page * rpp);
@@ -135,7 +273,7 @@ export default function RefereeMatches() {
     if (page > totalPages) setPage(1);
   }, [totalPages, page]);
 
-  // chi tiết (Dialog)
+  /** -------------------- DETAIL DIALOG -------------------- **/
   const [detailId, setDetailId] = useState(null);
   const {
     data: detail,
@@ -278,73 +416,214 @@ export default function RefereeMatches() {
     <DashboardLayout>
       <DashboardNavbar />
       <Box p={3}>
-        <Stack
-          direction={isMobile ? "column" : "row"}
-          spacing={2}
-          alignItems={isMobile ? "stretch" : "center"}
-          justifyContent="space-between"
-          mb={2}
-        >
-          <Typography variant="h4">Trận của trọng tài</Typography>
+        {/* --- Header + Filters (responsive) --- */}
+        <Box mb={2}>
+          {/* Title + actions (actions ẩn trên mobile) */}
+          <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
+            <Typography variant={isMobile ? "h5" : "h4"}>Trận của trọng tài</Typography>
 
-          <Stack direction={isMobile ? "column" : "row"} spacing={1}>
-            <TextField
-              size="small"
-              placeholder="Tìm mã trận / giải / đội…"
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setPage(1);
-              }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              }}
-              fullWidth={isMobile}
-              sx={{ minWidth: 260 }}
-            />
-            <TextField
-              select
-              size="small"
-              label="Trạng thái"
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value);
-                setPage(1);
-              }}
-              sx={{ minWidth: 160 }}
-              fullWidth={isMobile}
-            >
-              <MenuItem value="all">Tất cả</MenuItem>
-              <MenuItem value="scheduled">Chưa diễn ra</MenuItem>
-              <MenuItem value="live">Đang diễn ra</MenuItem>
-              <MenuItem value="finished">Đã kết thúc</MenuItem>
-            </TextField>
-            <TextField
-              select
-              size="small"
-              label="Rows"
-              value={rpp}
-              onChange={(e) => {
-                setRpp(Number(e.target.value) || 10);
-                setPage(1);
-              }}
-              sx={{ width: 110 }}
-            >
-              {[5, 10, 20, 50].map((n) => (
-                <MenuItem key={n} value={n}>
-                  {n}
-                </MenuItem>
-              ))}
-            </TextField>
-            <IconButton onClick={() => refetch()} title="Làm mới">
-              <RefreshIcon />
-            </IconButton>
+            {/* Actions hiện ở >= sm */}
+            <Stack direction="row" spacing={1} sx={{ display: { xs: "none", sm: "flex" } }}>
+              <IconButton onClick={() => refetch()} title="Làm mới">
+                <RefreshIcon />
+              </IconButton>
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<ClearAllIcon />}
+                onClick={resetFilters}
+              >
+                Reset
+              </Button>
+            </Stack>
           </Stack>
-        </Stack>
+
+          {/* Filters: grid responsive */}
+          <Grid container spacing={1.5}>
+            {/* Search */}
+            <Grid item xs={12} md={6} lg={4}>
+              <TextField
+                size="small"
+                placeholder="Tìm mã trận / giải / đội…"
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setPage(1);
+                }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+                fullWidth
+              />
+            </Grid>
+
+            {/* Status */}
+            <Grid item xs={6} sm={4} md={3} lg={2}>
+              <TextField
+                select
+                size="small"
+                label="Trạng thái"
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value);
+                  setPage(1);
+                }}
+                fullWidth
+              >
+                <MenuItem value={ALL}>Tất cả</MenuItem>
+                <MenuItem value="scheduled">Chưa diễn ra</MenuItem>
+                <MenuItem value="live">Đang diễn ra</MenuItem>
+                <MenuItem value="finished">Đã kết thúc</MenuItem>
+              </TextField>
+            </Grid>
+
+            {/* Tournament */}
+            <Grid item xs={12} sm={8} md={5} lg={4}>
+              <TextField
+                select
+                size="small"
+                label="Giải đấu"
+                value={tournamentId}
+                onChange={(e) => onChangeTournament(e.target.value)}
+                fullWidth
+              >
+                <MenuItem value={ALL}>Tất cả</MenuItem>
+                {tournamentOptions.map((t) => (
+                  <MenuItem key={t.id} value={t.id}>
+                    {t.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {/* Bracket */}
+            <Grid item xs={6} sm={4} md={3} lg={2}>
+              <TextField
+                select
+                size="small"
+                label="Nhánh"
+                value={bracketId}
+                onChange={(e) => onChangeBracket(e.target.value)}
+                disabled={tournamentId === ALL && bracketOptions.length === 0}
+                fullWidth
+              >
+                <MenuItem value={ALL}>Tất cả</MenuItem>
+                {bracketOptions.map((b) => (
+                  <MenuItem key={b.id} value={b.id}>
+                    {b.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {/* Stage */}
+            <Grid item xs={6} sm={4} md={3} lg={2}>
+              <TextField
+                select
+                size="small"
+                label="Giai đoạn"
+                value={stage}
+                onChange={(e) => onChangeStage(e.target.value)}
+                disabled={stageOptions.length === 0}
+                fullWidth
+              >
+                <MenuItem value={ALL}>Tất cả</MenuItem>
+                {stageOptions.map((s) => (
+                  <MenuItem key={s} value={String(s)}>
+                    {s}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {/* Round */}
+            <Grid item xs={6} sm={4} md={3} lg={2}>
+              <TextField
+                select
+                size="small"
+                label="Vòng"
+                value={round}
+                onChange={(e) => onChangeRound(e.target.value)}
+                disabled={roundOptions.length === 0}
+                fullWidth
+              >
+                <MenuItem value={ALL}>Tất cả</MenuItem>
+                {roundOptions.map((r) => (
+                  <MenuItem key={r} value={String(r)}>
+                    {r}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {/* Match */}
+            <Grid item xs={12} sm={8} md={5} lg={4}>
+              <TextField
+                select
+                size="small"
+                label="Trận"
+                value={matchId}
+                onChange={(e) => onChangeMatch(e.target.value)}
+                disabled={matchOptions.length === 0}
+                fullWidth
+              >
+                <MenuItem value={ALL}>Tất cả</MenuItem>
+                {matchOptions.map((m) => (
+                  <MenuItem key={m.id} value={m.id}>
+                    {m.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {/* Rows per page */}
+            <Grid item xs={6} sm={4} md={2} lg={2}>
+              <TextField
+                select
+                size="small"
+                label="Rows"
+                value={rpp}
+                onChange={(e) => {
+                  setRpp(Number(e.target.value) || 10);
+                  setPage(1);
+                }}
+                fullWidth
+              >
+                {[5, 10, 20, 50].map((n) => (
+                  <MenuItem key={n} value={n}>
+                    {n}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {/* Actions (hiện ở xs; ẩn ở >= sm vì đã có trên header) */}
+            <Grid item xs={12} sx={{ display: { xs: "flex", sm: "none" }, gap: 1, mt: 0.5 }}>
+              <IconButton onClick={() => refetch()} title="Làm mới">
+                <RefreshIcon />
+              </IconButton>
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<ClearAllIcon />}
+                onClick={resetFilters}
+              >
+                Reset
+              </Button>
+            </Grid>
+          </Grid>
+        </Box>
+
+        {/* Summary nhỏ về số lượng */}
+        <Box mb={1}>
+          <Typography variant="body2" color="text.secondary">
+            Đang hiển thị {filtered.length} / {myMatches.length} trận
+          </Typography>
+        </Box>
 
         {isLoading ? (
           <Box textAlign="center" py={6}>
@@ -372,12 +651,14 @@ export default function RefereeMatches() {
                     >
                       <Box>
                         <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography variant="h6">{m.tournament?.name}</Typography>
+                          <Typography variant="h6">
+                            {m.tournament?.name} {m.code ? `• ${m.code}` : ""}
+                          </Typography>
                           <Chip size="small" color={chip.color} label={chip.label} />
                         </Stack>
                         <Typography variant="body2" color="text.secondary">
                           Nhánh {m.bracket?.name} ({m.bracket?.type}) • Giai đoạn {m.bracket?.stage}{" "}
-                          • &nbsp;Vòng {m.round} • Trận #{m.order ?? 0}
+                          • Vòng {m.round} • Trận #{m.order ?? 0}
                         </Typography>
                         <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
                           {pairLabel(m.pairA, evType)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
