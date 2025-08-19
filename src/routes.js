@@ -27,6 +27,7 @@ import RefereeMatches from "layouts/tournament/referee/RefereeMatches";
 
 // 🆕 Cấu hình thuật toán bốc thăm (Admin)
 import AlgoSettingsPage from "layouts/tournament/AlgoSettingsPage"; // <— THÊM DÒNG NÀY
+import AutoUserPage from "layouts/auto/AutoUserPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -150,7 +151,17 @@ const routes = [
     private: true,
     roles: ["admin"],
   },
-
+  // 🆕 Tạo user tự động (Admin)
+  {
+    type: "collapse",
+    name: "Tạo user tự động",
+    key: "auto-users",
+    icon: <Icon fontSize="small">person_add</Icon>,
+    route: "/admin/auto-users",
+    component: <AutoUserPage />,
+    private: true,
+    roles: ["admin"],
+  },
   // Màn hình cho trọng tài và các view liên quan
   {
     show: false,

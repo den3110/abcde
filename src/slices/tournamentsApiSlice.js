@@ -413,6 +413,21 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       serializeQueryArgs: ({ endpointName, queryArgs }) =>
         `${endpointName}:${String(queryArgs || "")}`,
     }),
+    previewAutoUsers: builder.mutation({
+      query: (body) => ({
+        url: "/admin/users/auto/preview",
+        method: "POST",
+        body,
+      }),
+    }),
+    createAutoUsers: builder.mutation({
+      query: (body) => ({
+        url: "/admin/users/auto/create",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["User"], // để màn danh sách user refetch
+    }),
   }),
 });
 
@@ -457,4 +472,6 @@ export const {
   useGetTournamentsQuery,
   useListTournamentBracketsQuery,
   useListAllMatchesTournamentQuery,
+  usePreviewAutoUsersMutation,
+  useCreateAutoUsersMutation,
 } = tournamentsApiSlice;
