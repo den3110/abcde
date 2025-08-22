@@ -1,9 +1,12 @@
 // src/pages/TournamentFormPage.jsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Button, Grid, TextField, Typography, Stack, MenuItem, Card } from "@mui/material";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
+
 import {
   useCreateTournamentMutation,
   useGetTournamentQuery,
@@ -40,7 +43,7 @@ export default function TournamentFormPage() {
 
   const todayYmd = dayjs().format("YYYY-MM-DD");
 
-  // State submit (backend): giữ YYYY-MM-DD
+  // State submit (backend): giữ YYYY-MM-DD + HTML cho 2 trường quill
   const [form, setForm] = useState({
     name: "",
     image: "",
@@ -69,6 +72,43 @@ export default function TournamentFormPage() {
   });
 
   const [uploading, setUploading] = useState(false);
+
+  // Toolbar cho Quill
+  const quillModules = useMemo(
+    () => ({
+      toolbar: [
+        [{ header: [1, 2, 3, false] }],
+        ["bold", "italic", "underline", "strike"],
+        [{ color: [] }, { background: [] }],
+        [{ list: "ordered" }, { list: "bullet" }],
+        [{ align: [] }, { indent: "-1" }, { indent: "+1" }],
+        ["link", "blockquote", "code-block"],
+        ["clean"],
+      ],
+      clipboard: { matchVisual: false },
+    }),
+    []
+  );
+
+  const quillFormats = useMemo(
+    () => [
+      "header",
+      "bold",
+      "italic",
+      "underline",
+      "strike",
+      "list",
+      "bullet",
+      "indent",
+      "link",
+      "blockquote",
+      "code-block",
+      "align",
+      "color",
+      "background",
+    ],
+    []
+  );
 
   // Map dữ liệu server -> state
   useEffect(() => {
@@ -135,7 +175,7 @@ export default function TournamentFormPage() {
     location: form.location,
     contactHtml: form.contactHtml,
     contentHtml: form.contentHtml,
-    maxPairs: Number(form.maxPairs) || 0, // <-- NEW
+    maxPairs: Number(form.maxPairs) || 0,
   });
 
   const submit = async (e) => {
@@ -371,27 +411,55 @@ export default function TournamentFormPage() {
               ))}
             </Grid>
 
+            {/* ==== ReactQuill Editors ==== */}
             <Grid item xs={12}>
-              <TextField
-                name="contactHtml"
-                label="Thông tin liên hệ (HTML)"
-                value={form.contactHtml}
-                onChange={onChange}
-                fullWidth
-                multiline
-                rows={3}
-                margin="normal"
-              />
-              <TextField
-                name="contentHtml"
-                label="Nội dung giải (HTML)"
-                value={form.contentHtml}
-                onChange={onChange}
-                fullWidth
-                multiline
-                rows={4}
-                margin="normal"
-              />
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Thông tin liên hệ
+              </Typography>
+              <Box
+                sx={{
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  "& .ql-container": { border: "none" },
+                  "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
+                  "& .ql-editor": { minHeight: 150 },
+                }}
+              >
+                <ReactQuill
+                  theme="snow"
+                  value={form.contactHtml}
+                  onChange={(html) => setForm((p) => ({ ...p, contactHtml: html }))}
+                  modules={quillModules}
+                  formats={quillFormats}
+                  placeholder="Nhập thông tin liên hệ…"
+                />
+              </Box>
+            </Grid>
+
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Nội dung giải
+              </Typography>
+              <Box
+                sx={{
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  "& .ql-container": { border: "none" },
+                  "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
+                  "& .ql-editor": { minHeight: 200 },
+                }}
+              >
+                <ReactQuill
+                  theme="snow"
+                  value={form.contentHtml}
+                  onChange={(html) => setForm((p) => ({ ...p, contentHtml: html }))}
+                  modules={quillModules}
+                  formats={quillFormats}
+                  placeholder="Mô tả chi tiết thể lệ, cơ cấu giải thưởng, lưu ý…"
+                />
+              </Box>
             </Grid>
           </Grid>
 

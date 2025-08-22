@@ -428,6 +428,27 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["User"], // để màn danh sách user refetch
     }),
+    buildRoundElimSkeleton: builder.mutation({
+      query: ({ bracketId, body }) => ({
+        url: `/admin/brackets/${bracketId}/round-elim/skeleton`,
+        method: "POST",
+        body,
+      }),
+    }),
+    batchAssignReferee: builder.mutation({
+      query: ({ ids, referee }) => ({
+        url: `/admin/matches/batch/update-referee`,
+        method: "POST",
+        body: { ids, referee },
+      }),
+    }),
+    batchDeleteMatches: builder.mutation({
+      query: ({ bracketId, ids }) => ({
+        url: `/admin/brackets/${bracketId}/matches/batch-delete`,
+        method: "POST",
+        body: { ids },
+      }),
+    }),
   }),
 });
 
@@ -474,4 +495,7 @@ export const {
   useListAllMatchesTournamentQuery,
   usePreviewAutoUsersMutation,
   useCreateAutoUsersMutation,
+  useBatchAssignRefereeMutation,
+  useBatchDeleteMatchesMutation,
+  useBuildRoundElimSkeletonMutation,
 } = tournamentsApiSlice;

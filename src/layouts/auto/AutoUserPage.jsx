@@ -271,7 +271,7 @@ export default function AutoUserPage() {
       { field: "cccd", headerName: "cccd", width: 150 },
       { field: "cccdStatus", headerName: "cccdStatus", width: 140 },
       {
-        field: "__plainPassword",
+        field: "plainPassword",
         headerName: "plainPassword",
         width: 160,
         renderCell: (params) =>

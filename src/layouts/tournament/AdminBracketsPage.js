@@ -25,6 +25,9 @@ import {
   Checkbox,
   Tooltip,
   Chip,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -32,6 +35,7 @@ import {
   TableChart as TableChartIcon,
   Edit as EditIcon,
   TravelExplore as ExploreIcon,
+  ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
 import { skipToken } from "@reduxjs/toolkit/query";
@@ -40,7 +44,7 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
 
-/* ===== existing slices ===== */
+/* ===== tournament slices ===== */
 import {
   useGetTournamentQuery,
   useGetRegistrationsQuery,
@@ -53,10 +57,15 @@ import {
   useUpdateBracketMutation,
   useUpdateMatchMutation,
   useResetMatchChainMutation,
+
+  // ⭐ NEW
+  useBuildRoundElimSkeletonMutation,
+  useBatchAssignRefereeMutation,
+  useBatchDeleteMatchesMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
 
-/* ===== progression slice (mới) ===== */
+/* ===== progression slice ===== */
 import {
   useListSourcesForTargetQuery,
   usePreviewAdvancementMutation,
@@ -109,7 +118,6 @@ export default function AdminBracketsPage() {
     error: regsError,
   } = useGetRegistrationsQuery(tournamentId);
 
-  // reg index for fast lookup
   const idOf = (x) => String(x?._id ?? x);
   const regIndex = useMemo(() => {
     const m = new Map();
@@ -141,6 +149,12 @@ export default function AdminBracketsPage() {
   const [updateBracket] = useUpdateBracketMutation();
   const [updateMatch] = useUpdateMatchMutation();
   const [resetMatchChain] = useResetMatchChainMutation();
+
+  // ⭐ NEW: batch/skeleton mutations
+  const [buildRoundElimSkeleton, { isLoading: buildingSkeleton }] =
+    useBuildRoundElimSkeletonMutation();
+  const [batchAssignReferee, { isLoading: assigningRef }] = useBatchAssignRefereeMutation();
+  const [batchDeleteMatches, { isLoading: deletingBatch }] = useBatchDeleteMatchesMutation();
 
   // Progression mutations
   const [previewAdvancement, { isLoading: loadingPreview }] = usePreviewAdvancementMutation();
@@ -195,33 +209,38 @@ export default function AdminBracketsPage() {
   const [newBracketName, setNewBracketName] = useState("");
   const [newBracketType, setNewBracketType] = useState("knockout");
   const [newBracketStage, setNewBracketStage] = useState(1);
-  // Order hiển thị khi tạo mới
   const [newBracketOrder, setNewBracketOrder] = useState(0);
-  // Quy mô (2^n) & số vòng (n)
-  const [newDrawSize, setNewDrawSize] = useState(0); // 2^n
-  const [newMaxRounds, setNewMaxRounds] = useState(1); // n
-
-  // NEW: checkbox “Tự tạo quy mô giải đấu”
+  const [newDrawSize, setNewDrawSize] = useState(0); // knockout draw (2^n)
+  const [newMaxRounds, setNewMaxRounds] = useState(1); // knockout n
   const [useCustomScale, setUseCustomScale] = useState(false);
+
+  // ⭐ STATE: RoundElim
+  const [reDrawSize, setReDrawSize] = useState(0); // 2^n
+  const [reCutRounds, setReCutRounds] = useState(1); // 1 => n→n/2, 2 => n→n/4, ...
 
   // Gợi ý order mỗi khi mở dialog
   useEffect(() => {
     if (!bracketDlg) return;
     const maxOrder = Math.max(0, ...(brackets || []).map((b) => Number(b.order) || 0));
     setNewBracketOrder(maxOrder + 1);
-  }, [bracketDlg, brackets]);
+
+    // Prefill mặc định cho knockout scale & roundElim scale
+    const sz = ceilPow2(Math.max(2, paidCount || regsCount || 2));
+    setNewDrawSize(sz);
+    setNewMaxRounds(toRounds(sz));
+    setReDrawSize(sz);
+    setReCutRounds(Math.max(1, Math.min(2, toRounds(sz) - 1)));
+  }, [bracketDlg, brackets, paidCount, regsCount]);
 
   // === auto layout (knockout)
   const [autoLayout, setAutoLayout] = useState(false);
   const [autoMode, setAutoMode] = useState("FROM_GROUPS"); // FROM_GROUPS | MANUAL_SCALE | AUTO_FROM_REGS
-  // Option 1 (từ vòng bảng)
   const [autoFromBracketId, setAutoFromBracketId] = useState("");
   const [autoTopPerGroup, setAutoTopPerGroup] = useState(2);
-  const [autoSeedMethod, setAutoSeedMethod] = useState("rating"); // rating|random|tiered
-  const [autoPairing, setAutoPairing] = useState("standard"); // standard|snake
-  const [autoFillMode, setAutoFillMode] = useState("pool"); // pairs|pool
-  const [autoTargetScale, setAutoTargetScale] = useState(""); // quy mô mục tiêu (tuỳ chọn)
-  // Option 2 (quy mô tay)
+  const [autoSeedMethod, setAutoSeedMethod] = useState("rating");
+  const [autoPairing, setAutoPairing] = useState("standard");
+  const [autoFillMode, setAutoFillMode] = useState("pool");
+  const [autoTargetScale, setAutoTargetScale] = useState("");
   const [manualScale, setManualScale] = useState(() => floorPow2(Math.max(2, regsCount)));
 
   // Nguồn Group phù hợp cho Option1: stage < stage đang tạo
@@ -243,10 +262,8 @@ export default function AdminBracketsPage() {
   const [ebType, setEbType] = useState("knockout");
   const [ebStage, setEbStage] = useState(1);
   const [ebOrder, setEbOrder] = useState(0);
-  // meta
-  const [ebDrawSize, setEbDrawSize] = useState(0); // 2^n
-  const [ebMaxRounds, setEbMaxRounds] = useState(1); // n
-  // NEW: checkbox “Tự tạo quy mô giải đấu” cho dialog sửa
+  const [ebDrawSize, setEbDrawSize] = useState(0);
+  const [ebMaxRounds, setEbMaxRounds] = useState(1);
   const [ebUseCustomScale, setEbUseCustomScale] = useState(false);
 
   /* =====================
@@ -310,7 +327,6 @@ export default function AdminBracketsPage() {
   const [advFillMode, setAdvFillMode] = useState("pairs");
   const [advPreview, setAdvPreview] = useState([]);
 
-  // Nguồn hợp lệ cho bracket đích
   const {
     data: advSourcesResp,
     isLoading: loadingSources,
@@ -325,18 +341,16 @@ export default function AdminBracketsPage() {
       : 0;
 
     if (roundsFromBracket >= 1) {
-      // Nếu bracket đang sửa có drawRounds -> sync state edit
       setEbMaxRounds(roundsFromBracket);
       setEbDrawSize(1 << roundsFromBracket);
       setEbUseCustomScale(true);
       return;
     }
 
-    // Không có drawRounds -> ước lượng theo paidCount/regsCount
     const sz = ceilPow2(Math.max(2, paidCount || regsCount || 2));
     setEbMaxRounds(toRounds(sz));
     setNewDrawSize(sz);
-    setEbUseCustomScale(false); // default off cho edit nếu không có scale trước
+    setEbUseCustomScale(false);
   }, [bracketDlg, paidCount, regsCount, editingBracket?.drawRounds]); // eslint-disable-line
 
   /* =====================
@@ -401,35 +415,131 @@ export default function AdminBracketsPage() {
   };
 
   /* =====================
+   *  SELECTION (checkbox cho trận)
+   * ===================== */
+  const [selectedByBracket, setSelectedByBracket] = useState({}); // { [bid]: Set(ids) }
+  const getSelectedSet = (bid) => selectedByBracket[bid] || new Set();
+  const countSelected = (bid) => getSelectedSet(bid).size;
+  const isSelected = (bid, mid) => getSelectedSet(bid).has(idOf(mid));
+  const toggleSelect = (bid, mid) => {
+    const key = idOf(bid);
+    const id = idOf(mid);
+    setSelectedByBracket((prev) => {
+      const set = new Set(prev[key] || []);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      return { ...prev, [key]: set };
+    });
+  };
+  const clearSelection = (bid) =>
+    setSelectedByBracket((prev) => ({ ...prev, [idOf(bid)]: new Set() }));
+  const selectAllInBracket = (br) => {
+    const bid = idOf(br._id);
+    const arr =
+      br.type === "group" ? Object.values(groupedByGroup[bid] || {}).flat() : grouped[bid] || [];
+    setSelectedByBracket((prev) => ({
+      ...prev,
+      [bid]: new Set(arr.map((m) => idOf(m._id))),
+    }));
+  };
+  const unselectAllInBracket = (br) =>
+    setSelectedByBracket((prev) => ({ ...prev, [idOf(br._id)]: new Set() }));
+
+  /* =====================
+   *  BULK actions state
+   * ===================== */
+  const [bulkRefDlg, setBulkRefDlg] = useState({
+    open: false,
+    bracketId: "",
+    ids: [],
+    referee: "",
+  });
+
+  const openBulkRefDlg = (br) => {
+    const bid = idOf(br._id);
+    const ids = Array.from(getSelectedSet(bid));
+    setBulkRefDlg({ open: true, bracketId: bid, ids, referee: "" });
+  };
+
+  const doBulkAssignRef = async () => {
+    try {
+      const ids = bulkRefDlg.ids;
+      if (!ids.length) return;
+      await batchAssignReferee({ ids, referee: bulkRefDlg.referee || null }).unwrap();
+      showSnack("success", `Đã gán trọng tài cho ${ids.length} trận`);
+      setBulkRefDlg({ open: false, bracketId: "", ids: [], referee: "" });
+      refetchMatches();
+    } catch (e) {
+      showSnack("error", e?.data?.message || e.error || "Lỗi gán trọng tài");
+    }
+  };
+
+  const doBulkDeleteMatches = async (br) => {
+    const bid = idOf(br._id);
+    const ids = Array.from(getSelectedSet(bid));
+    if (!ids.length) return;
+    if (!window.confirm(`Xoá ${ids.length} trận đã chọn trong "${br.name}"?`)) return;
+
+    try {
+      await batchDeleteMatches({ bracketId: bid, ids }).unwrap();
+      showSnack("success", `Đã xoá ${ids.length} trận`);
+      clearSelection(bid);
+      refetchMatches();
+    } catch (e) {
+      // fallback xoá lẻ nếu API batch không có
+      try {
+        let ok = 0;
+        for (const mid of ids) {
+          await deleteMatch(mid).unwrap();
+          ok++;
+        }
+        showSnack("success", `Đã xoá ${ok}/${ids.length} trận (fallback)`);
+        clearSelection(bid);
+        refetchMatches();
+      } catch (err) {
+        showSnack("error", err?.data?.message || err.error || "Lỗi xoá trận");
+      }
+    }
+  };
+
+  /* =====================
    *  CREATE/EDIT HANDLERS
    * ===================== */
   const handleCreateBracket = async () => {
     if (!newBracketName.trim()) return showSnack("error", "Tên bracket không được để trống");
     try {
-      // Base payload
-      const bodyBase = {
+      const base = {
         name: newBracketName.trim(),
         type: newBracketType,
         stage: newBracketStage,
         order: Number(newBracketOrder),
       };
 
-      // CHỈ gửi drawRounds/meta nếu tick “Tự tạo quy mô giải đấu” & kiểu knockout
+      // Knockout: có thể gửi drawRounds + meta khi bật custom scale
       if (newBracketType === "knockout" && useCustomScale) {
-        bodyBase.drawRounds = Number(newMaxRounds); // số vòng
-        bodyBase.meta = {
-          drawSize: Number(newDrawSize) || undefined, // 2^n
+        base.drawRounds = Number(newMaxRounds);
+        base.meta = {
+          drawSize: Number(newDrawSize) || undefined,
           maxRounds: Number(newMaxRounds) || undefined,
           expectedFirstRoundMatches: Number(newDrawSize) > 0 ? Number(newDrawSize) / 2 : undefined,
         };
       }
 
+      // ⭐ RoundElim: gửi meta để hiển thị quy mô
+      if (newBracketType === "roundElim") {
+        base.meta = {
+          drawSize: Number(reDrawSize) || undefined,
+          maxRounds: toRounds(Number(reDrawSize) || 2),
+          expectedFirstRoundMatches: Number(reDrawSize) / 2,
+        };
+      }
+
       const created = await createBracket({
         tourId: tournamentId,
-        body: bodyBase,
+        body: base,
       }).unwrap();
 
-      // Auto layout (giữ nguyên logic cũ)
+      // Auto layout cho knockout (logic cũ giữ nguyên)
       if (newBracketType === "knockout" && autoLayout && created?._id) {
         if (autoMode === "FROM_GROUPS") {
           if (!autoFromBracketId) {
@@ -600,15 +710,17 @@ export default function AdminBracketsPage() {
 
       showSnack("success", "Đã tạo mới Bracket");
       setBracketDlg(false);
+      // reset
       setNewBracketName("");
       setNewBracketType("knockout");
       setNewBracketStage(1);
       setNewDrawSize(0);
       setNewMaxRounds(1);
       setNewBracketOrder(0);
-      setUseCustomScale(false); // reset checkbox
+      setUseCustomScale(false);
+      setReDrawSize(0);
+      setReCutRounds(1);
 
-      // reset auto
       setAutoLayout(false);
       setAutoMode("FROM_GROUPS");
       setAutoFromBracketId("");
@@ -623,6 +735,57 @@ export default function AdminBracketsPage() {
       refetchMatches();
     } catch (e) {
       showSnack("error", e?.data?.message || e.error);
+    }
+  };
+
+  // ⭐ Tạo bracket AND dựng skeleton (roundElim)
+  const handleCreateAndBuildRoundElim = async () => {
+    if (newBracketType !== "roundElim") return handleCreateBracket();
+    if (!newBracketName.trim()) return showSnack("error", "Tên bracket không được để trống");
+
+    const maxCut = Math.max(1, toRounds(reDrawSize) - 1);
+    if (reCutRounds < 1 || reCutRounds >= toRounds(reDrawSize)) {
+      return showSnack("error", `Mức cắt phải từ 1 đến ${maxCut} (n→n/2 … n→n/${1 << maxCut}).`);
+    }
+
+    try {
+      const created = await createBracket({
+        tourId: tournamentId,
+        body: {
+          name: newBracketName.trim(),
+          type: "roundElim",
+          stage: newBracketStage,
+          order: Number(newBracketOrder),
+          meta: {
+            drawSize: Number(reDrawSize) || undefined,
+            maxRounds: toRounds(Number(reDrawSize) || 2),
+            expectedFirstRoundMatches: Number(reDrawSize) / 2,
+          },
+        },
+      }).unwrap();
+
+      const bid = created?._id;
+      if (!bid) throw new Error("Không lấy được bracketId mới tạo");
+
+      // gọi API dựng skeleton
+      await buildRoundElimSkeleton({
+        bracketId: bid,
+        body: {
+          drawSize: Number(reDrawSize),
+          cutRounds: Number(reCutRounds),
+          overwrite: false,
+        },
+      }).unwrap();
+
+      showSnack(
+        "success",
+        `Đã tạo "${created.name}" & dựng sơ đồ: cắt n→n/${1 << reCutRounds} (vòng: ${reCutRounds})`
+      );
+      setBracketDlg(false);
+      refetchBrackets();
+      refetchMatches();
+    } catch (e) {
+      showSnack("error", e?.data?.message || e.error || "Lỗi tạo & dựng roundElim");
     }
   };
 
@@ -725,13 +888,11 @@ export default function AdminBracketsPage() {
     setEbStage(br.stage ?? 1);
     setEbOrder(br.order ?? 0);
 
-    // meta hiện tại
     const ds = Number(br?.meta?.drawSize) || 0;
     const mr = Number(br?.meta?.maxRounds) || (ds ? toRounds(ds) : 1);
     setEbDrawSize(ds);
     setEbMaxRounds(mr);
 
-    // Nếu bracket đã có cấu hình quy mô → bật checkbox
     const hadScale =
       (Number(br?.drawRounds) > 0 || !!br?.meta?.drawSize || !!br?.meta?.maxRounds) &&
       br.type === "knockout";
@@ -741,7 +902,6 @@ export default function AdminBracketsPage() {
   const saveEditBracket = async () => {
     if (!ebId) return;
     try {
-      // Chỉ gửi phần quy mô nếu bật checkbox và là knockout
       const body = {
         name: ebName.trim(),
         type: ebType,
@@ -750,7 +910,7 @@ export default function AdminBracketsPage() {
       };
 
       if (ebType === "knockout" && ebUseCustomScale) {
-        body.drawRounds = Number(ebMaxRounds); // số vòng
+        body.drawRounds = Number(ebMaxRounds);
         body.meta = {
           ...(editingBracket?.meta || {}),
           drawSize: Number(ebDrawSize) || undefined,
@@ -851,10 +1011,68 @@ export default function AdminBracketsPage() {
   };
 
   /* =====================
+   *  UI helpers
+   * ===================== */
+  const stop = (cb) => (e) => {
+    e.stopPropagation();
+    cb && cb(e);
+  };
+
+  /* =====================
    *  RENDER
    * ===================== */
   const loading = loadingT || regsLoading || loadingB || loadingM;
   const errorMsg = errorT || regsError || errorB || errorM;
+
+  const RoundElimControls = () => {
+    const maxCut = Math.max(1, toRounds(reDrawSize) - 1);
+    const cutOptions = Array.from({ length: maxCut }, (_, i) => i + 1); // 1..maxCut
+    return (
+      <Stack spacing={2}>
+        <Alert severity="info">
+          Round Elimination: dựng các vòng loại ngắn để cắt <b>n → n/x</b>. Ví dụ cắt 1 vòng sẽ còn
+          <b> n/2</b>, 2 vòng còn <b>n/4</b>, …
+        </Alert>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+          <TextField
+            select
+            label="Quy mô (2^n đội)"
+            value={reDrawSize}
+            onChange={(e) => {
+              const v = Math.max(2, Number(e.target.value) || 2);
+              const pow2 = ceilPow2(v);
+              setReDrawSize(pow2);
+              const maxCutN = Math.max(1, toRounds(pow2) - 1);
+              setReCutRounds(Math.min(reCutRounds, maxCutN));
+            }}
+            sx={{ minWidth: 240 }}
+            helperText="2^n = số đội tham dự"
+          >
+            {pow2OptionsUpTo(Math.max(128, paidCount || regsCount || 16)).map((n) => (
+              <MenuItem key={n} value={n}>
+                {n} đội
+              </MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            select
+            label="Mức cắt (n → n/x)"
+            value={reCutRounds}
+            onChange={(e) => setReCutRounds(Math.max(1, Number(e.target.value) || 1))}
+            sx={{ minWidth: 240 }}
+            helperText={`x = 2^k, chọn k = 1..${maxCut}`}
+          >
+            {cutOptions.map((k) => (
+              <MenuItem key={k} value={k}>
+                {`k = ${k}  (n → n/${1 << k})`}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Stack>
+      </Stack>
+    );
+  };
 
   return (
     <DashboardLayout>
@@ -900,40 +1118,137 @@ export default function AdminBracketsPage() {
               Xem Sơ đồ giải
             </Button>
 
-            {/* Danh sách Brackets & Matches */}
-            <Stack spacing={3}>
-              {brackets.map((br) => (
-                <Card key={br._id} variant="outlined" sx={{ p: 2 }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography variant="h6">
-                      {br.name} ({br.type === "group" ? "Vòng bảng" : "Knockout"}, stage {br.stage}
-                      {" • "}order {typeof br.order === "number" ? br.order : 0})
-                      {br?.meta?.drawSize && br.type === "knockout" && (
-                        <Chip
-                          size="small"
-                          sx={{ ml: 1 }}
-                          label={`Quy mô: ${br.meta.drawSize} đội (${
-                            br.meta.maxRounds || toRounds(br.meta.drawSize)
-                          } vòng)`}
+            {/* Danh sách Brackets & Matches (Accordion) */}
+            <Stack spacing={2}>
+              {brackets.map((br) => {
+                const bid = idOf(br._id);
+                const matchArr =
+                  br.type === "group"
+                    ? Object.values(groupedByGroup[bid] || {}).flat()
+                    : grouped[bid] || [];
+                const selectedCount = countSelected(bid);
+                const allChecked = selectedCount > 0 && selectedCount === (matchArr?.length || 0);
+
+                return (
+                  <Accordion key={br._id} disableGutters>
+                    <AccordionSummary
+                      expandIcon={
+                        <ExpandMoreIcon
+                          sx={{
+                            "& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root": {
+                              fontSize: 36, // chỉnh 28/32/36 tuỳ ý
+                            },
+                          }}
                         />
-                      )}
-                    </Typography>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Button
-                        size="small"
-                        onClick={() => openMatchDialog(br)}
-                        startIcon={<AddIcon />}
+                      }
+                    >
+                      {/* Header + select-all */}
+                      <Stack
+                        direction="row"
+                        justifyContent="space-between"
+                        alignItems="center"
+                        sx={{ width: "100%" }}
                       >
-                        Tạo trận
-                      </Button>
-                      {br.type === "knockout" && (
-                        <>
-                          <Button size="small" onClick={() => openNextRoundDialog(br)}>
-                            Tạo vòng sau (chọn đội)
-                          </Button>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          {/* chặn toggle khi bấm checkbox */}
+                          <Box onClick={(e) => e.stopPropagation()}>
+                            <FormControlLabel
+                              control={
+                                <Checkbox
+                                  checked={allChecked}
+                                  indeterminate={selectedCount > 0 && !allChecked}
+                                  onChange={(e) =>
+                                    e.target.checked
+                                      ? selectAllInBracket(br)
+                                      : unselectAllInBracket(br)
+                                  }
+                                />
+                              }
+                              label={
+                                <Typography variant="h6" noWrap>
+                                  {br.name} (
+                                  {br.type === "group"
+                                    ? "Vòng bảng"
+                                    : br.type === "roundElim"
+                                    ? "Round Elimination"
+                                    : "Knockout"}
+                                  , stage {br.stage}
+                                  {" • "}order {typeof br.order === "number" ? br.order : 0})
+                                </Typography>
+                              }
+                              sx={{ m: 0 }}
+                            />
+                          </Box>
+
+                          {br?.meta?.drawSize > 0 && (
+                            <Chip
+                              size="small"
+                              sx={{ ml: 1 }}
+                              label={`Quy mô: ${br.meta.drawSize} đội (${
+                                br.meta.maxRounds || toRounds(br.meta.drawSize)
+                              } vòng)`}
+                            />
+                          )}
+                        </Stack>
+
+                        {/* Actions ở header (chặn toggle) */}
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <Button
                             size="small"
-                            onClick={() => {
+                            onClick={stop(() => openMatchDialog(br))}
+                            startIcon={<AddIcon />}
+                          >
+                            Tạo trận
+                          </Button>
+
+                          {/* Gợi ý dựng skeleton nếu roundElim và chưa có trận */}
+                          {br.type === "roundElim" && (grouped[bid]?.length ?? 0) === 0 && (
+                            <Tooltip title="Dựng sơ đồ round-elim khi chưa có trận">
+                              <span>
+                                <Button
+                                  size="small"
+                                  disabled={buildingSkeleton}
+                                  onClick={stop(async () => {
+                                    const drawSize = Number(br?.meta?.drawSize) || 0;
+                                    const maxCut = Math.max(1, toRounds(drawSize) - 1);
+                                    const k = Math.min(1, maxCut) || 1; // mặc định 1 vòng
+                                    if (!drawSize || !maxCut) {
+                                      showSnack(
+                                        "warning",
+                                        "Bracket chưa có 'meta.drawSize' hợp lệ. Hãy sửa bracket hoặc tạo lại kèm quy mô."
+                                      );
+                                      return;
+                                    }
+                                    try {
+                                      await buildRoundElimSkeleton({
+                                        bracketId: bid,
+                                        body: { drawSize, cutRounds: k, overwrite: false },
+                                      }).unwrap();
+                                      showSnack("success", `Đã dựng sơ đồ round-elim (k = ${k})`);
+                                      refetchMatches();
+                                    } catch (e) {
+                                      showSnack("error", e?.data?.message || e.error);
+                                    }
+                                  })}
+                                >
+                                  Dựng sơ đồ
+                                </Button>
+                              </span>
+                            </Tooltip>
+                          )}
+
+                          <Button size="small" onClick={stop(() => openNextRoundDialog(br))}>
+                            Tạo vòng sau
+                          </Button>
+
+                          <Button
+                            size="small"
+                            onClick={stop(() => {
                               setAdvTarget(br);
                               setAdvDlg(true);
                               setAdvSourceId("");
@@ -945,186 +1260,249 @@ export default function AdminBracketsPage() {
                               setAdvPairing("standard");
                               setAdvFillMode("pairs");
                               setAdvPreview([]);
-                            }}
+                            })}
                             startIcon={<ExploreIcon />}
                           >
                             Lấy đội từ vòng trước
                           </Button>
-                        </>
-                      )}
-                      <IconButton
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditBracket(br);
-                        }}
-                        title="Sửa bracket"
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton onClick={() => handleDeleteBracket(br)} title="Xoá bracket">
-                        <DeleteIcon />
-                      </IconButton>
-                    </Stack>
-                  </Stack>
 
-                  {/* LIST HIỂN THỊ */}
-                  <Stack spacing={1} sx={{ mt: 2 }}>
-                    {br.type === "group" ? (
-                      (() => {
-                        const byGroup = groupedByGroup[idOf(br._id)] || {};
-                        const entries = Object.entries(byGroup).sort((a, b) =>
-                          a[0].localeCompare(b[0], "vi", { numeric: true, sensitivity: "base" })
-                        );
-
-                        if (!entries.length)
-                          return (
-                            <Typography variant="body2" color="text.secondary">
-                              Chưa có trận nào.
-                            </Typography>
-                          );
-
-                        return (
-                          <Stack spacing={2}>
-                            {entries.map(([gk, arr]) => (
-                              <Box key={gk} sx={{ p: 1, borderRadius: 1, bgcolor: "#f7f7f7" }}>
-                                <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
-                                  {formatGroupTitle(gk)}
-                                </Typography>
-                                <Stack spacing={1}>
-                                  {arr.map((mt, idx) => (
-                                    <Stack
-                                      key={mt._id}
-                                      direction="row"
-                                      justifyContent="space-between"
-                                      alignItems="center"
-                                      sx={{
-                                        p: 1,
-                                        bgcolor: "#fff",
-                                        borderRadius: 1,
-                                        border: "1px solid #eee",
-                                      }}
-                                    >
-                                      <Box>
-                                        <Typography>
-                                          <strong>Trận #{(mt.order ?? idx) + 1}</strong>:{" "}
-                                          <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
-                                          <strong>{getSideLabel(mt, "B")}</strong>
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                          best‐of {mt.rules.bestOf}, tới {mt.rules.pointsToWin}{" "}
-                                          {mt.rules.winByTwo ? "(chênh 2)" : ""} — trạng thái:{" "}
-                                          {mt.status}
-                                          {mt.status === "finished" && mt.winner && (
-                                            <> — winner: {mt.winner}</>
-                                          )}
-                                          {mt.referee && (
-                                            <>
-                                              {" "}
-                                              — ref:{" "}
-                                              {typeof mt.referee === "object"
-                                                ? refName(mt.referee)
-                                                : referees.find((r) => r._id === mt.referee)
-                                                    ?.name || mt.referee}
-                                            </>
-                                          )}
-                                          {typeof mt.ratingDelta !== "undefined" && (
-                                            <>
-                                              {" "}
-                                              — Δ: {mt.ratingDelta ?? 0}
-                                              {mt.ratingApplied ? " (đã áp dụng)" : ""}
-                                            </>
-                                          )}
-                                        </Typography>
-                                      </Box>
-                                      <Stack direction="row" spacing={0.5}>
-                                        <IconButton
-                                          onClick={() => openEditMatch(mt)}
-                                          title="Sửa trận"
-                                        >
-                                          <EditIcon />
-                                        </IconButton>
-                                        <IconButton
-                                          onClick={() => handleDeleteMatch(mt)}
-                                          title="Xoá trận"
-                                        >
-                                          <DeleteIcon />
-                                        </IconButton>
-                                      </Stack>
-                                    </Stack>
-                                  ))}
-                                </Stack>
-                              </Box>
-                            ))}
-                          </Stack>
-                        );
-                      })()
-                    ) : (
-                      <>
-                        {(grouped[idOf(br._id)] || []).map((mt) => (
-                          <Stack
-                            key={mt._id}
-                            direction="row"
-                            justifyContent="space-between"
-                            alignItems="center"
-                            sx={{ p: 1, backgroundColor: "#fafafa", borderRadius: 1 }}
+                          <IconButton onClick={stop(() => openEditBracket(br))} title="Sửa bracket">
+                            <EditIcon />
+                          </IconButton>
+                          <IconButton
+                            onClick={stop(() => handleDeleteBracket(br))}
+                            title="Xoá bracket"
                           >
-                            <Box>
-                              <Typography>
-                                Vòng {mt.round || 1} — <strong>#{mt.order ?? 0}</strong>:{" "}
-                                <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
-                                <strong>{getSideLabel(mt, "B")}</strong>
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                best‐of {mt.rules.bestOf}, tới {mt.rules.pointsToWin}{" "}
-                                {mt.rules.winByTwo ? "(chênh 2)" : ""} — trạng thái: {mt.status}
-                                {mt.status === "finished" && mt.winner && (
-                                  <> — winner: {mt.winner}</>
-                                )}
-                                {mt.referee && (
-                                  <>
-                                    {" "}
-                                    — ref:{" "}
-                                    {typeof mt.referee === "object"
-                                      ? refName(mt.referee)
-                                      : referees.find((r) => r._id === mt.referee)?.name ||
-                                        mt.referee}
-                                  </>
-                                )}
-                                {typeof mt.ratingDelta !== "undefined" && (
-                                  <>
-                                    {" "}
-                                    — Δ: {mt.ratingDelta ?? 0}
-                                    {mt.ratingApplied ? " (đã áp dụng)" : ""}
-                                  </>
-                                )}
-                              </Typography>
-                            </Box>
-                            <Stack direction="row" spacing={0.5}>
-                              <IconButton
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEditMatch(mt);
-                                }}
-                                title="Sửa trận"
-                              >
-                                <EditIcon />
-                              </IconButton>
-                              <IconButton onClick={() => handleDeleteMatch(mt)} title="Xoá trận">
-                                <DeleteIcon />
-                              </IconButton>
-                            </Stack>
+                            <DeleteIcon />
+                          </IconButton>
+                        </Stack>
+                      </Stack>
+                    </AccordionSummary>
+
+                    <AccordionDetails>
+                      {/* Bulk action bar (hiện khi có chọn) */}
+                      {selectedCount > 0 && (
+                        <Box
+                          sx={{
+                            mt: 0.5,
+                            mb: 1.5,
+                            p: 1.5,
+                            borderRadius: 1,
+                            border: "1px dashed #ddd",
+                            bgcolor: "#fafafa",
+                          }}
+                        >
+                          <Stack
+                            direction={{ xs: "column", sm: "row" }}
+                            spacing={1}
+                            alignItems="center"
+                          >
+                            <Typography variant="body2">
+                              Đã chọn <b>{selectedCount}</b>/{matchArr?.length || 0} trận
+                            </Typography>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              sx={{ color: "white !important" }}
+                              onClick={() => openBulkRefDlg(br)}
+                              disabled={assigningRef}
+                            >
+                              Gán trọng tài
+                            </Button>
+                            <Button
+                              size="small"
+                              color="error"
+                              sx={{ color: "red !important" }}
+                              variant="outlined"
+                              onClick={() => doBulkDeleteMatches(br)}
+                              disabled={deletingBatch}
+                            >
+                              Xoá trận đã chọn
+                            </Button>
+                            <Button size="small" onClick={() => clearSelection(bid)}>
+                              Bỏ chọn
+                            </Button>
                           </Stack>
-                        ))}
-                        {!grouped[idOf(br._id)]?.length && (
-                          <Typography variant="body2" color="text.secondary">
-                            Chưa có trận nào.
-                          </Typography>
+                        </Box>
+                      )}
+
+                      {/* LIST HIỂN THỊ */}
+                      <Stack spacing={1}>
+                        {br.type === "group" ? (
+                          (() => {
+                            const byGroup = groupedByGroup[bid] || {};
+                            const entries = Object.entries(byGroup).sort((a, b) =>
+                              a[0].localeCompare(b[0], "vi", {
+                                numeric: true,
+                                sensitivity: "base",
+                              })
+                            );
+
+                            if (!entries.length)
+                              return (
+                                <Typography variant="body2" color="text.secondary">
+                                  Chưa có trận nào.
+                                </Typography>
+                              );
+
+                            return (
+                              <Stack spacing={2}>
+                                {entries.map(([gk, arr]) => (
+                                  <Box key={gk} sx={{ p: 1, borderRadius: 1, bgcolor: "#f7f7f7" }}>
+                                    <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+                                      {formatGroupTitle(gk)}
+                                    </Typography>
+                                    <Stack spacing={1}>
+                                      {arr.map((mt, idx) => (
+                                        <Stack
+                                          key={mt._id}
+                                          direction="row"
+                                          justifyContent="space-between"
+                                          alignItems="center"
+                                          sx={{
+                                            p: 1,
+                                            bgcolor: "#fff",
+                                            borderRadius: 1,
+                                            border: "1px solid #eee",
+                                          }}
+                                        >
+                                          <Stack direction="row" alignItems="center" spacing={1}>
+                                            <Checkbox
+                                              checked={isSelected(bid, mt._id)}
+                                              onChange={() => toggleSelect(bid, mt._id)}
+                                            />
+                                            <Box>
+                                              <Typography>
+                                                <strong>Trận #{(mt.order ?? idx) + 1}</strong>:{" "}
+                                                <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
+                                                <strong>{getSideLabel(mt, "B")}</strong>
+                                              </Typography>
+                                              <Typography variant="caption" color="text.secondary">
+                                                best‐of {mt.rules.bestOf}, tới{" "}
+                                                {mt.rules.pointsToWin}{" "}
+                                                {mt.rules.winByTwo ? "(chênh 2)" : ""} — trạng thái:{" "}
+                                                {mt.status}
+                                                {mt.status === "finished" && mt.winner && (
+                                                  <> — winner: {mt.winner}</>
+                                                )}
+                                                {mt.referee && (
+                                                  <>
+                                                    {" "}
+                                                    — ref:{" "}
+                                                    {typeof mt.referee === "object"
+                                                      ? refName(mt.referee)
+                                                      : referees.find((r) => r._id === mt.referee)
+                                                          ?.name || mt.referee}
+                                                  </>
+                                                )}
+                                                {typeof mt.ratingDelta !== "undefined" && (
+                                                  <>
+                                                    {" "}
+                                                    — Δ: {mt.ratingDelta ?? 0}
+                                                    {mt.ratingApplied ? " (đã áp dụng)" : ""}
+                                                  </>
+                                                )}
+                                              </Typography>
+                                            </Box>
+                                          </Stack>
+                                          <Stack direction="row" spacing={0.5}>
+                                            <IconButton
+                                              onClick={() => openEditMatch(mt)}
+                                              title="Sửa trận"
+                                            >
+                                              <EditIcon />
+                                            </IconButton>
+                                            <IconButton
+                                              onClick={() => handleDeleteMatch(mt)}
+                                              title="Xoá trận"
+                                            >
+                                              <DeleteIcon />
+                                            </IconButton>
+                                          </Stack>
+                                        </Stack>
+                                      ))}
+                                    </Stack>
+                                  </Box>
+                                ))}
+                              </Stack>
+                            );
+                          })()
+                        ) : (
+                          <>
+                            {(grouped[bid] || []).map((mt, idx) => (
+                              <Stack
+                                key={mt._id}
+                                direction="row"
+                                justifyContent="space-between"
+                                alignItems="center"
+                                sx={{ p: 1, backgroundColor: "#fafafa", borderRadius: 1 }}
+                              >
+                                <Stack direction="row" alignItems="center" spacing={1}>
+                                  <Checkbox
+                                    checked={isSelected(bid, mt._id)}
+                                    onChange={() => toggleSelect(bid, mt._id)}
+                                  />
+                                  <Box>
+                                    <Typography>
+                                      Vòng {mt.round || 1} — <strong>#{mt.order ?? idx}</strong>:{" "}
+                                      <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
+                                      <strong>{getSideLabel(mt, "B")}</strong>
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                      best‐of {mt.rules.bestOf}, tới {mt.rules.pointsToWin}{" "}
+                                      {mt.rules.winByTwo ? "(chênh 2)" : ""} — trạng thái:{" "}
+                                      {mt.status}
+                                      {mt.status === "finished" && mt.winner && (
+                                        <> — winner: {mt.winner}</>
+                                      )}
+                                      {mt.referee && (
+                                        <>
+                                          {" "}
+                                          — ref:{" "}
+                                          {typeof mt.referee === "object"
+                                            ? refName(mt.referee)
+                                            : referees.find((r) => r._id === mt.referee)?.name ||
+                                              mt.referee}
+                                        </>
+                                      )}
+                                      {typeof mt.ratingDelta !== "undefined" && (
+                                        <>
+                                          {" "}
+                                          — Δ: {mt.ratingDelta ?? 0}
+                                          {mt.ratingApplied ? " (đã áp dụng)" : ""}
+                                        </>
+                                      )}
+                                    </Typography>
+                                  </Box>
+                                </Stack>
+                                <Stack direction="row" spacing={0.5}>
+                                  <IconButton
+                                    onClick={stop(() => openEditMatch(mt))}
+                                    title="Sửa trận"
+                                  >
+                                    <EditIcon />
+                                  </IconButton>
+                                  <IconButton
+                                    onClick={stop(() => handleDeleteMatch(mt))}
+                                    title="Xoá trận"
+                                  >
+                                    <DeleteIcon />
+                                  </IconButton>
+                                </Stack>
+                              </Stack>
+                            ))}
+                            {!grouped[bid]?.length && (
+                              <Typography variant="body2" color="text.secondary">
+                                Chưa có trận nào.
+                              </Typography>
+                            )}
+                          </>
                         )}
-                      </>
-                    )}
-                  </Stack>
-                </Card>
-              ))}
+                      </Stack>
+                    </AccordionDetails>
+                  </Accordion>
+                );
+              })}
             </Stack>
           </>
         )}
@@ -1155,6 +1533,7 @@ export default function AdminBracketsPage() {
               >
                 <MenuItem value="knockout">Knockout</MenuItem>
                 <MenuItem value="group">Vòng bảng</MenuItem>
+                <MenuItem value="roundElim">Round Elimination (cắt n→n/x)</MenuItem>
               </Select>
             </FormControl>
             <TextField
@@ -1164,7 +1543,6 @@ export default function AdminBracketsPage() {
               value={newBracketStage}
               onChange={(e) => setNewBracketStage(Number(e.target.value))}
             />
-            {/* Order khi tạo mới */}
             <TextField
               label="Order (thứ tự hiển thị)"
               type="number"
@@ -1174,6 +1552,7 @@ export default function AdminBracketsPage() {
               helperText="Dùng để sắp xếp danh sách brackets. Nhỏ hiển thị trước."
             />
 
+            {/* Knockout config */}
             {newBracketType === "knockout" && (
               <>
                 <Alert severity="info">
@@ -1181,7 +1560,6 @@ export default function AdminBracketsPage() {
                   <b>số đội đã thanh toán</b>. Hiện có: <b>{paidCount}</b> đội đã thanh toán.
                 </Alert>
 
-                {/* NEW: checkbox bật/tắt self-scale */}
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -1192,7 +1570,6 @@ export default function AdminBracketsPage() {
                   label="Tự tạo quy mô giải đấu"
                 />
 
-                {/* NEW: chỉ hiện 2 select khi đã tick */}
                 {useCustomScale && (
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                     <TextField
@@ -1257,15 +1634,9 @@ export default function AdminBracketsPage() {
                       onChange={(e) => setAutoMode(e.target.value)}
                       sx={{ minWidth: 260 }}
                     >
-                      <MenuItem value="FROM_GROUPS">
-                        Option 1 — Lấy đội đi tiếp từ vòng trước (vòng bảng)
-                      </MenuItem>
-                      <MenuItem value="MANUAL_SCALE">
-                        Option 2 — Tự điền quy mô số đội (2^n: 1/8, 1/16, …)
-                      </MenuItem>
-                      <MenuItem value="AUTO_FROM_REGS">
-                        Option 3 — Tự động theo số cặp đăng ký (nếu thừa → có vòng loại riêng)
-                      </MenuItem>
+                      <MenuItem value="FROM_GROUPS">Option 1 — Lấy đội từ vòng bảng</MenuItem>
+                      <MenuItem value="MANUAL_SCALE">Option 2 — Tự điền quy mô (2^n)</MenuItem>
+                      <MenuItem value="AUTO_FROM_REGS">Option 3 — Theo số đăng ký</MenuItem>
                     </TextField>
 
                     {autoMode === "FROM_GROUPS" && (
@@ -1317,6 +1688,7 @@ export default function AdminBracketsPage() {
                             <MenuItem value="rating">rating</MenuItem>
                             <MenuItem value="random">random</MenuItem>
                             <MenuItem value="tiered">tiered</MenuItem>
+                            <MenuItem value="keep">keep (giữ thứ tự)</MenuItem>
                           </TextField>
                           <TextField
                             select
@@ -1325,8 +1697,16 @@ export default function AdminBracketsPage() {
                             onChange={(e) => setAutoPairing(e.target.value)}
                             sx={{ minWidth: 200 }}
                           >
-                            <MenuItem value="standard">1–N, 2–N-1, …</MenuItem>
-                            <MenuItem value="snake">snake</MenuItem>
+                            <MenuItem value="standard">standard — 1–N, 2–(N-1)…</MenuItem>
+                            <MenuItem value="snake">snake — (R1 ≈ standard)</MenuItem>{" "}
+                            {/* ⭐ ADDED */}
+                            <MenuItem value="adjacent">adjacent — (1–2), (3–4)…</MenuItem>{" "}
+                            {/* ⭐ ADDED */}
+                            <MenuItem value="cross">cross — 1–(N/2+1), 2–(N/2+2)…</MenuItem>{" "}
+                            {/* ⭐ ADDED */}
+                            <MenuItem value="by_order">by_order — giữ thứ tự</MenuItem>{" "}
+                            {/* ⭐ ADDED */}
+                            <MenuItem value="random">random — bốc ngẫu nhiên</MenuItem>
                           </TextField>
                           <TextField
                             select
@@ -1414,10 +1794,25 @@ export default function AdminBracketsPage() {
                 )}
               </>
             )}
+
+            {/* ⭐ RoundElim config */}
+            {newBracketType === "roundElim" && <RoundElimControls />}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBracketDlg(false)}>Huỷ</Button>
+
+          {/* ⭐ Nút phụ: tạo & dựng skeleton (chỉ cho roundElim) */}
+          {newBracketType === "roundElim" && (
+            <Button
+              onClick={handleCreateAndBuildRoundElim}
+              variant="outlined"
+              disabled={buildingSkeleton}
+            >
+              {buildingSkeleton ? "Đang dựng..." : "Tạo & dựng sơ đồ (roundElim)"}
+            </Button>
+          )}
+
           <Button
             onClick={handleCreateBracket}
             variant="contained"
@@ -1459,6 +1854,7 @@ export default function AdminBracketsPage() {
               >
                 <MenuItem value="knockout">Knockout</MenuItem>
                 <MenuItem value="group">Vòng bảng</MenuItem>
+                <MenuItem value="roundElim">Round Elimination</MenuItem>
               </Select>
             </FormControl>
             <TextField
@@ -1476,7 +1872,7 @@ export default function AdminBracketsPage() {
               onChange={(e) => setEbOrder(Number(e.target.value))}
             />
 
-            {/* NEW: Quy mô khi sửa (chỉ knockout) */}
+            {/* Quy mô khi sửa (chỉ knockout) */}
             {ebType === "knockout" && (
               <>
                 <Divider sx={{ my: 2 }} />
@@ -1484,7 +1880,6 @@ export default function AdminBracketsPage() {
                   Quy mô giải đấu
                 </Typography>
 
-                {/* Checkbox bật/tắt self-scale */}
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -1495,7 +1890,6 @@ export default function AdminBracketsPage() {
                   label="Tự tạo quy mô giải đấu"
                 />
 
-                {/* Chỉ hiện 2 select khi tick */}
                 {ebUseCustomScale && (
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                     <TextField
@@ -1965,6 +2359,50 @@ export default function AdminBracketsPage() {
         </DialogActions>
       </Dialog>
 
+      {/* Dialog: Bulk gán trọng tài */}
+      <Dialog
+        open={bulkRefDlg.open}
+        onClose={() => setBulkRefDlg({ open: false, bracketId: "", ids: [], referee: "" })}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Gán trọng tài cho {bulkRefDlg.ids.length} trận</DialogTitle>
+        <DialogContent>
+          <TextField
+            select
+            fullWidth
+            label="Chọn trọng tài"
+            value={bulkRefDlg.referee}
+            onChange={(e) => setBulkRefDlg((s) => ({ ...s, referee: e.target.value }))}
+            sx={{
+              mt: 2,
+              "& .MuiInputBase-root": { minHeight: 56 },
+              "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
+            }}
+            helperText="Để trống nếu muốn xoá referee ở các trận đã chọn"
+          >
+            <MenuItem value="">
+              <em>— Bỏ gán (clear) —</em>
+            </MenuItem>
+            {referees.map((u) => (
+              <MenuItem key={u._id} value={u._id}>
+                {u.name} {u.nickname ? `(${u.nickname})` : ""}
+              </MenuItem>
+            ))}
+          </TextField>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setBulkRefDlg({ open: false, bracketId: "", ids: [], referee: "" })}
+          >
+            Huỷ
+          </Button>
+          <Button onClick={doBulkAssignRef} disabled={assigningRef} variant="contained">
+            {assigningRef ? "Đang gán..." : "Gán trọng tài"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Dialog: Tạo vòng sau thủ công */}
       <Dialog open={nextDlg} onClose={() => setNextDlg(false)} fullWidth maxWidth="md">
         <DialogTitle>Tạo vòng {nextRound} (chọn đội)</DialogTitle>
@@ -2293,6 +2731,7 @@ export default function AdminBracketsPage() {
                   <MenuItem value="rating">rating (mặc định)</MenuItem>
                   <MenuItem value="random">random</MenuItem>
                   <MenuItem value="tiered">tiered</MenuItem>
+                  <MenuItem value="keep">keep (giữ thứ tự)</MenuItem>
                 </TextField>
 
                 <TextField
@@ -2306,8 +2745,12 @@ export default function AdminBracketsPage() {
                     "& .MuiSelect-select": { py: 2 },
                   }}
                 >
-                  <MenuItem value="standard">1–N, 2–N-1, …</MenuItem>
-                  <MenuItem value="snake">snake (1–(N/2+1), 2–(N/2+2), …)</MenuItem>
+                  <MenuItem value="standard">standard — 1–N, 2–(N-1)…</MenuItem>
+                  <MenuItem value="snake">snake — (R1 ≈ standard)</MenuItem> {/* ⭐ ADDED */}
+                  <MenuItem value="adjacent">adjacent — (1–2), (3–4)…</MenuItem> {/* ⭐ ADDED */}
+                  <MenuItem value="cross">cross — 1–(N/2+1), 2–(N/2+2)…</MenuItem> {/* ⭐ ADDED */}
+                  <MenuItem value="by_order">by_order — giữ thứ tự</MenuItem> {/* ⭐ ADDED */}
+                  <MenuItem value="random">random — bốc ngẫu nhiên</MenuItem>
                 </TextField>
 
                 <TextField
@@ -2320,7 +2763,7 @@ export default function AdminBracketsPage() {
                     "& .MuiInputBase-root": { minHeight: 56 },
                     "& .MuiSelect-select": { py: 2 },
                   }}
-                  helperText="pairs = điền cặp luôn; pool = đổ danh sách để bốc tay sau"
+                  helperText="pairs = điền cặp sẵn; pool = để bốc tay"
                 >
                   <MenuItem value="pairs">pairs (điền cặp sẵn)</MenuItem>
                   <MenuItem value="pool">pool (để bốc tay)</MenuItem>

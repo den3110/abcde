@@ -25,6 +25,7 @@ import { store } from "./store";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { SocketProvider } from "context/SocketContext";
+import "react-quill/dist/quill.snow.css";
 const container = document.getElementById("app");
 const root = createRoot(container);
 
