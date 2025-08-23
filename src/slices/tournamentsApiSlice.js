@@ -97,6 +97,7 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       query: (tourId) => `/admin/tournaments/${tourId}/brackets`,
       providesTags: (r, e, tourId) =>
         r ? [{ type: "Bracket", id: tourId }] : [{ type: "Bracket", id: tourId }],
+      keepUnusedDataFor: 0,
     }),
     createBracket: builder.mutation({
       query: ({ tourId, body }) => ({
@@ -463,6 +464,18 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         body,
       }),
     }),
+    autoGenerateRegistrations: builder.mutation({
+      query: ({ tourId, body }) => ({
+        url: `/admin/tournaments/${tourId}/registrations/auto`,
+        method: "POST",
+        body,
+      }),
+      // tùy hệ thống tag của bạn:
+      // invalidatesTags: (r, e, arg) => [
+      //   { type: "Registrations", id: arg.tourId },
+      //   { type: "Tournament", id: arg.tourId },
+      // ],
+    }),
   }),
 });
 
@@ -514,4 +527,5 @@ export const {
   useBuildRoundElimSkeletonMutation,
   useCommitTournamentPlanMutation,
   usePlanTournamentMutation,
+  useAutoGenerateRegistrationsMutation,
 } = tournamentsApiSlice;

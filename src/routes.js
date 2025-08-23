@@ -32,6 +32,7 @@ import CmsHeroEditor from "layouts/CmsHeroEditor";
 import CmsContactEditor from "layouts/CmsContactEditor";
 import AdminRefereeMatches from "layouts/tournament/referee/AdminRefereeMatches";
 import TournamentBlueprintPage from "layouts/tournament/TournamentBlueprintPage";
+import AutoRegistrationsPage from "layouts/tournament/AutoRegistrationsPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -257,6 +258,17 @@ const routes = [
     key: "tournament-blueprint",
     route: "/admin/tournaments/:id/blueprint",
     component: <TournamentBlueprintPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  // 🆕 Đăng ký tự động (hiện trên sidebar) — chỉ 1 route
+  {
+    type: "collapse",
+    name: "Đăng ký tự động",
+    key: "auto-registrations",
+    icon: <Icon fontSize="small">how_to_reg</Icon>,
+    route: "/admin/auto-registrations",
+    component: <AutoRegistrationsPage />,
     private: true,
     roles: ["admin"],
   },
