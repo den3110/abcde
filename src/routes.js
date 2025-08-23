@@ -31,6 +31,7 @@ import AutoUserPage from "layouts/auto/AutoUserPage";
 import CmsHeroEditor from "layouts/CmsHeroEditor";
 import CmsContactEditor from "layouts/CmsContactEditor";
 import AdminRefereeMatches from "layouts/tournament/referee/AdminRefereeMatches";
+import TournamentBlueprintPage from "layouts/tournament/TournamentBlueprintPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -245,6 +246,17 @@ const routes = [
     icon: <Icon fontSize="small">contact_mail</Icon>,
     route: "/admin/cms/contact",
     component: <CmsContactEditor />,
+    private: true,
+    roles: ["admin"],
+  },
+  // 🆕 Tạo sơ đồ giải đấu theo quy mô (Admin)
+  {
+    show: false,
+    type: "collapse",
+    name: "Tạo sơ đồ giải",
+    key: "tournament-blueprint",
+    route: "/admin/tournaments/:id/blueprint",
+    component: <TournamentBlueprintPage />,
     private: true,
     roles: ["admin"],
   },

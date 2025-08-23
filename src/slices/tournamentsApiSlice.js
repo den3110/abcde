@@ -449,6 +449,20 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         body: { ids },
       }),
     }),
+    planTournament: builder.mutation({
+      query: ({ tournamentId, body }) => ({
+        url: `/admin/tournaments/${tournamentId}/plan/auto`,
+        method: "POST",
+        body,
+      }),
+    }),
+    commitTournamentPlan: builder.mutation({
+      query: ({ tournamentId, body }) => ({
+        url: `/admin/tournaments/${tournamentId}/plan/commit`,
+        method: "POST",
+        body,
+      }),
+    }),
   }),
 });
 
@@ -498,4 +512,6 @@ export const {
   useBatchAssignRefereeMutation,
   useBatchDeleteMatchesMutation,
   useBuildRoundElimSkeletonMutation,
+  useCommitTournamentPlanMutation,
+  usePlanTournamentMutation,
 } = tournamentsApiSlice;

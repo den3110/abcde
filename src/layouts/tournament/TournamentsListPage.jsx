@@ -24,6 +24,7 @@ import {
   Select,
   MenuItem,
 } from "@mui/material";
+import { AccountTree as AccountTreeIcon } from "@mui/icons-material";
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
@@ -133,6 +134,15 @@ export default function TournamentsListPage() {
     ),
     actions: (
       <Stack direction="row" spacing={1} justifyContent="center">
+        <Tooltip title="Tạo sơ đồ">
+          <IconButton
+            size="small"
+            color="warning"
+            onClick={() => navigate(`/admin/tournaments/${t._id}/blueprint`)}
+          >
+            <AccountTreeIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Đăng ký">
           <IconButton
             size="small"
