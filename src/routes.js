@@ -33,6 +33,9 @@ import CmsContactEditor from "layouts/CmsContactEditor";
 import AdminRefereeMatches from "layouts/tournament/referee/AdminRefereeMatches";
 import TournamentBlueprintPage from "layouts/tournament/TournamentBlueprintPage";
 import AutoRegistrationsPage from "layouts/tournament/AutoRegistrationsPage";
+import AdminOverlayPage from "layouts/tournament/OverlayTab";
+import GlobalMatchViewerPage from "layouts/match/GlobalMatchViewerPage";
+import AdminMatchDetailPage from "layouts/match/AdminMatchDetailPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -146,6 +149,30 @@ const routes = [
     roles: ["admin"],
   },
 
+  // 🆕 GLOBAL VIEWER – xuất hiện trên sidebar để click vào
+  {
+    type: "collapse",
+    name: "Xem trận (Global)",
+    key: "match-viewer",
+    icon: <Icon fontSize="small">visibility</Icon>,
+    route: "/match-viewer",
+    component: <GlobalMatchViewerPage />,
+    private: true, // hoặc false nếu muốn public
+    roles: ["admin"], // ai được thấy trên sidebar
+  },
+
+  // 🆕 CHI TIẾT TRẬN – ẩn khỏi sidebar (đi từ viewer hoặc list)
+  {
+    show: false,
+    type: "collapse",
+    name: "Chi tiết trận",
+    key: "admin-match-detail",
+    route: "/admin/matches/:id",
+    component: <AdminMatchDetailPage />,
+    private: true,
+    roles: ["admin"],
+  },
+
   // 🆕 Tham số thuật toán (Admin)
   {
     type: "collapse",
@@ -156,6 +183,17 @@ const routes = [
     component: <AlgoSettingsPage />,
     private: true,
     roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Cấu hình Overlay",
+    key: "overlay-index",
+    icon: <Icon fontSize="small">palette</Icon>,
+    route: "/admin/overlay",
+    component: <AdminOverlayPage />,
+    private: true,
+    roles: ["admin"],
+    show: true, // hiện trên sidebar
   },
   // 🆕 Tạo user tự động (Admin)
   {

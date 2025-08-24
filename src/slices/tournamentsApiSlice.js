@@ -476,6 +476,47 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       //   { type: "Tournament", id: arg.tourId },
       // ],
     }),
+    // Danh sách gần đây (limit + sort)
+    getRecentTournaments: builder.query({
+      query: ({ limit = 50, sort = "-updatedAt" } = {}) => ({
+        url: "/tournaments",
+        params: { limit, sort },
+      }),
+      providesTags: (result) => {
+        const items = Array.isArray(result) ? result : result?.items || result?.tournaments || [];
+        return [
+          ...(items?.map?.((t) => ({ type: "Tournament", id: t?._id || t?.id })) || []),
+          { type: "Tournaments", id: "LIST" },
+        ];
+      },
+    }),
+
+    // Tìm kiếm theo keyword
+    searchTournaments: builder.query({
+      query: ({ keyword = "", limit = 20 } = {}) => ({
+        url: "/tournaments",
+        params: { keyword, limit },
+      }),
+    }),
+
+    // Chi tiết 1 giải
+    getTournamentById: builder.query({
+      query: (id) => `/tournaments/${id}`,
+      providesTags: (_res, _err, id) => [{ type: "Tournament", id }],
+    }),
+
+    // Cập nhật overlay
+    updateTournamentOverlay: builder.mutation({
+      query: ({ id, body }) => ({
+        url: `/admin/tournaments/${id}/overlay`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: (_res, _err, { id }) => [
+        { type: "Tournament", id },
+        { type: "Tournaments", id: "LIST" },
+      ],
+    }),
   }),
 });
 
@@ -528,4 +569,8 @@ export const {
   useCommitTournamentPlanMutation,
   usePlanTournamentMutation,
   useAutoGenerateRegistrationsMutation,
+  useGetRecentTournamentsQuery,
+  useSearchTournamentsQuery,
+  useGetTournamentByIdQuery,
+  useUpdateTournamentOverlayMutation,
 } = tournamentsApiSlice;

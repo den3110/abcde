@@ -1,5 +1,5 @@
 // src/layouts/tournament/TournamentsListPage.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Avatar,
   Box,
@@ -8,11 +8,6 @@ import {
   CircularProgress,
   IconButton,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Typography,
   useMediaQuery,
   useTheme,
@@ -58,15 +53,23 @@ const STATUS_COLOR = { upcoming: "info", ongoing: "success", finished: "default"
 export default function TournamentsListPage() {
   const dispatch = useDispatch();
   const { page, limit, keyword, status } = useSelector((s) => s.adminTournamentUi);
-  const [input, setInput] = useState(keyword);
+  const [input, setInput] = useState(keyword || "");
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
+  /* ---------------- Debounce keyword & tránh dispatch lặp ---------------- */
   useEffect(() => {
-    const id = setTimeout(() => dispatch(setTKeyword(input.trim().toLowerCase())), 300);
+    const id = setTimeout(() => {
+      const next = (input || "").trim().toLowerCase();
+      if (next !== (keyword || "")) {
+        dispatch(setTKeyword(next));
+      }
+    }, 300);
     return () => clearTimeout(id);
-  }, [input, dispatch]);
+    // cố ý KHÔNG đưa `dispatch`/`keyword` vào deps để tránh lặp do store thay đổi liên tục.
+    // eslint-disable-next-line
+  }, [input]);
 
   const {
     data: { list: tournaments = [], total = 0 } = {},
@@ -76,113 +79,127 @@ export default function TournamentsListPage() {
     { page: page + 1, limit, keyword, status },
     { keepPreviousData: true }
   );
-  const totalPages = Math.ceil(total / limit);
 
+  const totalPages = Math.ceil((total || 0) / (limit || 1));
+
+  /* ---------------- Handlers ổn định ---------------- */
   const [del] = useDeleteTournamentMutation();
-  const handleDelete = async (id) => {
-    if (!window.confirm("Xoá giải này?")) return;
-    try {
-      await del(id).unwrap();
-      toast.success("Đã xoá giải");
-    } catch (err) {
-      toast.error(err?.data?.message || err.error);
-    }
-  };
 
-  const columns = [
-    { Header: "#", accessor: "idx", width: "6%", align: "center" },
-    { Header: "Tên", accessor: "name", width: "26%" },
-    { Header: "Thời gian", accessor: "time", width: "18%" },
-    { Header: "Loại", accessor: "type", align: "center" },
-    { Header: "Trạng thái", accessor: "status", align: "center" },
-    { Header: "Đăng ký", accessor: "reg", align: "center" },
-    { Header: "Hành động", accessor: "actions", align: "center", width: "18%" },
-  ];
+  const handleDelete = useCallback(
+    async (id) => {
+      if (!window.confirm("Xoá giải này?")) return;
+      try {
+        await del(id).unwrap();
+        toast.success("Đã xoá giải");
+      } catch (err) {
+        toast.error(err?.data?.message || err.error);
+      }
+    },
+    [del]
+  );
 
-  const rows = tournaments.map((t, i) => ({
-    idx: <MDTypography variant="caption">{page * limit + i + 1}</MDTypography>,
-    name: (
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Avatar src={t.image} variant="rounded" sx={{ width: 32, height: 32 }} />
-        <MDTypography variant="button" fontWeight="medium">
-          {t.name}
-        </MDTypography>
-      </Stack>
-    ),
-    time: (
-      <MDTypography variant="caption" color="text">
-        {new Date(t.startDate).toLocaleDateString()} – {new Date(t.endDate).toLocaleDateString()}
-      </MDTypography>
-    ),
-    type: (
-      <MDTypography variant="caption" color="text">
-        {t.eventType === "double" ? "Đôi" : "Đơn"}
-      </MDTypography>
-    ),
-    status: (
-      <MDBadge
-        variant="gradient"
-        size="sm"
-        badgeContent={STATUS_LABEL[t.status]}
-        color={STATUS_COLOR[t.status]}
-      />
-    ),
-    reg: (
-      <MDTypography variant="caption" color="text">
-        {t.registered}
-      </MDTypography>
-    ),
-    actions: (
-      <Stack direction="row" spacing={1} justifyContent="center">
-        <Tooltip title="Tạo sơ đồ">
-          <IconButton
-            size="small"
-            color="warning"
-            onClick={() => navigate(`/admin/tournaments/${t._id}/blueprint`)}
-          >
-            <AccountTreeIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Đăng ký">
-          <IconButton
-            size="small"
-            color="info"
-            onClick={() => navigate(`/admin/tournaments/${t._id}/registrations`)}
-          >
-            <ListAltIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Brackets">
-          <IconButton
-            size="small"
-            color="primary"
-            onClick={() => navigate(`/admin/tournaments/${t._id}/brackets`)}
-          >
-            <TableChartIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Matches">
-          <IconButton
-            size="small"
-            color="secondary"
-            onClick={() => navigate(`/admin/tournaments/${t._id}/matches`)}
-          >
-            <ListAltIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Sửa">
-          <IconButton size="small" onClick={() => navigate(`/admin/tournaments/${t._id}/edit`)}>
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Xoá">
-          <IconButton size="small" color="error" onClick={() => handleDelete(t._id)}>
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Stack>
-    ),
-  }));
+  const goBlueprint = useCallback(
+    (id) => navigate(`/admin/tournaments/${id}/blueprint`),
+    [navigate]
+  );
+  const goRegs = useCallback(
+    (id) => navigate(`/admin/tournaments/${id}/registrations`),
+    [navigate]
+  );
+  const goBrackets = useCallback((id) => navigate(`/admin/tournaments/${id}/brackets`), [navigate]);
+  const goMatches = useCallback((id) => navigate(`/admin/tournaments/${id}/matches`), [navigate]);
+  const goEdit = useCallback((id) => navigate(`/admin/tournaments/${id}/edit`), [navigate]);
+
+  /* ---------------- Memo hóa columns / rows / tableData ---------------- */
+  const columns = useMemo(
+    () => [
+      { Header: "#", accessor: "idx", width: "6%", align: "center" },
+      { Header: "Tên", accessor: "name", width: "26%" },
+      { Header: "Thời gian", accessor: "time", width: "18%" },
+      { Header: "Loại", accessor: "type", align: "center" },
+      { Header: "Trạng thái", accessor: "status", align: "center" },
+      { Header: "Đăng ký", accessor: "reg", align: "center" },
+      { Header: "Hành động", accessor: "actions", align: "center", width: "18%" },
+    ],
+    []
+  );
+
+  const rows = useMemo(
+    () =>
+      tournaments.map((t, i) => ({
+        idx: <MDTypography variant="caption">{page * limit + i + 1}</MDTypography>,
+        name: (
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Avatar src={t.image} variant="rounded" sx={{ width: 32, height: 32 }} />
+            <MDTypography variant="button" fontWeight="medium">
+              {t.name}
+            </MDTypography>
+          </Stack>
+        ),
+        time: (
+          <MDTypography variant="caption" color="text">
+            {new Date(t.startDate).toLocaleDateString()} –{" "}
+            {new Date(t.endDate).toLocaleDateString()}
+          </MDTypography>
+        ),
+        type: (
+          <MDTypography variant="caption" color="text">
+            {t.eventType === "double" ? "Đôi" : "Đơn"}
+          </MDTypography>
+        ),
+        status: (
+          <MDBadge
+            variant="gradient"
+            size="sm"
+            badgeContent={STATUS_LABEL[t.status]}
+            color={STATUS_COLOR[t.status]}
+          />
+        ),
+        reg: (
+          <MDTypography variant="caption" color="text">
+            {t.registered}
+          </MDTypography>
+        ),
+        actions: (
+          <Stack direction="row" spacing={1} justifyContent="center">
+            <Tooltip title="Tạo sơ đồ">
+              <IconButton size="small" color="warning" onClick={() => goBlueprint(t._id)}>
+                <AccountTreeIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Đăng ký">
+              <IconButton size="small" color="info" onClick={() => goRegs(t._id)}>
+                <ListAltIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Brackets">
+              <IconButton size="small" color="primary" onClick={() => goBrackets(t._id)}>
+                <TableChartIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Matches">
+              <IconButton size="small" color="secondary" onClick={() => goMatches(t._id)}>
+                <ListAltIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Sửa">
+              <IconButton size="small" onClick={() => goEdit(t._id)}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Xoá">
+              <IconButton size="small" color="error" onClick={() => handleDelete(t._id)}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        ),
+      })),
+    [tournaments, page, limit, goBlueprint, goRegs, goBrackets, goMatches, goEdit, handleDelete]
+  );
+
+  // Memo hóa object table để tránh identity mới mỗi render
+  const tableData = useMemo(() => ({ columns, rows }), [columns, rows]);
 
   return (
     <DashboardLayout>
@@ -253,7 +270,7 @@ export default function TournamentsListPage() {
                         size="small"
                         variant="outlined"
                         color="info"
-                        onClick={() => navigate(`/admin/tournaments/${t._id}/registrations`)}
+                        onClick={() => goRegs(t._id)}
                       >
                         Đăng ký
                       </MDButton>
@@ -261,7 +278,7 @@ export default function TournamentsListPage() {
                         size="small"
                         variant="outlined"
                         color="primary"
-                        onClick={() => navigate(`/admin/tournaments/${t._id}/brackets`)}
+                        onClick={() => goBrackets(t._id)}
                       >
                         Brackets
                       </MDButton>
@@ -269,7 +286,7 @@ export default function TournamentsListPage() {
                         size="small"
                         variant="outlined"
                         color="secondary"
-                        onClick={() => navigate(`/admin/tournaments/${t._id}/matches`)}
+                        onClick={() => goMatches(t._id)}
                       >
                         Matches
                       </MDButton>
@@ -277,7 +294,7 @@ export default function TournamentsListPage() {
                         size="small"
                         variant="outlined"
                         color="success"
-                        onClick={() => navigate(`/admin/tournaments/${t._id}/edit`)}
+                        onClick={() => goEdit(t._id)}
                       >
                         Sửa
                       </MDButton>
@@ -291,7 +308,7 @@ export default function TournamentsListPage() {
           // Desktop table
           <Card>
             <DataTable
-              table={{ columns, rows }}
+              table={tableData}
               isSorted={false}
               entriesPerPage={false}
               showTotalEntries={false}
