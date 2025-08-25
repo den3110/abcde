@@ -36,6 +36,8 @@ import AutoRegistrationsPage from "layouts/tournament/AutoRegistrationsPage";
 import AdminOverlayPage from "layouts/tournament/OverlayTab";
 import GlobalMatchViewerPage from "layouts/match/GlobalMatchViewerPage";
 import AdminMatchDetailPage from "layouts/match/AdminMatchDetailPage";
+import AdminCourtManagerPage from "layouts/tournament/AdminCourtManagerPage";
+import AdminBracketCourtManagerPage from "layouts/tournament/AdminBracketCourtManagerPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -307,6 +309,26 @@ const routes = [
     icon: <Icon fontSize="small">how_to_reg</Icon>,
     route: "/admin/auto-registrations",
     component: <AutoRegistrationsPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Quản lý sân & hàng đợi",
+    key: "admin-courts-scheduler",
+    route: "/admin/tournaments/:tournamentId/courts",
+    component: <AdminCourtManagerPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Quản lý sân (Bracket)",
+    key: "admin-bracket-courts",
+    route: "/admin/brackets/:bracketId/courts",
+    component: <AdminBracketCourtManagerPage />,
     private: true,
     roles: ["admin"],
   },

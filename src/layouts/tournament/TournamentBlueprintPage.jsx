@@ -218,6 +218,31 @@ function computePoQualifiers(planPO, poStageIndex /* 0-based in stages */) {
   return list;
 }
 
+/* ===== Compute GROUP qualifiers list (Top N per group) ===== */
+function computeGroupQualifiers(groupStage, groupStageIndex /* 0-based*/, topN = 1) {
+  const stNum = groupStageIndex + 1;
+  const groups = groupStage?.config?.groups || [];
+  const sizes = groupStage?.config?.groupSizes || [];
+  const minSize =
+    sizes.length > 0
+      ? Math.max(0, Math.min(...sizes.map((v) => Number(v) || 0)))
+      : groupStage?.config?.groupSize || 0;
+  const N = Math.max(1, Math.min(Number(topN) || 1, minSize || 1));
+
+  // Order: B1#1, B2#1, ..., Bk#1, then B1#2, B2#2, ...
+  const list = [];
+  for (let rank = 1; rank <= N; rank++) {
+    for (const g of groups) {
+      list.push({
+        type: "groupRank",
+        ref: { stage: stNum, groupCode: String(g), rank },
+        label: `V${stNum}-B${g}-#${rank}`,
+      });
+    }
+  }
+  return list;
+}
+
 const normalizeSeedsKO = (plan) => {
   const size = Math.max(2, nextPow2(Number(plan?.drawSize || 2)));
   const firstPairs = size / 2;
@@ -490,6 +515,7 @@ export default function TournamentBlueprintPage() {
   const [groupCount, setGroupCount] = useState(4);
   const [groupSize, setGroupSize] = useState(4); // dùng khi không nhập tổng số đội
   const [groupTotal, setGroupTotal] = useState(0); // tổng số đội (chia đều, dư dồn bảng cuối)
+  const [groupTopN, setGroupTopN] = useState(1); // ⭐ Top N/bảng đổ vào KO
 
   // PO defaults (non-2^n)
   const [poPlan, setPoPlan] = useState({ drawSize: 8, maxRounds: 1, seeds: [] });
@@ -510,6 +536,12 @@ export default function TournamentBlueprintPage() {
     }
     return new Array(groupCount).fill(Math.max(0, Number(groupSize) || 0));
   }, [includeGroup, groupCount, groupSize, groupTotal]);
+
+  // Min size của các bảng (để giới hạn Top N)
+  const minGroupSize = useMemo(() => {
+    if (!includeGroup || !groupSizes.length) return Math.max(0, Number(groupSize) || 0);
+    return Math.max(0, Math.min(...groupSizes.map((v) => Number(v) || 0)));
+  }, [includeGroup, groupSizes, groupSize]);
 
   // computed stages
   const stages = useMemo(() => {
@@ -739,15 +771,52 @@ export default function TournamentBlueprintPage() {
     });
   };
 
+  // ⭐ Prefill KO R1 seeds from GROUPS (Top-N per group)
+  const prefillKOfromGroups = () => {
+    const gIdx = stages.findIndex((s) => s.type === "group");
+    if (gIdx < 0) return toast.info("Chưa bật vòng bảng để đổ seed sang KO");
+
+    // hạn chế TopN theo minGroupSize
+    const N = Math.max(1, Math.min(Number(groupTopN) || 1, minGroupSize || 1));
+    const qualifiers = computeGroupQualifiers(stages[gIdx], gIdx, N);
+
+    setKoPlan((prev) => {
+      const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
+      const firstPairs = size / 2;
+      const capacity = firstPairs * 2;
+
+      const used = Math.min(capacity, qualifiers.length);
+      const seedsLinear = qualifiers.slice(0, capacity);
+      // pad BYE nếu thiếu
+      while (seedsLinear.length < capacity) {
+        seedsLinear.push({ type: "bye", ref: null, label: "BYE" });
+      }
+
+      const pairs = Array.from({ length: firstPairs }, (_, i) => {
+        const A = seedsLinear[2 * i];
+        const B = seedsLinear[2 * i + 1];
+        return { pair: i + 1, A, B };
+      });
+
+      toast.success(
+        `Đã đổ ${used}/${qualifiers.length} seed từ Vòng bảng sang KO (Top ${N}/bảng)${
+          qualifiers.length > capacity ? " • KO hiện không đủ chỗ, hãy tăng drawSize nếu cần" : ""
+        }`
+      );
+      return { drawSize: size, seeds: pairs };
+    });
+  };
+
   const commitPlan = async () => {
     try {
       const hasGroup = includeGroup && groupCount > 0;
       const total = Math.max(0, Number(groupTotal) || 0);
+      const qpg = Math.max(1, Math.min(Number(groupTopN) || 1, minGroupSize || 1)); // ⭐ qualifiersPerGroup
 
       const groupsPayload = hasGroup
         ? total > 0
-          ? { count: groupCount, totalTeams: total, qualifiersPerGroup: 2 } // ⭐ dùng totalTeams
-          : { count: groupCount, size: groupSize, qualifiersPerGroup: 2 }
+          ? { count: groupCount, totalTeams: total, qualifiersPerGroup: qpg }
+          : { count: groupCount, size: groupSize, qualifiersPerGroup: qpg }
         : null;
 
       const payload = {
@@ -824,7 +893,7 @@ export default function TournamentBlueprintPage() {
                   label="Thêm Vòng bảng (Vx)"
                 />
                 {includeGroup && (
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
                     <TextField
                       size="small"
                       type="number"
@@ -847,6 +916,33 @@ export default function TournamentBlueprintPage() {
                       onChange={(e) => setGroupTotal(parseInt(e.target.value || "0", 10))}
                       helperText="Nếu >0: chia đều, dư dồn bảng cuối"
                     />
+                    <Divider orientation="vertical" flexItem />
+                    {/* ⭐ Top N/bảng để đổ KO */}
+                    <TextField
+                      size="small"
+                      type="number"
+                      label={`Top N/bảng (≤ ${Math.max(1, minGroupSize || 1)})`}
+                      value={groupTopN}
+                      onChange={(e) =>
+                        setGroupTopN(
+                          Math.max(
+                            1,
+                            Math.min(
+                              parseInt(e.target.value || "1", 10),
+                              Math.max(1, minGroupSize || 1)
+                            )
+                          )
+                        )
+                      }
+                      sx={{ width: 180 }}
+                    />
+                    <Chip
+                      size="small"
+                      label={`Min size bảng hiện tại: ${Math.max(0, minGroupSize || 0)}`}
+                    />
+                    <Button variant="outlined" onClick={prefillKOfromGroups}>
+                      Đổ seed KO từ Vòng bảng
+                    </Button>
                   </Stack>
                 )}
               </Stack>
@@ -956,7 +1052,10 @@ export default function TournamentBlueprintPage() {
                           (groupTotal || 0) > 0
                             ? ` • Tổng số đội: ${groupTotal} (chia đều, dư dồn bảng cuối)`
                             : ` • Mỗi bảng dự kiến: ${stage.config.groupSize} đội`
-                        }`}
+                        } • Top N/bảng để đổ KO: ${Math.max(
+                          1,
+                          Math.min(Number(groupTopN) || 1, Math.max(1, minGroupSize || 1))
+                        )}`}
                       </Typography>
 
                       <Stack gap={2}>

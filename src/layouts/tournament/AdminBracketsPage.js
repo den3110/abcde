@@ -29,6 +29,8 @@ import {
   AccordionSummary,
   AccordionDetails,
 } from "@mui/material";
+import SportsTennisIcon from "@mui/icons-material/SportsTennis";
+
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
@@ -1205,7 +1207,20 @@ export default function AdminBracketsPage() {
                           >
                             Tạo trận
                           </Button>
-
+                          {console.log(br)}
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              navigate(`/admin/brackets/${br._id}/courts?t=${br.tournament?._id}`, {
+                                state: {
+                                  bracketName: br.name,
+                                  tournamentName: br.tournament?.name,
+                                },
+                              })
+                            }
+                          >
+                            <SportsTennisIcon fontSize="small" />
+                          </IconButton>
                           {/* Gợi ý dựng skeleton nếu roundElim và chưa có trận */}
                           {br.type === "roundElim" && (grouped[bid]?.length ?? 0) === 0 && (
                             <Tooltip title="Dựng sơ đồ round-elim khi chưa có trận">
@@ -2097,8 +2112,12 @@ export default function AdminBracketsPage() {
                   value={newRatingDelta}
                   onChange={(e) => setNewRatingDelta(Math.max(0, Number(e.target.value) || 0))}
                   inputProps={{ min: 0, step: 1 }}
-                  helperText="Cộng cho đội thắng, trừ đội thua. 0 = không áp dụng."
+                  helperText="Áp dụng khi set trận 'finished' + có 'winner'. 0 = Áp dụng delta tự động."
                 />
+                <Alert severity="info">
+                  Điểm delta tự động được tính và áp dụng sau trận đấu. Chỉnh giá trị khác 0 nếu bạn
+                  muốn chủ động áp dụng điểm delta.
+                </Alert>
               </Grid>
             </Grid>
           </Stack>
@@ -2271,7 +2290,7 @@ export default function AdminBracketsPage() {
                   value={emRatingDelta}
                   onChange={(e) => setEmRatingDelta(Math.max(0, Number(e.target.value) || 0))}
                   inputProps={{ min: 0, step: 1 }}
-                  helperText="Áp dụng khi set trận 'finished' + có 'winner'. 0 = không áp dụng."
+                  helperText="Áp dụng khi set trận 'finished' + có 'winner'. 0 = Áp dụng delta tự động."
                 />
                 {emRatingApplied && (
                   <Alert severity="info" sx={{ mt: 1 }}>
@@ -2282,6 +2301,10 @@ export default function AdminBracketsPage() {
                     . Việc chỉnh “Δ” sau khi đã áp dụng sẽ không tự động sửa lại lịch sử cũ.
                   </Alert>
                 )}
+                <Alert severity="info">
+                  Điểm delta tự động được tính và áp dụng sau trận đấu. Chỉnh giá trị khác 0 nếu bạn
+                  muốn chủ động áp dụng điểm delta.
+                </Alert>
               </Grid>
             </Grid>
 
@@ -2297,9 +2320,11 @@ export default function AdminBracketsPage() {
                   "& .MuiSelect-select": { py: 2 },
                 }}
               >
-                <MenuItem value="scheduled">scheduled</MenuItem>
-                <MenuItem value="live">live</MenuItem>
-                <MenuItem value="finished">finished</MenuItem>
+                <MenuItem value="scheduled">Chưa xếp</MenuItem>
+                <MenuItem value="assigned">Đã gán sân</MenuItem>
+                <MenuItem value="queued">Trong hàng đợi</MenuItem>
+                <MenuItem value="live">Đang thi đấu</MenuItem>
+                <MenuItem value="finished">Đã kết thúc</MenuItem>
               </TextField>
 
               <TextField

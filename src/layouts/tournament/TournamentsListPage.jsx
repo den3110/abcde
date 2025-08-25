@@ -26,6 +26,7 @@ import {
   Edit as EditIcon,
   ListAlt as ListAltIcon,
   TableChart as TableChartIcon,
+  Stadium as StadiumIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
@@ -109,7 +110,7 @@ export default function TournamentsListPage() {
   const goBrackets = useCallback((id) => navigate(`/admin/tournaments/${id}/brackets`), [navigate]);
   const goMatches = useCallback((id) => navigate(`/admin/tournaments/${id}/matches`), [navigate]);
   const goEdit = useCallback((id) => navigate(`/admin/tournaments/${id}/edit`), [navigate]);
-
+  const goCourts = useCallback((id) => navigate(`/admin/tournaments/${id}/courts`), [navigate]);
   /* ---------------- Memo hóa columns / rows / tableData ---------------- */
   const columns = useMemo(
     () => [
@@ -177,6 +178,11 @@ export default function TournamentsListPage() {
                 <TableChartIcon fontSize="small" />
               </IconButton>
             </Tooltip>
+            <Tooltip title="Sân">
+              <IconButton size="small" color="success" onClick={() => goCourts(t._id)}>
+                <StadiumIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="Matches">
               <IconButton size="small" color="secondary" onClick={() => goMatches(t._id)}>
                 <ListAltIcon fontSize="small" />
@@ -195,7 +201,18 @@ export default function TournamentsListPage() {
           </Stack>
         ),
       })),
-    [tournaments, page, limit, goBlueprint, goRegs, goBrackets, goMatches, goEdit, handleDelete]
+    [
+      tournaments,
+      page,
+      limit,
+      goBlueprint,
+      goRegs,
+      goBrackets,
+      goCourts,
+      goMatches,
+      goEdit,
+      handleDelete,
+    ]
   );
 
   // Memo hóa object table để tránh identity mới mỗi render
@@ -281,6 +298,14 @@ export default function TournamentsListPage() {
                         onClick={() => goBrackets(t._id)}
                       >
                         Brackets
+                      </MDButton>
+                      <MDButton
+                        size="small"
+                        variant="outlined"
+                        color="success"
+                        onClick={() => goCourts(t._id)}
+                      >
+                        Sân
                       </MDButton>
                       <MDButton
                         size="small"

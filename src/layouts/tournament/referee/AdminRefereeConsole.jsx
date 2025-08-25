@@ -21,7 +21,6 @@ import {
   Snackbar,
   Alert,
   Zoom,
-  LinearProgress,
 } from "@mui/material";
 import {
   PlayArrow,
@@ -33,6 +32,9 @@ import {
   SportsScore,
   Keyboard as KeyboardIcon,
   SportsTennis as ServeIcon,
+  Stadium as StadiumIcon,
+  Info as InfoIcon,
+  GridView as PoolIcon,
 } from "@mui/icons-material";
 import { keyframes } from "@emotion/react";
 
@@ -52,12 +54,15 @@ import {
 import { useSocket } from "context/SocketContext";
 
 /* ================= helpers ================= */
-const statusChip = (s) =>
-  s === "live"
-    ? { color: "warning", label: "Đang diễn ra" }
-    : s === "finished"
-    ? { color: "success", label: "Đã kết thúc" }
-    : { color: "default", label: "Chưa diễn ra" };
+// Việt hoá đầy đủ trạng thái trận
+const VI_MATCH_STATUS = {
+  scheduled: { label: "Chưa xếp", color: "default" },
+  queued: { label: "Trong hàng đợi", color: "info" },
+  assigned: { label: "Đã gán sân", color: "secondary" },
+  live: { label: "Đang thi đấu", color: "warning" },
+  finished: { label: "Đã kết thúc", color: "success" },
+};
+const getMatchStatusChip = (s) => VI_MATCH_STATUS[s] || { label: s || "—", color: "default" };
 
 function pairLabel(reg, eventType = "double") {
   if (!reg) return "—";
@@ -74,7 +79,18 @@ const isGameWin = (a = 0, b = 0, pointsToWin = 11, winByTwo = true) => {
   return winByTwo ? diff >= 2 : diff >= 1;
 };
 
-/* ======== Animations (YouTube-like pulse/burst) ======== */
+// Gợi ý chú thích vòng bảng
+const poolNote = (m) => {
+  const isGroup =
+    (m?.format || "").toLowerCase() === "group" ||
+    (m?.bracket?.type || "").toLowerCase() === "group";
+  if (!isGroup) return "";
+  const poolName = m?.pool?.name ? `Bảng ${m.pool.name}` : "Vòng bảng";
+  const rr = Number.isFinite(Number(m?.rrRound)) ? ` • Lượt ${m.rrRound}` : "";
+  return `${poolName}${rr}`;
+};
+
+/* ======== Animations ======== */
 const pulse = keyframes`
   0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(25,118,210,.35); }
   40%  { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(25,118,210,0); }
@@ -95,7 +111,6 @@ const sparkle = keyframes`
   100% { opacity: 0; transform: translate(-50%,-50%) rotate(40deg) scale(1.4); }
 `;
 
-/* Tiny burst overlay */
 function ScoreBurst({ show, color = "primary.main" }) {
   return (
     <Zoom in={show} timeout={200} unmountOnExit>
@@ -110,7 +125,6 @@ function ScoreBurst({ show, color = "primary.main" }) {
           height: 72,
         }}
       >
-        {/* center dot pop */}
         <Box
           sx={{
             position: "absolute",
@@ -124,7 +138,6 @@ function ScoreBurst({ show, color = "primary.main" }) {
             animation: `${pop} 600ms ease-out`,
           }}
         />
-        {/* expanding ring */}
         <Box
           sx={{
             position: "absolute",
@@ -139,7 +152,6 @@ function ScoreBurst({ show, color = "primary.main" }) {
             animation: `${ring} 700ms ease-out`,
           }}
         />
-        {/* sparkles */}
         {[-22, 12, 36].map((deg, i) => (
           <Box
             key={i}
@@ -164,10 +176,7 @@ function ScoreBurst({ show, color = "primary.main" }) {
                 top: -6,
                 left: 2,
               },
-              // offset per sparkle
-              ...(i === 0 && { transform: "translate(-50%,-50%) rotate(-22deg)" }),
-              ...(i === 1 && { transform: "translate(-50%,-50%) rotate(12deg)" }),
-              ...(i === 2 && { transform: "translate(-50%,-50%) rotate(36deg)" }),
+              transform: `translate(-50%,-50%) rotate(${deg}deg)`,
             }}
           />
         ))}
@@ -176,11 +185,12 @@ function ScoreBurst({ show, color = "primary.main" }) {
   );
 }
 
+/* ================= Component ================= */
 export default function AdminRefereeConsole() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
-  // Sidebar list
+  // Danh sách trận của tôi
   const {
     data: myMatchesResp = { items: [], total: 0, page: 1, totalPages: 1 },
     isLoading: listLoading,
@@ -193,11 +203,11 @@ export default function AdminRefereeConsole() {
 
   const [selectedId, setSelectedId] = useState(null);
 
-  // Detail
+  // Chi tiết trận
   const {
     data: match,
-    isLoading: detailLoading, // ✅ chỉ spinner lần đầu
-    isFetching: detailFetching, // ✅ refetch nền, không che UI
+    isLoading: detailLoading,
+    isFetching: detailFetching,
     error: detailErr,
     refetch: refetchDetail,
   } = useGetMatchQuery(selectedId, { skip: !selectedId });
@@ -218,26 +228,10 @@ export default function AdminRefereeConsole() {
 
     socket.emit("match:join", { matchId: selectedId });
 
-    // const onPatched = (payload) => {
-    //   if (payload?.matchId === selectedId) refetchDetail();
-    // };
-    // socket.on("match:patched", onPatched);
-    // socket.on("score:updated", onPatched);
-    // socket.on("status:updated", onPatched);
-    // socket.on("winner:updated", onPatched);
-    // socket.on("match:update", onPatched);
-    // socket.on("match:snapshot", onPatched);
     const onPatched = (payload) => {
       const id = payload?.matchId || payload?.data?._id || payload?._id;
-      if (id === selectedId) {
-        // nhẹ hơn refetch: cập nhật thẳng cache RTK Query (nếu muốn)
-        // dispatch(tournamentsApi.util.updateQueryData('getMatch', selectedId, (draft) => {
-        //   if (payload.data) Object.assign(draft, payload.data);
-        // }));
-        refetchDetail(); // hoặc giữ nguyên cách bạn đang làm
-      }
+      if (id === selectedId) refetchDetail();
     };
-    // ⚠️ KHÔNG refetch theo score:updated (đã optimistic + invalidates)
     socket.on("status:updated", onPatched);
     socket.on("winner:updated", onPatched);
     socket.on("match:patched", onPatched);
@@ -246,12 +240,6 @@ export default function AdminRefereeConsole() {
 
     return () => {
       socket.emit("match:leave", { matchId: selectedId });
-      // socket.off("match:patched", onPatched);
-      // socket.off("score:updated", onPatched);
-      // socket.off("status:updated", onPatched);
-      // socket.off("winner:updated", onPatched);
-      // socket.off("match:update", onPatched);
-      // socket.off("match:snapshot", onPatched);
       socket.off("match:patched", onPatched);
       socket.off("status:updated", onPatched);
       socket.off("winner:updated", onPatched);
@@ -268,7 +256,6 @@ export default function AdminRefereeConsole() {
   /* ===== derived from detail ===== */
   const rules = match?.rules || { bestOf: 3, pointsToWin: 11, winByTwo: true };
   const eventType = (match?.tournament?.eventType || "double").toLowerCase();
-  // console.log("eventType", eventType);
   const isSingles = eventType === "single";
   const isDoubles = !isSingles;
   const gs = match?.gameScores || [];
@@ -296,7 +283,7 @@ export default function AdminRefereeConsole() {
   ).length;
   const matchPointReached = aWins === needSetWinsVal || bWins === needSetWinsVal;
 
-  /* ===== score highlight states (auto detect from data changes) ===== */
+  /* ===== score highlight states ===== */
   const [flashA, setFlashA] = useState(false);
   const [flashB, setFlashB] = useState(false);
   const prevRef = useRef({ matchId: null, gi: 0, a: 0, b: 0 });
@@ -307,7 +294,6 @@ export default function AdminRefereeConsole() {
     const a = curA;
     const b = curB;
 
-    // nếu cùng match & cùng ván -> kiểm tra tăng điểm
     if (prevRef.current.matchId === match._id && prevRef.current.gi === gi) {
       if (a > prevRef.current.a) {
         setFlashA(true);
@@ -318,8 +304,6 @@ export default function AdminRefereeConsole() {
         setTimeout(() => setFlashB(false), 750);
       }
     }
-
-    // cập nhật mốc
     prevRef.current = { matchId: match._id, gi, a, b };
   }, [match?._id, currentIndex, curA, curB]);
 
@@ -363,7 +347,6 @@ export default function AdminRefereeConsole() {
     try {
       await incPoint({ matchId: match._id, side, delta: +1 }).unwrap();
       socket?.emit("score:inc", { matchId: match._id, side, delta: +1 });
-      // hiệu ứng optimistic (phòng khi socket roundtrip chậm)
       if (side === "A") {
         setFlashA(true);
         setTimeout(() => setFlashA(false), 750);
@@ -416,6 +399,7 @@ export default function AdminRefereeConsole() {
     // eslint-disable-next-line
   }, [match?.status, selectedId, gs.length, curA, curB]);
 
+  /* ================= Render ================= */
   return (
     <DashboardLayout>
       <DashboardNavbar />
@@ -449,7 +433,9 @@ export default function AdminRefereeConsole() {
                 sx={{ maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}
               >
                 {myMatches.map((m) => {
-                  const chip = statusChip(m.status);
+                  const chip = getMatchStatusChip(m.status);
+                  const gNote = poolNote(m);
+                  const courtName = m.court?.name || m.courtName || "";
                   return (
                     <ListItemButton
                       key={m._id}
@@ -458,11 +444,28 @@ export default function AdminRefereeConsole() {
                     >
                       <ListItemText
                         primary={
-                          <Stack direction="row" alignItems="center" spacing={1}>
+                          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
                             <Typography variant="body2" fontWeight={700}>
                               {m.tournament?.name || "Giải ?"}
                             </Typography>
                             <Chip size="small" color={chip.color} label={chip.label} />
+                            {courtName && (
+                              <Chip
+                                size="small"
+                                icon={<StadiumIcon sx={{ fontSize: 14 }} />}
+                                label={courtName}
+                                variant="outlined"
+                              />
+                            )}
+                            {gNote && (
+                              <Chip
+                                size="small"
+                                icon={<PoolIcon sx={{ fontSize: 14 }} />}
+                                label={gNote}
+                                color="info"
+                                variant="outlined"
+                              />
+                            )}
                           </Stack>
                         }
                         secondary={
@@ -471,9 +474,11 @@ export default function AdminRefereeConsole() {
                               Bracket: {m.bracket?.name} ({m.bracket?.type}) • Stage{" "}
                               {m.bracket?.stage}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary" display="block">
-                              R{m.round} • #{m.order ?? 0}
-                            </Typography>
+                            {!gNote && (
+                              <Typography variant="caption" color="text.secondary" display="block">
+                                R{m.round} • #{m.order ?? 0}
+                              </Typography>
+                            )}
                             <Typography variant="caption" display="block">
                               {pairLabel(m.pairA, m.tournament?.eventType)} vs{" "}
                               {pairLabel(m.pairB, m.tournament?.eventType)}
@@ -485,7 +490,6 @@ export default function AdminRefereeConsole() {
                   );
                 })}
               </List>
-              {/* Pagination */}
               <Box display="flex" justifyContent="center" py={1}>
                 <Pagination
                   count={totalPages}
@@ -506,7 +510,6 @@ export default function AdminRefereeConsole() {
           </Box>
         ) : detailLoading && !match ? (
           <Box textAlign="center" py={6}>
-            {/* Ẩn đi để tăng ux */}
             <CircularProgress />
           </Box>
         ) : detailErr ? (
@@ -517,34 +520,77 @@ export default function AdminRefereeConsole() {
           <Stack spacing={2}>
             {/* Header */}
             <Card sx={{ p: 2, position: "relative" }}>
-              {detailFetching && (
-                <>
-                  {/* <LinearProgress sx={{ position: "absolute", left: 0, right: 0, top: 0 }} /> */}
-                </>
-              )}
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                flexWrap="wrap"
+                rowGap={1}
+              >
                 <Box>
-                  <Typography variant="h5" fontWeight={700}>
-                    {pairLabel(match.pairA, eventType)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
-                    {pairLabel(match.pairB, eventType)}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {match.tournament?.name} • Nhánh {match.bracket?.name} ({match.bracket?.type}) •
-                    Giai đoạn {match.bracket?.stage} • Ván {match.round} • Trận #{match.order ?? 0}
-                  </Typography>
+                  <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
+                    <Typography variant="h5" fontWeight={700}>
+                      {pairLabel(
+                        match.pairA,
+                        (match?.tournament?.eventType || "double").toLowerCase()
+                      )}{" "}
+                      <span style={{ opacity: 0.6 }}>vs</span>{" "}
+                      {pairLabel(
+                        match.pairB,
+                        (match?.tournament?.eventType || "double").toLowerCase()
+                      )}
+                    </Typography>
+                  </Stack>
+
+                  {/* dòng mô tả */}
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                    <Typography variant="body2" color="text.secondary">
+                      {match.tournament?.name} • Nhánh {match.bracket?.name} ({match.bracket?.type})
+                      • Giai đoạn {match.bracket?.stage} • Ván {match.round} • Trận #
+                      {match.order ?? 0}
+                    </Typography>
+                    {poolNote(match) && (
+                      <Chip
+                        size="small"
+                        icon={<PoolIcon sx={{ fontSize: 14 }} />}
+                        label={poolNote(match)}
+                        color="info"
+                        variant="outlined"
+                      />
+                    )}
+                    {(match.court?.name || match.courtName) && (
+                      <Chip
+                        size="small"
+                        icon={<StadiumIcon sx={{ fontSize: 14 }} />}
+                        label={match.court?.name || match.courtName}
+                        variant="outlined"
+                      />
+                    )}
+                  </Stack>
+
                   <Typography variant="caption" color="text.secondary">
                     Thắng {Math.ceil(rules.bestOf / 2)}/{rules.bestOf} ván • Tới {rules.pointsToWin}{" "}
                     điểm {rules.winByTwo ? "(phải hơn 2 điểm)" : "(không cần hơn 2 điểm)"}
                   </Typography>
                 </Box>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Chip size="small" {...statusChip(match.status)} />
+
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                  {/* Trạng thái trận (chip đầy đủ) */}
+                  <Chip size="small" {...getMatchStatusChip(match.status)} />
                   {isDoubles && (
                     <Chip
                       size="small"
                       color="info"
                       icon={<ServeIcon fontSize="small" />}
-                      label={`Giao: ${serve.side}#${serve.server}`}
+                      label={`Giao: ${match?.serve?.side || "A"}#${match?.serve?.server || 2}`}
+                    />
+                  )}
+                  {Number.isFinite(Number(match?.queueOrder)) && match.status === "queued" && (
+                    <Chip
+                      size="small"
+                      icon={<InfoIcon sx={{ fontSize: 16 }} />}
+                      label={`Thứ tự hàng đợi: ${match.queueOrder}`}
+                      variant="outlined"
                     />
                   )}
                   <Tooltip title="Phím tắt: A/Z (A +/−), K/M (B +/−), Space (Start/Finish)">
@@ -566,15 +612,24 @@ export default function AdminRefereeConsole() {
                   </Tooltip>
                 </Stack>
               </Stack>
+
+              {/* (tuỳ chọn) progress mỏng khi refetch nền */}
+              {detailFetching && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: -2,
+                    height: 2,
+                    bgcolor: "action.hover",
+                  }}
+                />
+              )}
             </Card>
 
             {/* Big scoreboard */}
             <Card sx={{ p: 2, position: "relative" }}>
-              {detailFetching && (
-                <>
-                  {/* <LinearProgress sx={{ position: "absolute", left: 0, right: 0, top: 0 }} /> */}
-                </>
-              )}
               <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="stretch">
                 {/* Team A */}
                 <Paper
@@ -585,32 +640,36 @@ export default function AdminRefereeConsole() {
                     display: "grid",
                     position: "relative",
                     borderWidth: 2,
-                    borderColor: isServingA ? "primary.main" : "divider",
-                    boxShadow: isServingA
-                      ? "0 0 0 2px rgba(25,118,210,.20) inset, 0 0 14px rgba(25,118,210,.25)"
-                      : "none",
+                    borderColor: match?.serve?.side === "A" ? "primary.main" : "divider",
+                    boxShadow:
+                      match?.serve?.side === "A"
+                        ? "0 0 0 2px rgba(25,118,210,.20) inset, 0 0 14px rgba(25,118,210,.25)"
+                        : "none",
                     transition: "border-color .2s ease, box-shadow .2s ease",
                     animation: flashA ? `${pulse} 550ms ease-out` : "none",
-                    "&::before": isServingA
-                      ? {
-                          content: '""',
-                          position: "absolute",
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: 6,
-                          bgcolor: "primary.main",
-                          borderTopLeftRadius: 8,
-                          borderBottomLeftRadius: 8,
-                        }
-                      : {},
+                    "&::before":
+                      match?.serve?.side === "A"
+                        ? {
+                            content: '""',
+                            position: "absolute",
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: 6,
+                            bgcolor: "primary.main",
+                            borderTopLeftRadius: 8,
+                            borderBottomLeftRadius: 8,
+                          }
+                        : {},
                   }}
                 >
-                  {/* score burst */}
                   <ScoreBurst show={flashA} color="primary.main" />
-
                   <Typography fontWeight={800} textAlign="center" sx={{ mb: 1 }}>
-                    A) {pairLabel(match.pairA, eventType)}
+                    A){" "}
+                    {pairLabel(
+                      match.pairA,
+                      (match?.tournament?.eventType || "double").toLowerCase()
+                    )}
                   </Typography>
                   <Box
                     sx={{
@@ -678,32 +737,36 @@ export default function AdminRefereeConsole() {
                     display: "grid",
                     position: "relative",
                     borderWidth: 2,
-                    borderColor: isServingB ? "primary.main" : "divider",
-                    boxShadow: isServingB
-                      ? "0 0 0 2px rgba(25,118,210,.20) inset, 0 0 14px rgba(25,118,210,.25)"
-                      : "none",
+                    borderColor: match?.serve?.side === "B" ? "primary.main" : "divider",
+                    boxShadow:
+                      match?.serve?.side === "B"
+                        ? "0 0 0 2px rgba(25,118,210,.20) inset, 0 0 14px rgba(25,118,210,.25)"
+                        : "none",
                     transition: "border-color .2s ease, box-shadow .2s ease",
                     animation: flashB ? `${pulse} 550ms ease-out` : "none",
-                    "&::before": isServingB
-                      ? {
-                          content: '""',
-                          position: "absolute",
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: 6,
-                          bgcolor: "primary.main",
-                          borderTopLeftRadius: 8,
-                          borderBottomLeftRadius: 8,
-                        }
-                      : {},
+                    "&::before":
+                      match?.serve?.side === "B"
+                        ? {
+                            content: '""',
+                            position: "absolute",
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: 6,
+                            bgcolor: "primary.main",
+                            borderTopLeftRadius: 8,
+                            borderBottomLeftRadius: 8,
+                          }
+                        : {},
                   }}
                 >
-                  {/* score burst */}
                   <ScoreBurst show={flashB} color="primary.main" />
-
                   <Typography fontWeight={800} textAlign="center" sx={{ mb: 1 }}>
-                    B) {pairLabel(match.pairB, eventType)}
+                    B){" "}
+                    {pairLabel(
+                      match.pairB,
+                      (match?.tournament?.eventType || "double").toLowerCase()
+                    )}
                   </Typography>
                   <Box
                     sx={{
@@ -747,16 +810,17 @@ export default function AdminRefereeConsole() {
 
               <Divider sx={{ my: 2 }} />
 
-              {/* Pickleball callout */}
+              {/* Pickleball callout + chỉnh giao bóng */}
               {isDoubles && (
                 <Stack
                   direction={{ xs: "column", md: "row" }}
                   spacing={2}
                   alignItems="center"
                   mb={1}
+                  flexWrap="wrap"
                 >
                   <Paper variant="outlined" sx={{ px: 2, py: 1 }}>
-                    <Stack direction="row" spacing={1} alignItems="center">
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                       <Typography fontWeight={700}>Cách đọc điểm:</Typography>
                       <Chip
                         color="primary"
@@ -765,7 +829,6 @@ export default function AdminRefereeConsole() {
                     </Stack>
                   </Paper>
 
-                  {/* Optional: đổi giao thủ công nếu cần */}
                   <Stack
                     direction="row"
                     spacing={1}
@@ -776,13 +839,12 @@ export default function AdminRefereeConsole() {
                     <Button
                       size="small"
                       variant="outlined"
-                      sx={{ color: "primary.main" }}
                       onClick={() => {
                         try {
                           socket?.emit("serve:set", {
                             matchId: match._id,
                             side: "A",
-                            server: serve.server || 2,
+                            server: match?.serve?.server || 2,
                           });
                           showSnack("info", `Đã đặt đội giao: A`);
                         } catch (e) {
@@ -795,12 +857,11 @@ export default function AdminRefereeConsole() {
                     <Button
                       size="small"
                       variant="outlined"
-                      sx={{ color: "primary.main" }}
                       onClick={() => {
                         socket?.emit("serve:set", {
                           matchId: match._id,
                           side: "B",
-                          server: serve.server || 2,
+                          server: match?.serve?.server || 2,
                         });
                         showSnack("info", `Đã đặt đội giao: B`);
                       }}
@@ -810,11 +871,10 @@ export default function AdminRefereeConsole() {
                     <Button
                       size="small"
                       variant="outlined"
-                      sx={{ color: "primary.main" }}
                       onClick={() => {
                         socket?.emit("serve:set", {
                           matchId: match._id,
-                          side: serve.side || "A",
+                          side: match?.serve?.side || "A",
                           server: 1,
                         });
                         showSnack("info", `Đã đặt người giao: #1`);
@@ -825,11 +885,10 @@ export default function AdminRefereeConsole() {
                     <Button
                       size="small"
                       variant="outlined"
-                      sx={{ color: "primary.main" }}
                       onClick={() => {
                         socket?.emit("serve:set", {
                           matchId: match._id,
-                          side: serve.side || "A",
+                          side: match?.serve?.side || "A",
                           server: 2,
                         });
                         showSnack("info", `Đã đặt người giao: #2`);
@@ -840,6 +899,7 @@ export default function AdminRefereeConsole() {
                   </Stack>
                 </Stack>
               )}
+
               {/* sets */}
               <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
                 <SportsScore fontSize="small" />
@@ -866,7 +926,13 @@ export default function AdminRefereeConsole() {
                 })}
               </Stack>
 
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="center" mt={2}>
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                spacing={2}
+                alignItems="center"
+                mt={2}
+                flexWrap="wrap"
+              >
                 <Tooltip title="Sang ván mới khi ván hiện tại đã đủ điều kiện thắng">
                   <span>
                     <Button
