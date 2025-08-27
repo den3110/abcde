@@ -178,11 +178,11 @@ export default function TournamentsListPage() {
                 <TableChartIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Sân">
+            {/* <Tooltip title="Sân">
               <IconButton size="small" color="success" onClick={() => goCourts(t._id)}>
                 <StadiumIcon fontSize="small" />
               </IconButton>
-            </Tooltip>
+            </Tooltip> */}
             <Tooltip title="Matches">
               <IconButton size="small" color="secondary" onClick={() => goMatches(t._id)}>
                 <ListAltIcon fontSize="small" />

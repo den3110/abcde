@@ -38,6 +38,7 @@ import GlobalMatchViewerPage from "layouts/match/GlobalMatchViewerPage";
 import AdminMatchDetailPage from "layouts/match/AdminMatchDetailPage";
 import AdminCourtManagerPage from "layouts/tournament/AdminCourtManagerPage";
 import AdminBracketCourtManagerPage from "layouts/tournament/AdminBracketCourtManagerPage";
+import RatingTesterPage from "layouts/tools/RatingTesterPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -329,6 +330,16 @@ const routes = [
     key: "admin-bracket-courts",
     route: "/admin/brackets/:bracketId/courts",
     component: <AdminBracketCourtManagerPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Test tính điểm",
+    key: "rating-tester",
+    icon: <Icon fontSize="small">calculate</Icon>,
+    route: "/admin/tools/rating-tester",
+    component: <RatingTesterPage />,
     private: true,
     roles: ["admin"],
   },

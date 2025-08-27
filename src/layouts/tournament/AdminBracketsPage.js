@@ -38,7 +38,11 @@ import {
   Edit as EditIcon,
   TravelExplore as ExploreIcon,
   ExpandMore as ExpandMoreIcon,
+  Stadium as StadiumIcon,
+  DeleteSweep as DeleteSweepIcon, // ⭐ NEW
+  Refresh as RefreshIcon,
 } from "@mui/icons-material";
+
 import { useNavigate, useParams } from "react-router-dom";
 import { skipToken } from "@reduxjs/toolkit/query";
 
@@ -59,11 +63,12 @@ import {
   useUpdateBracketMutation,
   useUpdateMatchMutation,
   useResetMatchChainMutation,
-
+  useResetMatchScoresMutation,
   // ⭐ NEW
   useBuildRoundElimSkeletonMutation,
   useBatchAssignRefereeMutation,
   useBatchDeleteMatchesMutation,
+  useClearBracketMatchesMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
 
@@ -151,12 +156,14 @@ export default function AdminBracketsPage() {
   const [updateBracket] = useUpdateBracketMutation();
   const [updateMatch] = useUpdateMatchMutation();
   const [resetMatchChain] = useResetMatchChainMutation();
+  const [resetMatchScores, { isLoading: resettingScores }] = useResetMatchScoresMutation();
 
   // ⭐ NEW: batch/skeleton mutations
   const [buildRoundElimSkeleton, { isLoading: buildingSkeleton }] =
     useBuildRoundElimSkeletonMutation();
   const [batchAssignReferee, { isLoading: assigningRef }] = useBatchAssignRefereeMutation();
   const [batchDeleteMatches, { isLoading: deletingBatch }] = useBatchDeleteMatchesMutation();
+  const [clearBracketMatches, { isLoading: clearingAll }] = useClearBracketMatchesMutation(); // ⭐ NEW
 
   // Progression mutations
   const [previewAdvancement, { isLoading: loadingPreview }] = usePreviewAdvancementMutation();
@@ -207,6 +214,7 @@ export default function AdminBracketsPage() {
   /* =====================
    *  STATE: Tạo Bracket
    * ===================== */
+  const [refreshingByBracket, setRefreshingByBracket] = useState({}); // { [bid]: true|false }
   const [bracketDlg, setBracketDlg] = useState(false);
   const [newBracketName, setNewBracketName] = useState("");
   const [newBracketType, setNewBracketType] = useState("knockout");
@@ -302,7 +310,7 @@ export default function AdminBracketsPage() {
   const [emRatingDelta, setEmRatingDelta] = useState(0);
   const [emRatingApplied, setEmRatingApplied] = useState(false);
   const [emRatingAppliedAt, setEmRatingAppliedAt] = useState(null);
-
+  const [emResetScores, setEmResetScores] = useState(false);
   /* =====================
    *  STATE: Tạo vòng sau thủ công
    * ===================== */
@@ -348,6 +356,11 @@ export default function AdminBracketsPage() {
       setEbUseCustomScale(true);
       return;
     }
+
+    //     useEffect(() => {
+    //   const isDowngrade = emOldStatus === "finished" && emStatus !== "finished";
+    //   setEmResetScores(isDowngrade);
+    // }, [emOldStatus, emStatus, editMatchOpen]);
 
     const sz = ceilPow2(Math.max(2, paidCount || regsCount || 2));
     setEbMaxRounds(toRounds(sz));
@@ -501,6 +514,47 @@ export default function AdminBracketsPage() {
       } catch (err) {
         showSnack("error", err?.data?.message || err.error || "Lỗi xoá trận");
       }
+    }
+  };
+
+  const doClearAllMatches = async (br) => {
+    const bid = idOf(br._id);
+
+    // Đếm nhanh số trận hiện có trong bracket này (group/ko đều handle)
+    const count =
+      br.type === "group"
+        ? Object.values(groupedByGroup[bid] || {}).reduce((acc, arr) => acc + (arr?.length || 0), 0)
+        : grouped[bid]?.length || 0;
+
+    if (!count) return showSnack("info", "Bracket này chưa có trận để xoá.");
+
+    if (
+      !window.confirm(
+        `Xoá toàn bộ ${count} trận trong "${br.name}"?\n(Bracket sẽ được giữ nguyên, KHÔNG bị xoá)`
+      )
+    )
+      return;
+
+    try {
+      const res = await clearBracketMatches({ bracketId: bid, body: {} }).unwrap();
+      showSnack("success", `Đã xoá ${res?.deleted ?? 0} trận.`);
+      clearSelection(bid);
+      refetchMatches();
+    } catch (e) {
+      showSnack("error", e?.data?.message || e.error || "Lỗi xoá tất cả trận");
+    }
+  };
+
+  const doRefreshBracketMatches = async (br) => {
+    const bid = idOf(br._id);
+    setRefreshingByBracket((s) => ({ ...s, [bid]: true }));
+    try {
+      await refetchMatches();
+      showSnack("success", `Đã làm mới danh sách trận của "${br.name}"`);
+    } catch (e) {
+      showSnack("error", e?.data?.message || e.error || "Lỗi khi làm mới danh sách trận");
+    } finally {
+      setRefreshingByBracket((s) => ({ ...s, [bid]: false }));
     }
   };
 
@@ -952,6 +1006,7 @@ export default function AdminBracketsPage() {
     setEmOldStatus(mt.status || "scheduled");
     setEmOldWinner(mt.winner || "");
     setEmCascade(false);
+    setEmResetScores(false);
     setEmReferee(mt.referee?._id || mt.referee || "");
     setEmRatingDelta(mt.ratingDelta ?? 0);
     setEmRatingApplied(!!mt.ratingApplied);
@@ -986,11 +1041,25 @@ export default function AdminBracketsPage() {
         },
       }).unwrap();
 
+      // Nếu bật reset tỉ số, gọi API reset điểm/ván về 0
+      if (emResetScores) {
+        try {
+          await resetMatchScores({ matchId: emId }).unwrap();
+        } catch (e) {
+          // Không chặn lưu — chỉ cảnh báo nếu reset tỉ số lỗi
+          showSnack("warning", e?.data?.message || e.error || "Không reset được tỉ số");
+        }
+      }
+
       if (emCascade) {
         await resetMatchChain({ matchId: emId }).unwrap();
       }
 
-      showSnack("success", emCascade ? "Đã lưu & reset chuỗi trận sau" : "Đã lưu");
+      // showSnack("success", emCascade ? "Đã lưu & reset chuỗi trận sau" : "Đã lưu");
+      const msgParts = ["Đã lưu"];
+      if (emResetScores) msgParts.push("đã reset tỉ số");
+      if (emCascade) msgParts.push("đã reset chuỗi trận sau");
+      showSnack("success", msgParts.join(" & "));
       setEditingMatch(null);
       refetchMatches();
     } catch (e) {
@@ -1200,6 +1269,20 @@ export default function AdminBracketsPage() {
                           alignItems="center"
                           onClick={(e) => e.stopPropagation()}
                         >
+                          <Tooltip title="Làm mới danh sách trận trong bracket này">
+                            <span>
+                              <IconButton
+                                onClick={stop(() => doRefreshBracketMatches(br))}
+                                disabled={!!refreshingByBracket[bid] || loadingM}
+                              >
+                                {refreshingByBracket[bid] ? (
+                                  <CircularProgress size={20} />
+                                ) : (
+                                  <RefreshIcon />
+                                )}
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                           <Button
                             size="small"
                             onClick={stop(() => openMatchDialog(br))}
@@ -1207,9 +1290,8 @@ export default function AdminBracketsPage() {
                           >
                             Tạo trận
                           </Button>
-                          {console.log(br)}
-                          <IconButton
-                            size="small"
+                          {/* {console.log(br)} */}
+                          <Button
                             onClick={() =>
                               navigate(`/admin/brackets/${br._id}/courts?t=${br.tournament?._id}`, {
                                 state: {
@@ -1218,9 +1300,10 @@ export default function AdminBracketsPage() {
                                 },
                               })
                             }
+                            startIcon={<StadiumIcon />}
                           >
-                            <SportsTennisIcon fontSize="small" />
-                          </IconButton>
+                            Cấu hình sân
+                          </Button>
                           {/* Gợi ý dựng skeleton nếu roundElim và chưa có trận */}
                           {br.type === "roundElim" && (grouped[bid]?.length ?? 0) === 0 && (
                             <Tooltip title="Dựng sơ đồ round-elim khi chưa có trận">
@@ -1284,6 +1367,16 @@ export default function AdminBracketsPage() {
                           <IconButton onClick={stop(() => openEditBracket(br))} title="Sửa bracket">
                             <EditIcon />
                           </IconButton>
+                          <Tooltip title="Xoá tất cả trận trong bracket này (không xoá bracket)">
+                            <span>
+                              <IconButton
+                                onClick={stop(() => doClearAllMatches(br))}
+                                disabled={clearingAll}
+                              >
+                                <DeleteSweepIcon />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                           <IconButton
                             onClick={stop(() => handleDeleteBracket(br))}
                             title="Xoá bracket"
@@ -2371,6 +2464,23 @@ export default function AdminBracketsPage() {
                 <Typography variant="caption" color="text.secondary">
                   Bật nếu bạn vừa chuyển từ <b>finished</b> về <b>live/scheduled</b> hoặc đổi{" "}
                   <b>winner</b>.
+                </Typography>
+              </span>
+            </Tooltip>
+            <Tooltip title="Đưa toàn bộ điểm & ván của trận này về 0 (xoá games/sets nếu có). Hữu ích khi bạn đổi trạng thái từ 'Đã kết thúc' về 'Đang thi đấu' hoặc 'Chưa xếp'.">
+              <span>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={emResetScores}
+                      onChange={(e) => setEmResetScores(e.target.checked)}
+                    />
+                  }
+                  label="Reset tỉ số (0–0) & xoá ván"
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Lưu ý: thao tác này <b>không hoàn nguyên</b> lịch sử xếp hạng (ratingApplied) nếu
+                  đã áp dụng trước đó.
                 </Typography>
               </span>
             </Tooltip>

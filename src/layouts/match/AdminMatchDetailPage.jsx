@@ -18,13 +18,13 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import BoltIcon from "@mui/icons-material/Bolt";
 import ReplayIcon from "@mui/icons-material/Replay";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
+import SportsTennisIcon from "@mui/icons-material/SportsTennis";
+import StadiumIcon from "@mui/icons-material/Stadium";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import { toast } from "react-toastify";
 
-// ⛔️ Bỏ socket.io-client trực tiếp
-// import io from "socket.io-client";
-
-// ✅ Dùng socket từ context app của bạn
-import { useSocket } from "../../context/SocketContext"; // <-- chỉnh path nếu khác
+import { useSocket } from "../../context/SocketContext";
 
 import {
   useGetMatchAdminQuery,
@@ -37,29 +37,143 @@ import AdminMatchRatingPanel from "./AdminMatchRatingPanel";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
+/* ===================== Helpers ===================== */
+const fmtDateTime = (v) => {
+  if (!v) return "—";
+  const d = new Date(v);
+  return isNaN(d) ? "—" : d.toLocaleString();
+};
+
+const isNum = (x) => typeof x === "number" && isFinite(x);
+
+const viStatus = (s) => {
+  switch (s) {
+    case "scheduled":
+      return "Đã lên lịch";
+    case "queued":
+      return "Trong hàng đợi";
+    case "assigned":
+      return "Chờ vào sân";
+    case "live":
+      return "Đang thi đấu";
+    case "finished":
+      return "Đã kết thúc";
+    case "canceled":
+      return "Đã huỷ";
+    default:
+      return s || "—";
+  }
+};
+
+const viBracketType = (t) => {
+  switch (t) {
+    case "group":
+    case "roundrobin":
+      return "Vòng bảng";
+    case "po":
+      return "Playoff";
+    case "knockout":
+    case "ko":
+      return "Loại trực tiếp";
+    default:
+      return t || "—";
+  }
+};
+
+const viFormat = (m) => viBracketType(m?.format || m?.bracket?.type);
+
+/** Lấy tên người chơi từ object người: ưu tiên fullName → nickName → name… */
+const personLabel = (p) => {
+  if (!p || typeof p !== "object") {
+    // Nếu chỉ là chuỗi ID thì tránh lộ full, cắt đuôi
+    return typeof p === "string" ? `#${p.slice(-6)}` : "—";
+  }
+  return (
+    p.fullName ||
+    p.nickName ||
+    p.displayName ||
+    p.name ||
+    p.email ||
+    p.phone ||
+    (p.user && typeof p.user === "string" ? `#${p.user.slice(-6)}` : "—")
+  );
+};
+
+/** Lấy tên đội (đôi/đơn). Không dùng p.player1.user (ID), mà dùng chính object player1/player2 */
+const pairLabel = (pair) => {
+  if (!pair) return "—";
+  if (pair.displayName || pair.name) return pair.displayName || pair.name;
+
+  const names = [];
+  if (pair.player1) names.push(personLabel(pair.player1));
+  if (pair.player2) names.push(personLabel(pair.player2));
+
+  // fallback participants[]
+  if (!names.length && Array.isArray(pair.participants)) {
+    for (const it of pair.participants) {
+      names.push(personLabel(it?.user || it));
+    }
+  }
+  return names.filter(Boolean).join(" & ") || "—";
+};
+
+/** Parse thẻ vòng từ m.round / m.rrRound / m.labelKey / m.code */
+const roundTag = (m) => {
+  if (!m) return "";
+  if (isNum(m.rrRound)) return `V${m.rrRound}`;
+  if (isNum(m.round)) return `R${m.round}`;
+  if (typeof m.round === "string" && m.round) return m.round.toUpperCase();
+
+  const fromKey = (s) => {
+    if (!s) return "";
+    const rr = /V(\d+)/i.exec(s);
+    if (rr) return `V${rr[1]}`;
+    const r = /R(\d+)/i.exec(s);
+    if (r) return `R${r[1]}`;
+    return "";
+  };
+  return fromKey(m.labelKey) || fromKey(m.code);
+};
+
+/** Mã trận: ưu tiên labelKey → code → (tự sinh nếu cần) */
+const matchCode = (m) => m?.labelKey || m?.code || "";
+
+/** Hiển thị tỉ số: hỗ trợ gameScores [{a,b}] hoặc [[a,b], ...] */
+const scoresDisplay = (m) => {
+  const arr = Array.isArray(m?.gameScores) ? m.gameScores : null;
+  if (arr && arr.length) {
+    const parts = arr
+      .map((g) => {
+        if (Array.isArray(g) && g.length >= 2 && isNum(g[0]) && isNum(g[1]))
+          return `${g[0]}-${g[1]}`;
+        const a = g?.a ?? g?.A ?? g?.home ?? g?.p1;
+        const b = g?.b ?? g?.B ?? g?.away ?? g?.p2;
+        return isNum(a) && isNum(b) ? `${a}-${b}` : null;
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join(", ");
+  }
+  return "—";
+};
+
 export default function AdminMatchDetailPage() {
   const { id } = useParams();
-  const socket = useSocket(); // ✅ socket chia sẻ toàn app
+  const socket = useSocket();
   const [tab, setTab] = useState(0);
   const [auto, setAuto] = useState(true);
 
   const { data: match, refetch: refetchMatch } = useGetMatchAdminQuery(id);
-
   const { data: logs, refetch: refetchLogs } = useGetMatchLogsQuery(id, {
     pollingInterval: auto ? 4000 : 0,
   });
-
   const { data: ratingRows, refetch: refetchRating } = useGetMatchRatingChangesQuery(id, {
     pollingInterval: auto ? 6000 : 0,
   });
-
   const [applyRating, { isLoading: applying }] = useApplyMatchRatingMutation();
 
-  // ==== Realtime bằng socket từ context ====
+  /* ===== Realtime ===== */
   useEffect(() => {
     if (!socket || !id) return;
-
-    // join phòng trận
     socket.emit?.("match:subscribe", { matchId: id });
 
     const onSnapshot = () => {
@@ -67,9 +181,7 @@ export default function AdminMatchDetailPage() {
       refetchLogs();
       refetchRating();
     };
-    const onLog = () => {
-      refetchLogs();
-    };
+    const onLog = () => refetchLogs();
     const onRatingUpdated = () => {
       refetchMatch();
       refetchRating();
@@ -80,26 +192,30 @@ export default function AdminMatchDetailPage() {
     socket.on?.("rating:updated", onRatingUpdated);
 
     return () => {
-      // rời phòng & gỡ listener
       socket.emit?.("match:unsubscribe", { matchId: id });
       socket.off?.("match:snapshot", onSnapshot);
       socket.off?.("match:log", onLog);
       socket.off?.("rating:updated", onRatingUpdated);
     };
-    // ⚠️ phụ thuộc vào `socket` và `id` để rebind đúng
   }, [socket, id, refetchMatch, refetchLogs, refetchRating]);
 
   const statusChip = useMemo(() => {
     if (!match) return null;
     const color =
-      match.status === "finished" ? "success" : match.status === "live" ? "warning" : "default";
+      match.status === "finished"
+        ? "success"
+        : match.status === "live"
+        ? "warning"
+        : match.status === "canceled"
+        ? "default"
+        : "info";
     const icon =
       match.status === "finished" ? (
         <CheckCircleIcon sx={{ mr: 0.5 }} />
       ) : (
         <PlayArrowIcon sx={{ mr: 0.5 }} />
       );
-    return <Chip icon={icon} color={color} label={match.status.toUpperCase()} size="small" />;
+    return <Chip icon={icon} color={color} label={viStatus(match.status)} size="small" />;
   }, [match]);
 
   const canApply =
@@ -108,18 +224,23 @@ export default function AdminMatchDetailPage() {
   const handleApply = async () => {
     try {
       await applyRating(id).unwrap();
-      toast.success("Đã áp dụng rating cho trận này");
+      toast.success("Đã áp dụng rating cho trận này.");
       refetchMatch();
       refetchRating();
     } catch (e) {
-      toast.error(e?.data?.message || "Áp dụng rating thất bại");
+      toast.error(e?.data?.message || "Áp dụng rating thất bại.");
     }
   };
+
+  const code = match ? matchCode(match) : "";
+  const teamA = pairLabel(match?.pairA);
+  const teamB = pairLabel(match?.pairB);
 
   return (
     <DashboardLayout>
       <DashboardNavbar />
       <Box sx={{ p: 2 }}>
+        {/* Header */}
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
           <Button
             component={RouterLink}
@@ -127,50 +248,134 @@ export default function AdminMatchDetailPage() {
             startIcon={<ArrowBackIosNewIcon />}
             size="small"
           >
-            Danh sách trận
+            Quay về danh sách
           </Button>
-          <Typography variant="h5" sx={{ flex: 1 }}>
-            Match {match?.labelKey || match?.code || id}
+
+          <Typography variant="h5" sx={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+            <SportsTennisIcon />
+            Trận đấu {code ? `• ${code}` : ""}
           </Typography>
+
           {statusChip}
-          <Chip size="small" label={`Round ${match?.round ?? "-"}`} />
-          <Chip size="small" label={`Order ${match?.order ?? "-"}`} />
+          <Chip size="small" label={`Vòng: ${roundTag(match) || "—"}`} />
+          <Chip size="small" label={`Thứ tự: ${isNum(match?.order) ? match.order : "—"}`} />
+
           {match?.ratingApplied && (
             <Chip
               size="small"
               color="success"
               variant="outlined"
               icon={<BoltIcon />}
-              label="Rating applied"
+              label="Đã áp dụng rating"
             />
           )}
-          {/* trạng thái socket (tuỳ thích) */}
           <Chip
             size="small"
             variant="outlined"
             color={socket?.connected ? "success" : "default"}
-            label={socket?.connected ? "Live" : "Offline"}
+            label={socket?.connected ? "Trực tuyến" : "Ngoại tuyến"}
           />
         </Stack>
 
+        {/* Thông tin tổng quan */}
         <Paper sx={{ mb: 2, p: 2 }}>
-          <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
+          {/* Tên đội + tỉ số */}
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={2}
+            alignItems={{ xs: "flex-start", md: "center" }}
+            justifyContent="space-between"
+            sx={{ mb: 1 }}
+          >
             <Stack spacing={0.5}>
-              <Typography variant="body2">
-                Tournament: <b>{match?.tournament?.name || "-"}</b>
+              <Typography variant="subtitle2" color="text.secondary">
+                Đội A
               </Typography>
-              <Typography variant="body2">
-                Bracket: <b>{match?.bracket?.name || "-"}</b> ({match?.bracket?.type})
+              <Typography variant="h6">{teamA}</Typography>
+            </Stack>
+
+            <Stack alignItems="center" justifyContent="center">
+              <Typography variant="body2" color="text.secondary">
+                Tỷ số
               </Typography>
-              <Typography variant="body2">
-                Winner: <b>{match?.winner || "-"}</b>
+              <Typography variant="h6">{scoresDisplay(match)}</Typography>
+            </Stack>
+
+            <Stack spacing={0.5} alignItems={{ xs: "flex-start", md: "flex-end" }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Đội B
               </Typography>
-              <Typography variant="body2">
-                Rating Δ (avg |abs|): <b>{(match?.ratingDelta ?? 0).toFixed(4)}</b>
+              <Typography variant="h6" textAlign={{ xs: "left", md: "right" }}>
+                {teamB}
               </Typography>
             </Stack>
-            <Stack direction="row" spacing={1}>
-              <Tooltip title="Refetch">
+          </Stack>
+
+          <Divider sx={{ my: 2 }} />
+
+          {/* Chi tiết ngữ cảnh trận */}
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={2}
+            alignItems={{ xs: "flex-start", md: "center" }}
+            justifyContent="space-between"
+          >
+            <Stack spacing={0.5}>
+              <Typography variant="body2">
+                Giải đấu: <b>{match?.tournament?.name || "—"}</b>
+              </Typography>
+              <Typography variant="body2">
+                Giai đoạn:{" "}
+                <b>
+                  {match?.bracket?.name || "—"}{" "}
+                  {match?.bracket?.type ? `(${viBracketType(match.bracket.type)})` : ""}
+                </b>
+              </Typography>
+              <Typography variant="body2">
+                Định dạng: <b>{viFormat(match)}</b>
+              </Typography>
+              {/* Pool có thể không có trong data — chỉ hiển thị khi tồn tại */}
+              {match?.pool && (
+                <Typography variant="body2">
+                  Bảng: <b>{match?.pool?.name || match?.pool?.code || "—"}</b>
+                </Typography>
+              )}
+              <Typography variant="body2">
+                Người thắng: <b>{match?.winner || "—"}</b>
+              </Typography>
+              {typeof match?.ratingDelta === "number" && (
+                <Typography variant="body2">
+                  Δ rating (|Δ| TB): <b>{(match.ratingDelta || 0).toFixed(4)}</b>
+                </Typography>
+              )}
+            </Stack>
+
+            <Stack spacing={0.5}>
+              {/* Cụm sân có thể không có trong data */}
+              {match?.courtCluster && (
+                <Typography variant="body2">
+                  <WorkspacePremiumIcon sx={{ fontSize: 16, mr: 0.5, mb: "-3px" }} />
+                  Cụm sân: <b>{match.courtCluster}</b>
+                </Typography>
+              )}
+              <Typography variant="body2">
+                <StadiumIcon sx={{ fontSize: 16, mr: 0.5, mb: "-3px" }} />
+                Sân: <b>{match?.courtLabel || "—"}</b>
+              </Typography>
+              <Typography variant="body2">
+                <AccessTimeIcon sx={{ fontSize: 16, mr: 0.5, mb: "-3px" }} />
+                Dự kiến: <b>{fmtDateTime(match?.scheduledAt)}</b>
+              </Typography>
+              <Typography variant="body2">
+                <AccessTimeIcon sx={{ fontSize: 16, mr: 0.5, mb: "-3px" }} />
+                Bắt đầu: <b>{fmtDateTime(match?.startedAt)}</b>
+              </Typography>
+              <Typography variant="body2">
+                <AccessTimeIcon sx={{ fontSize: 16, mr: 0.5, mb: "-3px" }} />
+                Kết thúc: <b>{fmtDateTime(match?.finishedAt)}</b>
+              </Typography>
+
+              <Tooltip title="Làm mới dữ liệu">
                 <Button
                   onClick={() => {
                     refetchMatch();
@@ -179,8 +384,9 @@ export default function AdminMatchDetailPage() {
                   }}
                   startIcon={<ReplayIcon />}
                   variant="outlined"
+                  sx={{ mt: 1 }}
                 >
-                  Refresh
+                  Làm mới
                 </Button>
               </Tooltip>
               <Button
@@ -195,10 +401,11 @@ export default function AdminMatchDetailPage() {
           </Stack>
         </Paper>
 
+        {/* Logs & Rating */}
         <Paper>
           <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable">
-            <Tab label="Live log" />
-            <Tab label="Rating changes" />
+            <Tab label="Nhật ký trực tiếp" />
+            <Tab label="Biến động rating" />
           </Tabs>
           <Divider />
           <Box sx={{ p: 2 }}>
@@ -207,9 +414,7 @@ export default function AdminMatchDetailPage() {
                 logs={logs}
                 auto={auto}
                 setAuto={setAuto}
-                onRefresh={() => {
-                  refetchLogs();
-                }}
+                onRefresh={() => refetchLogs()}
               />
             )}
             {tab === 1 && <AdminMatchRatingPanel rows={ratingRows} />}

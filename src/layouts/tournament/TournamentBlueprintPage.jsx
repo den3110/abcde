@@ -1,5 +1,5 @@
 // src/pages/tournament/TournamentBlueprintPage.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   Box,
   Stack,
@@ -19,14 +19,18 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Alert,
+  AlertTitle,
+  Tooltip,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
 import { toast } from "react-toastify";
-import { useGetTournamentQuery } from "slices/tournamentsApiSlice";
 import {
+  useGetTournamentQuery,
   usePlanTournamentMutation,
   useCommitTournamentPlanMutation,
+  useGetTournamentBracketsQuery, // 🔹 NEW: lấy danh sách brackets hiện có
 } from "slices/tournamentsApiSlice";
 import PropTypes from "prop-types";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -91,6 +95,71 @@ const seedLabel = (seed) => {
     default:
       return "—";
   }
+};
+
+/* ====== Rules Editor ====== */
+const DEFAULT_RULES = { bestOf: 3, pointsToWin: 11, winByTwo: true };
+
+function RulesEditor({ label = "Luật trận", value, onChange }) {
+  return (
+    <Stack
+      direction={{ xs: "column", sm: "row" }}
+      spacing={1}
+      alignItems="center"
+      sx={{ flexWrap: "wrap" }}
+    >
+      <Chip size="small" label={label} />
+      <TextField
+        select
+        size="small"
+        label="Best of"
+        value={value.bestOf}
+        onChange={(e) => onChange({ ...value, bestOf: parseInt(e.target.value || "3", 10) })}
+        sx={{ width: 140 }}
+      >
+        {[1, 3, 5].map((n) => (
+          <MenuItem key={n} value={n}>
+            {n}
+          </MenuItem>
+        ))}
+      </TextField>
+
+      <TextField
+        select
+        size="small"
+        label="Điểm thắng game"
+        value={value.pointsToWin}
+        onChange={(e) => onChange({ ...value, pointsToWin: parseInt(e.target.value || "11", 10) })}
+        sx={{ width: 180 }}
+      >
+        {[11, 15, 21].map((n) => (
+          <MenuItem key={n} value={n}>
+            {n}
+          </MenuItem>
+        ))}
+      </TextField>
+
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={!!value.winByTwo}
+            onChange={(e) => onChange({ ...value, winByTwo: !!e.target.checked })}
+          />
+        }
+        label="Thắng cách 2 điểm"
+      />
+    </Stack>
+  );
+}
+
+RulesEditor.propTypes = {
+  label: PropTypes.string,
+  value: PropTypes.shape({
+    bestOf: PropTypes.number.isRequired,
+    pointsToWin: PropTypes.number.isRequired,
+    winByTwo: PropTypes.bool.isRequired,
+  }).isRequired,
+  onChange: PropTypes.func.isRequired,
 };
 
 /** Build KO rounds (R1 editable; R>=2 winners auto) */
@@ -376,6 +445,7 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
             <MenuItem value="registration">Chỉ định (Registration)</MenuItem>
           </Select>
 
+          {/* groupRank config */}
           {mode === "groupRank" && (
             <Stack spacing={1}>
               <Typography variant="body2" color="text.secondary">
@@ -411,6 +481,7 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
             </Stack>
           )}
 
+          {/* stageMatch config */}
           {(mode === "stageMatchWinner" || mode === "stageMatchLoser") && (
             <Stack spacing={1}>
               <Typography variant="body2" color="text.secondary">
@@ -505,6 +576,14 @@ export default function TournamentBlueprintPage() {
   const navigate = useNavigate();
 
   const { data: tournament, isLoading, error } = useGetTournamentQuery(tournamentId);
+
+  // 🔹 NEW: lấy danh sách brackets đã tạo
+  const {
+    data: existingBrackets = [],
+    isLoading: loadingBrackets,
+    isError: bracketsError,
+  } = useGetTournamentBracketsQuery(tournamentId);
+
   const [tab, setTab] = useState("auto");
 
   // stage toggles (order: Group -> PO -> KO)
@@ -522,6 +601,19 @@ export default function TournamentBlueprintPage() {
 
   // KO defaults
   const [koPlan, setKoPlan] = useState({ drawSize: 16, seeds: [] });
+
+  // ===== Rules per stage =====
+  const [groupRules, setGroupRules] = useState(DEFAULT_RULES);
+  const [poRules, setPoRules] = useState(DEFAULT_RULES);
+  const [koRules, setKoRules] = useState(DEFAULT_RULES);
+  // KO Final override
+  const [koFinalOverride, setKoFinalOverride] = useState(false);
+  const [koFinalRules, setKoFinalRules] = useState({ bestOf: 5, pointsToWin: 11, winByTwo: true });
+
+  // 🔹 NEW: cờ & tùy chọn ghi đè
+  const [prefilledFromExisting, setPrefilledFromExisting] = useState(false);
+  const [allowOverwrite, setAllowOverwrite] = useState(false);
+  const prefillOnceRef = useRef(false);
 
   // Tính groupSizes hiển thị (ưu tiên total)
   const groupSizes = useMemo(() => {
@@ -543,7 +635,7 @@ export default function TournamentBlueprintPage() {
     return Math.max(0, Math.min(...groupSizes.map((v) => Number(v) || 0)));
   }, [includeGroup, groupSizes, groupSize]);
 
-  // computed stages
+  // computed stages (UI preview only)
   const stages = useMemo(() => {
     const arr = [];
     if (includeGroup) {
@@ -807,6 +899,110 @@ export default function TournamentBlueprintPage() {
     });
   };
 
+  // 🔹 NEW: Prefill từ sơ đồ đã có (brackets)
+  const prefillFromExisting = (list) => {
+    if (!Array.isArray(list) || !list.length) return;
+
+    // Ưu tiên theo type: group / po / ko
+    const bGroup = list.find((b) => b.type === "group");
+    const bPO = list.find((b) => b.type === "po");
+    const bKO = list.find((b) => b.type === "ko");
+
+    // Group
+    if (bGroup) {
+      const cfg = bGroup.config || {};
+      const groupsArr = Array.isArray(cfg.groups) ? cfg.groups : [];
+      const gCount = groupsArr.length || Number(cfg.groupCount || 0) || 0;
+
+      // cố gắng khôi phục đúng tổng đội
+      const sizes = Array.isArray(cfg.groupSizes) ? cfg.groupSizes : [];
+      const sum = sizes.reduce((a, b) => a + (Number(b) || 0), 0);
+      const gSize = Number(cfg.groupSize || 0);
+      const qualifiersPerGroup =
+        Number(cfg.qualifiersPerGroup || bGroup.meta?.qualifiersPerGroup || 1) || 1;
+
+      setIncludeGroup(true);
+      setGroupCount(gCount || 0);
+      if (sum > 0) {
+        setGroupTotal(sum);
+        // groupSize giữ hiển thị; không ảnh hưởng khi groupTotal > 0
+        setGroupSize(gSize || (gCount ? Math.floor(sum / gCount) : 0));
+      } else {
+        setGroupTotal(0);
+        setGroupSize(gSize || 0);
+      }
+      setGroupTopN(Math.max(1, qualifiersPerGroup));
+      // rules
+      const rules = bGroup.rules || cfg.rules || DEFAULT_RULES;
+      setGroupRules({
+        bestOf: Number(rules.bestOf ?? DEFAULT_RULES.bestOf),
+        pointsToWin: Number(rules.pointsToWin ?? DEFAULT_RULES.pointsToWin),
+        winByTwo: !!(rules.winByTwo ?? DEFAULT_RULES.winByTwo),
+      });
+    } else {
+      setIncludeGroup(false);
+    }
+
+    // PO
+    if (bPO) {
+      const cfg = bPO.config || {};
+      const drawSize = Number(cfg.drawSize || 0);
+      const maxRounds = Number(cfg.maxRounds || maxPoRoundsFor(drawSize) || 1);
+      const seeds = Array.isArray(cfg.seeds) ? cfg.seeds : [];
+      setIncludePO(true);
+      setPoPlan({ drawSize, maxRounds, seeds });
+      const rules = bPO.rules || cfg.rules || DEFAULT_RULES;
+      setPoRules({
+        bestOf: Number(rules.bestOf ?? DEFAULT_RULES.bestOf),
+        pointsToWin: Number(rules.pointsToWin ?? DEFAULT_RULES.pointsToWin),
+        winByTwo: !!(rules.winByTwo ?? DEFAULT_RULES.winByTwo),
+      });
+    } else {
+      setIncludePO(false);
+      setPoPlan((p) => ({ ...p, seeds: [] }));
+    }
+
+    // KO
+    if (bKO) {
+      const cfg = bKO.config || {};
+      const drawSize = Number(cfg.drawSize || 2);
+      const seeds = Array.isArray(cfg.seeds) ? cfg.seeds : [];
+      setKoPlan({ drawSize, seeds });
+
+      const rules = bKO.rules || cfg.rules || DEFAULT_RULES;
+      setKoRules({
+        bestOf: Number(rules.bestOf ?? DEFAULT_RULES.bestOf),
+        pointsToWin: Number(rules.pointsToWin ?? DEFAULT_RULES.pointsToWin),
+        winByTwo: !!(rules.winByTwo ?? DEFAULT_RULES.winByTwo),
+      });
+
+      const finalRules = bKO.finalRules || cfg.finalRules || null;
+      if (finalRules) {
+        setKoFinalOverride(true);
+        setKoFinalRules({
+          bestOf: Number(finalRules.bestOf ?? 5),
+          pointsToWin: Number(finalRules.pointsToWin ?? 11),
+          winByTwo: !!(finalRules.winByTwo ?? true),
+        });
+      } else {
+        setKoFinalOverride(false);
+      }
+    }
+
+    // Bật tab Manual xem/chỉnh luôn
+    setTab("manual");
+    setPrefilledFromExisting(true);
+  };
+
+  // 🔹 chạy prefill 1 lần khi có dữ liệu brackets
+  useEffect(() => {
+    if (prefillOnceRef.current) return;
+    if (!loadingBrackets && Array.isArray(existingBrackets) && existingBrackets.length) {
+      prefillFromExisting(existingBrackets);
+      prefillOnceRef.current = true;
+    }
+  }, [loadingBrackets, existingBrackets]);
+
   const commitPlan = async () => {
     try {
       const hasGroup = includeGroup && groupCount > 0;
@@ -815,26 +1011,34 @@ export default function TournamentBlueprintPage() {
 
       const groupsPayload = hasGroup
         ? total > 0
-          ? { count: groupCount, totalTeams: total, qualifiersPerGroup: qpg }
-          : { count: groupCount, size: groupSize, qualifiersPerGroup: qpg }
+          ? { count: groupCount, totalTeams: total, qualifiersPerGroup: qpg, rules: groupRules }
+          : { count: groupCount, size: groupSize, qualifiersPerGroup: qpg, rules: groupRules }
         : null;
 
       const payload = {
         groups: groupsPayload,
-        po: includePO ? normalizeSeedsPO(poPlan) : null,
-        ko: normalizeSeedsKO(koPlan),
+        po: includePO ? { ...normalizeSeedsPO(poPlan), rules: poRules } : null,
+        ko: {
+          ...normalizeSeedsKO(koPlan),
+          rules: koRules,
+          finalRules: koFinalOverride ? koFinalRules : null, // ⭐ riêng cho Chung kết KO
+        },
+        // tuỳ backend có hỗ trợ force/overwrite không; nếu có, thêm { force: true }
+        ...(allowOverwrite ? { force: true } : {}),
       };
 
       await commitTournamentPlan({ tournamentId, body: payload }).unwrap();
-      toast.success("Đã tạo sơ đồ/khung giải!");
+      toast.success(allowOverwrite ? "Đã ghi đè & tạo lại sơ đồ!" : "Đã tạo sơ đồ/khung giải!");
       navigate(`/admin/tournaments/${tournamentId}/brackets`);
     } catch (e) {
       toast.error(e?.data?.message || e?.error || "Tạo sơ đồ thất bại.");
     }
   };
 
-  if (isLoading) return <Box p={4}>Loading…</Box>;
-  if (error) return <Box p={4}>Lỗi tải giải.</Box>;
+  if (isLoading || loadingBrackets) return <Box p={4}>Loading…</Box>;
+  if (error || bracketsError) return <Box p={4}>Lỗi tải dữ liệu.</Box>;
+
+  const hasExisting = Array.isArray(existingBrackets) && existingBrackets.length > 0;
 
   return (
     <DashboardLayout>
@@ -846,6 +1050,32 @@ export default function TournamentBlueprintPage() {
           </Typography>
           <Chip size="small" label={(tournament?.eventType || "").toUpperCase()} sx={{ ml: 1 }} />
         </Stack>
+
+        {/* 🔹 Banner nếu đã có sơ đồ */}
+        {hasExisting && (
+          <Alert severity="info" sx={{ mb: 2 }} variant="outlined">
+            <AlertTitle>Giải này đã có sơ đồ (brackets) rồi</AlertTitle>
+            Hệ thống đã tự nạp lại cấu hình vào tab “Tự thiết kế & Seed map” để anh chỉnh tiếp nếu
+            cần.
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 1 }}>
+              <Button
+                variant="contained"
+                onClick={() => navigate(`/admin/tournaments/${tournamentId}/brackets`)}
+              >
+                Đi tới quản trị bracket
+              </Button>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={allowOverwrite}
+                    onChange={(e) => setAllowOverwrite(e.target.checked)}
+                  />
+                }
+                label="Ghi đè sơ đồ hiện tại khi bấm Tạo sơ đồ"
+              />
+            </Stack>
+          </Alert>
+        )}
 
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
           <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
@@ -947,6 +1177,17 @@ export default function TournamentBlueprintPage() {
                 )}
               </Stack>
 
+              {includeGroup && (
+                <Box sx={{ mt: 1 }}>
+                  {/* Rules cho Group */}
+                  <RulesEditor
+                    label="Luật (Vòng bảng)"
+                    value={groupRules}
+                    onChange={setGroupRules}
+                  />
+                </Box>
+              )}
+
               {/* ===== PO config ===== */}
               <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="center">
                 <FormControlLabel
@@ -1015,6 +1256,13 @@ export default function TournamentBlueprintPage() {
                 )}
               </Stack>
 
+              {includePO && (
+                <Box sx={{ mt: 1 }}>
+                  {/* Rules cho PO */}
+                  <RulesEditor label="Luật (PO)" value={poRules} onChange={setPoRules} />
+                </Box>
+              )}
+
               {/* ===== KO config ===== */}
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
                 <TextField
@@ -1032,17 +1280,94 @@ export default function TournamentBlueprintPage() {
                 />
               </Stack>
 
+              <Box sx={{ mt: 1 }}>
+                {/* Rules cho KO + override Chung kết */}
+                <RulesEditor label="Luật (KO)" value={koRules} onChange={setKoRules} />
+
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={2}
+                  alignItems="center"
+                  sx={{ mt: 1 }}
+                >
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={koFinalOverride}
+                        onChange={(e) => setKoFinalOverride(e.target.checked)}
+                      />
+                    }
+                    label="Dùng Rule riêng cho trận Chung kết (KO)"
+                  />
+                  {koFinalOverride && (
+                    <RulesEditor
+                      label="Luật Chung kết (KO)"
+                      value={koFinalRules}
+                      onChange={setKoFinalRules}
+                    />
+                  )}
+                </Stack>
+              </Box>
+
               <Divider />
 
               {/* ===== Stage preview & seeding ===== */}
               {stages.map((stage, idx) => (
                 <Paper key={stage.id} variant="outlined" sx={{ p: 2 }}>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={1}
+                    sx={{ mb: 1, flexWrap: "wrap" }}
+                  >
                     <Chip color="primary" size="small" label={stage.id} />
                     <Typography variant="h6" fontWeight={700}>
                       {stage.title}
                     </Typography>
                     <Chip size="small" label={stage.type.toUpperCase()} />
+
+                    {/* Rule summary chips */}
+                    <Stack direction="row" spacing={1} sx={{ ml: 1, flexWrap: "wrap" }}>
+                      {stage.type === "group" && (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`Rule: BO${groupRules.bestOf} • ${groupRules.pointsToWin} điểm • ${
+                            groupRules.winByTwo ? "Win by 2" : "No win-by-2"
+                          }`}
+                        />
+                      )}
+                      {stage.type === "po" && (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`Rule: BO${poRules.bestOf} • ${poRules.pointsToWin} điểm • ${
+                            poRules.winByTwo ? "Win by 2" : "No win-by-2"
+                          }`}
+                        />
+                      )}
+                      {stage.type === "ko" && (
+                        <Stack direction="row" spacing={1}>
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={`Rule: BO${koRules.bestOf} • ${koRules.pointsToWin} điểm • ${
+                              koRules.winByTwo ? "Win by 2" : "No win-by-2"
+                            }`}
+                          />
+                          {koFinalOverride && (
+                            <Chip
+                              size="small"
+                              color="secondary"
+                              variant="outlined"
+                              label={`Final: BO${koFinalRules.bestOf} • ${
+                                koFinalRules.pointsToWin
+                              } điểm • ${koFinalRules.winByTwo ? "Win by 2" : "No win-by-2"}`}
+                            />
+                          )}
+                        </Stack>
+                      )}
+                    </Stack>
                   </Stack>
 
                   {stage.type === "group" && (
@@ -1097,15 +1422,25 @@ export default function TournamentBlueprintPage() {
                 </Paper>
               ))}
 
-              <Stack direction="row" spacing={1}>
-                <Button
-                  variant="contained"
-                  onClick={commitPlan}
-                  disabled={committing}
-                  sx={{ color: "white !important" }}
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Tooltip
+                  title={
+                    hasExisting && !allowOverwrite
+                      ? "Giải đã có sơ đồ. Tích 'Ghi đè sơ đồ hiện tại' để tạo lại."
+                      : ""
+                  }
                 >
-                  Tạo sơ đồ
-                </Button>
+                  <span>
+                    <Button
+                      variant="contained"
+                      onClick={commitPlan}
+                      disabled={committing || (hasExisting && !allowOverwrite)}
+                      sx={{ color: "white !important" }}
+                    >
+                      {hasExisting && allowOverwrite ? "Ghi đè & tạo lại sơ đồ" : "Tạo sơ đồ"}
+                    </Button>
+                  </span>
+                </Tooltip>
                 <Button variant="outlined" onClick={() => navigate(-1)}>
                   Quay lại
                 </Button>

@@ -8,6 +8,16 @@ const buildQuery = (base, params) =>
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join("&");
 
+/** Helper nhỏ: loại bỏ param rỗng trước khi gửi lên server */
+const qp = (obj) => {
+  const out = {};
+  Object.entries(obj || {}).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === "") return;
+    out[k] = v;
+  });
+  return out;
+};
+
 export const tournamentsApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     /* ---------------- USER ---------------- */
@@ -146,11 +156,23 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: (r) => (r ? [{ type: "Match", id: r.bracket.toString() }] : []),
     }),
     listAllMatches: builder.query({
-      query: () => `/admin/matches/all`,
-      providesTags: (result = [], error) =>
+      // params: { tournament?, bracket?, status? }
+      query: (params = {}) => {
+        const qs = new URLSearchParams(
+          Object.entries(params).reduce((acc, [k, v]) => {
+            if (v !== undefined && v !== null && v !== "") acc[k] = v;
+            return acc;
+          }, {})
+        ).toString();
+        return `/admin/matches/all${qs ? `?${qs}` : ""}`;
+      },
+      providesTags: (result = []) =>
         result
           ? [...result.map((m) => ({ type: "Match", id: m._id })), { type: "Match", id: "LIST" }]
           : [{ type: "Match", id: "LIST" }],
+      // tránh cache đè khi đổi bộ lọc
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        `${endpointName}:${JSON.stringify(queryArgs || {})}`,
     }),
     // slices/tournamentsApiSlice.js
     listAllMatchesTournament: builder.query({
@@ -517,6 +539,85 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         { type: "Tournaments", id: "LIST" },
       ],
     }),
+
+    clearBracketMatches: builder.mutation({
+      // body có thể truyền { status: 'scheduled' | ['scheduled','queued'], dryRun: true } nếu muốn
+      query: ({ bracketId, body = {} }) => ({
+        url: `/admin/brackets/${bracketId}/matches/clear`,
+        method: "POST",
+        body,
+      }),
+      // invalidate cache theo bracketId để listMatches/listAllMatches cập nhật
+      invalidatesTags: (res, err, { bracketId }) => [{ type: "Match", id: bracketId }],
+    }),
+    previewRatingDelta: builder.mutation({
+      query: (body) => ({
+        url: `/admin/match/rating/preview`,
+        method: "POST",
+        body,
+      }),
+    }),
+    getTournamentBrackets: builder.query({
+      query: (tournamentId) => `/admin/tournaments/${tournamentId}/brackets/structure`,
+      providesTags: (res, err, id) => [{ type: "ADMIN_BRACKETS", id }],
+      // tuỳ backend: có thể trả về mảng brackets [{ type, config, rules, finalRules, meta, ... }]
+    }),
+    resetMatchScores: builder.mutation({
+      query: ({ matchId }) => ({
+        url: `/admin/matches/${matchId}/reset-scores`,
+        method: "POST",
+        body: {}, // không cần body
+      }),
+      invalidatesTags: (result, error, { matchId }) => [{ type: "Match", id: matchId }],
+    }),
+    /* ============================================================
+     * 1) Tournaments dành cho trọng tài (để làm accordion)
+     * GET /referee/tournaments
+     * ============================================================ */
+    getRefereeTournaments: builder.query({
+      query: () => ({ url: "/referee/tournaments", method: "GET" }),
+      providesTags: (res) =>
+        res?.items
+          ? [
+              ...res.items.map((t) => ({ type: "Tournament", id: t._id })),
+              { type: "Tournament", id: "LIST_REFEREE" },
+            ]
+          : [{ type: "Tournament", id: "LIST_REFEREE" }],
+      keepUnusedDataFor: 60,
+    }),
+
+    /* ============================================================
+     * 2) Brackets của một giải (mở accordion mới gọi)
+     * GET /referee/tournaments/:tid/brackets
+     * ============================================================ */
+    getRefereeBrackets: builder.query({
+      query: ({ tournamentId }) => ({
+        url: `/referee/tournaments/${tournamentId}/brackets`,
+        method: "GET",
+      }),
+      providesTags: (res, err, { tournamentId }) => [
+        { type: "Bracket", id: `REF_${tournamentId}` },
+      ],
+      keepUnusedDataFor: 120,
+    }),
+
+    /* ============================================================
+     * 3) Danh sách trận theo giải (filter + phân trang)
+     * GET /referee/tournaments/:tid/matches?status=&bracketId=&q=&page=&pageSize=
+     * ============================================================ */
+    listRefereeMatchesByTournament: builder.query({
+      query: ({ tournamentId, page = 1, pageSize = 10, status, bracketId, q }) => ({
+        url: `/referee/tournaments/${tournamentId}/matches`,
+        method: "GET",
+        params: qp({ page, pageSize, status, bracketId, q }),
+      }),
+      providesTags: (res, err, { tournamentId }) => {
+        const base = [{ type: "Match", id: `LIST_${tournamentId}` }];
+        if (!res?.items?.length) return base;
+        return [...base, ...res.items.map((m) => ({ type: "Match", id: m._id }))];
+      },
+      keepUnusedDataFor: 30,
+    }),
   }),
 });
 
@@ -573,4 +674,11 @@ export const {
   useSearchTournamentsQuery,
   useGetTournamentByIdQuery,
   useUpdateTournamentOverlayMutation,
+  useClearBracketMatchesMutation,
+  usePreviewRatingDeltaMutation,
+  useGetTournamentBracketsQuery,
+  useResetMatchScoresMutation,
+  useGetRefereeTournamentsQuery,
+  useGetRefereeBracketsQuery,
+  useListRefereeMatchesByTournamentQuery,
 } = tournamentsApiSlice;

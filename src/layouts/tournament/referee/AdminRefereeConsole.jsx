@@ -6,10 +6,6 @@ import {
   Stack,
   Typography,
   Chip,
-  List,
-  ListItemButton,
-  ListItemText,
-  ListSubheader,
   Divider,
   IconButton,
   Button,
@@ -21,6 +17,14 @@ import {
   Snackbar,
   Alert,
   Zoom,
+  Checkbox,
+  FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  RadioGroup,
+  Radio,
 } from "@mui/material";
 import {
   PlayArrow,
@@ -35,16 +39,22 @@ import {
   Stadium as StadiumIcon,
   Info as InfoIcon,
   GridView as PoolIcon,
+  ExpandMore as ExpandMoreIcon,
+  FilterAlt as FilterAltIcon,
+  Search as SearchIcon,
 } from "@mui/icons-material";
 import { keyframes } from "@emotion/react";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
-import { Pagination } from "@mui/material";
 
 import {
-  useListRefereeMatchesQuery,
+  // ✨ Hooks mới cho sidebar (nhớ thêm trong tournamentsApiSlice như đã hướng dẫn):
+  useGetRefereeTournamentsQuery,
+  useGetRefereeBracketsQuery,
+  useListRefereeMatchesByTournamentQuery,
+  // Chi tiết + thao tác trận giữ nguyên:
   useGetMatchQuery,
   useRefereeIncPointMutation,
   useRefereeSetGameScoreMutation,
@@ -52,22 +62,47 @@ import {
   useRefereeSetWinnerMutation,
 } from "slices/tournamentsApiSlice";
 import { useSocket } from "context/SocketContext";
+import RefereeMatchesPanel from "./RefereeMatchesPanel";
 
 /* ================= helpers ================= */
 // Việt hoá đầy đủ trạng thái trận
-const VI_MATCH_STATUS = {
+export const VI_MATCH_STATUS = {
+  all: { label: "Tất cả", color: "default" },
   scheduled: { label: "Chưa xếp", color: "default" },
   queued: { label: "Trong hàng đợi", color: "info" },
   assigned: { label: "Đã gán sân", color: "secondary" },
   live: { label: "Đang thi đấu", color: "warning" },
   finished: { label: "Đã kết thúc", color: "success" },
 };
-const getMatchStatusChip = (s) => VI_MATCH_STATUS[s] || { label: s || "—", color: "default" };
+export const getMatchStatusChip = (s) =>
+  VI_MATCH_STATUS[s] || { label: s || "—", color: "default" };
 
-function pairLabel(reg, eventType = "double") {
+// đặt cạnh các helpers khác
+const isEditableTarget = (el) => {
+  if (!el) return false;
+  const tag = el.tagName?.toLowerCase();
+  // input/textarea/select thật sự
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  // contenteditable
+  if (el.isContentEditable) return true;
+  // MUI input wrapper hoặc những nơi ta đánh dấu bỏ qua
+  if (
+    el.closest?.(
+      '.MuiInputBase-root, [role="combobox"], [contenteditable="true"], [data-hotkeys-ignore="true"]'
+    )
+  ) {
+    return true;
+  }
+  return false;
+};
+
+function nickOrName(p) {
+  return p?.nickname || p?.nick || p?.shortName || p?.fullName || p?.name || "N/A";
+}
+export function pairLabel(reg, eventType = "double") {
   if (!reg) return "—";
-  const p1 = reg.player1?.fullName || reg.player1?.name || "N/A";
-  const p2 = reg.player2?.fullName || reg.player2?.name;
+  const p1 = nickOrName(reg.player1 || reg.p1);
+  const p2 = nickOrName(reg.player2 || reg.p2);
   return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
 }
 const needWins = (bestOf = 3) => Math.floor(bestOf / 2) + 1;
@@ -80,7 +115,7 @@ const isGameWin = (a = 0, b = 0, pointsToWin = 11, winByTwo = true) => {
 };
 
 // Gợi ý chú thích vòng bảng
-const poolNote = (m) => {
+export const poolNote = (m) => {
   const isGroup =
     (m?.format || "").toLowerCase() === "group" ||
     (m?.bracket?.type || "").toLowerCase() === "group";
@@ -89,6 +124,45 @@ const poolNote = (m) => {
   const rr = Number.isFinite(Number(m?.rrRound)) ? ` • Lượt ${m.rrRound}` : "";
   return `${poolName}${rr}`;
 };
+
+const isGroupType = (m) =>
+  (m?.format || "").toLowerCase() === "group" || (m?.bracket?.type || "").toLowerCase() === "group";
+
+/** Trả về số thứ tự trận để hiển thị (#)
+ * - Vòng bảng: +1
+ * - Khác: giữ nguyên
+ * - Nếu không có order: group -> 1, non-group -> 0
+ */
+export const displayOrder = (m) => {
+  const hasOrd = Number.isFinite(Number(m?.order));
+  const ord = hasOrd ? Number(m.order) : null;
+  if (ord === null) return isGroupType(m) ? 1 : 0;
+  return isGroupType(m) ? ord + 1 : ord;
+};
+
+// Mã trận: KO/PO -> R{round}#{order}, Group -> G{pool}#{displayOrder}, còn lại fallback R{round}#{order}
+export function matchCode(m) {
+  const t = (m?.bracket?.type || m?.format || "").toLowerCase();
+  const ord = Number.isFinite(Number(m?.order)) ? Number(m.order) : 0;
+  if (t === "knockout" || t === "ko" || t === "roundelim" || t === "po") {
+    return `R${m?.round ?? "?"}#${ord}`;
+  }
+  if (t === "group") {
+    const pool = m?.pool?.name ? String(m.pool.name) : "";
+    return `G${pool || "-"}#${displayOrder(m)}`;
+  }
+  return `R${m?.round ?? "?"}#${ord}`;
+}
+
+// debounce nho nhỏ cho ô tìm kiếm
+function useDebounced(value, delay = 400) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return v;
+}
 
 /* ======== Animations ======== */
 const pulse = keyframes`
@@ -148,7 +222,7 @@ function ScoreBurst({ show, color = "primary.main" }) {
             borderRadius: "50%",
             border: "2px solid",
             borderColor: color,
-            transform: "translate(-50%,-50%)",
+            transform: `translate(-50%,-50%)`,
             animation: `${ring} 700ms ease-out`,
           }}
         />
@@ -185,22 +259,27 @@ function ScoreBurst({ show, color = "primary.main" }) {
   );
 }
 
-/* ================= Component ================= */
+/* ======= Helper: chốt ván sớm -> tạo tỉ số tối thiểu hợp lệ ======= */
+function computeEarlyFinalizeScore(curA, curB, { pointsToWin = 11, winByTwo = true }, winner) {
+  const needGap = winByTwo ? 2 : 1;
+  if (winner === "A") {
+    const base = Math.max(pointsToWin, curA, curB + needGap);
+    const finalA = base;
+    const finalB = Math.min(curB, finalA - needGap);
+    return { a: finalA, b: finalB };
+  } else {
+    const base = Math.max(pointsToWin, curB, curA + needGap);
+    const finalB = base;
+    const finalA = Math.min(curA, finalB - needGap);
+    return { a: finalA, b: finalB };
+  }
+}
+
+/* =================================================================== */
+/* ===================== MAIN: Referee Console ======================= */
+/* =================================================================== */
+
 export default function AdminRefereeConsole() {
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-
-  // Danh sách trận của tôi
-  const {
-    data: myMatchesResp = { items: [], total: 0, page: 1, totalPages: 1 },
-    isLoading: listLoading,
-    error: listErr,
-    refetch: refetchList,
-  } = useListRefereeMatchesQuery({ page, pageSize });
-
-  const myMatches = myMatchesResp.items ?? [];
-  const totalPages = myMatchesResp.totalPages || 1;
-
   const [selectedId, setSelectedId] = useState(null);
 
   // Chi tiết trận
@@ -221,6 +300,14 @@ export default function AdminRefereeConsole() {
 
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
+
+  // Tuỳ chọn tự sang ván tiếp theo (mặc định: tắt)
+  const [autoNextGame, setAutoNextGame] = useState(false);
+
+  // Hộp thoại kết thúc ván sớm
+  const [earlyOpen, setEarlyOpen] = useState(false);
+  const [earlyWinner, setEarlyWinner] = useState("A");
+  const [useCurrentScore, setUseCurrentScore] = useState(false);
 
   // join room & realtime
   useEffect(() => {
@@ -248,8 +335,7 @@ export default function AdminRefereeConsole() {
     };
   }, [socket, selectedId, refetchDetail]);
 
-  const refresh = () => {
-    refetchList();
+  const refreshDetail = () => {
     if (selectedId) refetchDetail();
   };
 
@@ -266,8 +352,6 @@ export default function AdminRefereeConsole() {
   const curB = gs[currentIndex]?.b ?? 0;
 
   const serve = match?.serve || { side: "A", server: 2 };
-  const isServingA = serve?.side === "A";
-  const isServingB = serve?.side === "B";
   const callout = isDoubles
     ? serve.side === "A"
       ? `${curA}-${curB}-${serve.server}`
@@ -379,12 +463,85 @@ export default function AdminRefereeConsole() {
     }
   };
 
+  const onClickStartNext = () => {
+    if (!match) return;
+    if (autoNextGame) {
+      startNextGame();
+    } else {
+      setEarlyWinner("A");
+      setUseCurrentScore(false);
+      setEarlyOpen(true);
+    }
+  };
+
+  const confirmEarlyEnd = async () => {
+    if (!match) return;
+    try {
+      if (useCurrentScore) {
+        if (curA === curB) {
+          showSnack(
+            "error",
+            "Đang hòa, không thể ghi nhận đúng tỉ số hiện tại. Hãy bỏ chọn hoặc chọn đội thắng."
+          );
+          return;
+        }
+        await setGame({
+          matchId: match._id,
+          gameIndex: currentIndex,
+          a: curA,
+          b: curB,
+        }).unwrap();
+
+        if (!matchPointReached && gs.length < rules.bestOf) {
+          await setGame({ matchId: match._id, gameIndex: gs.length, a: 0, b: 0 }).unwrap();
+        }
+
+        socket?.emit("match:patched", { matchId: match._id });
+        setEarlyOpen(false);
+        showSnack(
+          "success",
+          `Đã chốt ván #${currentIndex + 1} (${curA > curB ? "A" : "B"} thắng) và bắt đầu ván mới`
+        );
+        return;
+      }
+
+      const winner = curA === curB ? earlyWinner : curA > curB ? "A" : "B";
+      const fin = computeEarlyFinalizeScore(curA, curB, rules, winner);
+
+      await setGame({
+        matchId: match._id,
+        gameIndex: currentIndex,
+        a: fin.a,
+        b: fin.b,
+      }).unwrap();
+
+      if (!matchPointReached && gs.length < rules.bestOf) {
+        await setGame({ matchId: match._id, gameIndex: gs.length, a: 0, b: 0 }).unwrap();
+      }
+
+      socket?.emit("match:patched", { matchId: match._id });
+      setEarlyOpen(false);
+      showSnack(
+        "success",
+        `Đã chốt ván #${currentIndex + 1} (thắng: ${winner}) và bắt đầu ván mới`
+      );
+    } catch (e) {
+      showSnack("error", e?.data?.message || e?.error || "Không thể kết thúc ván sớm");
+    }
+  };
+
   // hotkeys
   useEffect(() => {
     const onKey = (e) => {
+      // ❗ BỎ QUA khi đang gõ trong input/textarea/autocomplete hoặc đang mở dialog
+      if (isEditableTarget(e.target) || earlyOpen) return;
+
       if (!match) return;
       const k = e.key.toLowerCase();
+
+      // chỉ chặn khi thực sự dùng hotkeys ngoài input
       if (["a", "z", "k", "m", " "].includes(k)) e.preventDefault();
+
       if (k === "a") inc("A");
       if (k === "z") dec("A");
       if (k === "k") inc("B");
@@ -394,114 +551,41 @@ export default function AdminRefereeConsole() {
         else onFinish();
       }
     };
-    window.addEventListener("keydown", onKey);
+
+    window.addEventListener("keydown", onKey, { passive: false });
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line
-  }, [match?.status, selectedId, gs.length, curA, curB]);
+  }, [match?.status, selectedId, gs.length, curA, curB, earlyOpen]);
+
+  // Auto-next khi ván kết thúc
+  const lastGameDoneRef = useRef(false);
+  useEffect(() => {
+    if (!match) return;
+    if (
+      autoNextGame &&
+      match.status === "live" &&
+      !matchPointReached &&
+      gs.length < rules.bestOf &&
+      gameDone &&
+      !lastGameDoneRef.current
+    ) {
+      startNextGame();
+    }
+    lastGameDoneRef.current = gameDone;
+    // eslint-disable-next-line
+  }, [autoNextGame, gameDone, match?.status, matchPointReached, gs.length, rules.bestOf]);
+
+  const startBtnDisabled = autoNextGame
+    ? !(match?.status === "live" && gameDone && !matchPointReached && gs.length < rules.bestOf)
+    : !(match?.status === "live" && !matchPointReached && gs.length < rules.bestOf);
 
   /* ================= Render ================= */
   return (
     <DashboardLayout>
       <DashboardNavbar />
-      <Box p={2} display="grid" gridTemplateColumns={{ xs: "1fr", md: "320px 1fr" }} gap={2}>
-        {/* ===== Sidebar ===== */}
-        <Card sx={{ p: 1, minHeight: 500 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" px={1}>
-            <Typography variant="h6">Trận của tôi</Typography>
-            <IconButton onClick={refresh} size="small" title="Làm mới">
-              <Refresh fontSize="small" />
-            </IconButton>
-          </Stack>
-          <Divider sx={{ my: 1 }} />
-          {listLoading ? (
-            <Box textAlign="center" py={4}>
-              <CircularProgress size={20} />
-            </Box>
-          ) : listErr ? (
-            <Alert severity="error">{listErr?.data?.message || listErr?.error}</Alert>
-          ) : (myMatches || []).length === 0 ? (
-            <Alert severity="info" sx={{ m: 1 }}>
-              Chưa có trận nào được phân.
-            </Alert>
-          ) : (
-            <>
-              <List
-                dense
-                subheader={
-                  <ListSubheader component="div">Nhấn để mở console chấm điểm</ListSubheader>
-                }
-                sx={{ maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}
-              >
-                {myMatches.map((m) => {
-                  const chip = getMatchStatusChip(m.status);
-                  const gNote = poolNote(m);
-                  const courtName = m.court?.name || m.courtName || "";
-                  return (
-                    <ListItemButton
-                      key={m._id}
-                      selected={selectedId === m._id}
-                      onClick={() => setSelectedId(m._id)}
-                    >
-                      <ListItemText
-                        primary={
-                          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-                            <Typography variant="body2" fontWeight={700}>
-                              {m.tournament?.name || "Giải ?"}
-                            </Typography>
-                            <Chip size="small" color={chip.color} label={chip.label} />
-                            {courtName && (
-                              <Chip
-                                size="small"
-                                icon={<StadiumIcon sx={{ fontSize: 14 }} />}
-                                label={courtName}
-                                variant="outlined"
-                              />
-                            )}
-                            {gNote && (
-                              <Chip
-                                size="small"
-                                icon={<PoolIcon sx={{ fontSize: 14 }} />}
-                                label={gNote}
-                                color="info"
-                                variant="outlined"
-                              />
-                            )}
-                          </Stack>
-                        }
-                        secondary={
-                          <>
-                            <Typography variant="caption" display="block">
-                              Bracket: {m.bracket?.name} ({m.bracket?.type}) • Stage{" "}
-                              {m.bracket?.stage}
-                            </Typography>
-                            {!gNote && (
-                              <Typography variant="caption" color="text.secondary" display="block">
-                                R{m.round} • #{m.order ?? 0}
-                              </Typography>
-                            )}
-                            <Typography variant="caption" display="block">
-                              {pairLabel(m.pairA, m.tournament?.eventType)} vs{" "}
-                              {pairLabel(m.pairB, m.tournament?.eventType)}
-                            </Typography>
-                          </>
-                        }
-                      />
-                    </ListItemButton>
-                  );
-                })}
-              </List>
-              <Box display="flex" justifyContent="center" py={1}>
-                <Pagination
-                  count={totalPages}
-                  page={page}
-                  onChange={(_, val) => setPage(val)}
-                  size="small"
-                  color="primary"
-                />
-              </Box>
-            </>
-          )}
-        </Card>
+      <Box p={2} display="grid" gridTemplateColumns={{ xs: "1fr", md: "380px 1fr" }} gap={2}>
+        {/* ===== Sidebar mới: accordion theo giải ===== */}
+        <RefereeMatchesPanel selectedId={selectedId} onPickMatch={(id) => setSelectedId(id)} />
 
         {/* ===== Main ===== */}
         {!selectedId ? (
@@ -547,7 +631,7 @@ export default function AdminRefereeConsole() {
                     <Typography variant="body2" color="text.secondary">
                       {match.tournament?.name} • Nhánh {match.bracket?.name} ({match.bracket?.type})
                       • Giai đoạn {match.bracket?.stage} • Ván {match.round} • Trận #
-                      {match.order ?? 0}
+                      {displayOrder(match)}
                     </Typography>
                     {poolNote(match) && (
                       <Chip
@@ -575,7 +659,7 @@ export default function AdminRefereeConsole() {
                 </Box>
 
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                  {/* Trạng thái trận (chip đầy đủ) */}
+                  {/* Trạng thái trận */}
                   <Chip size="small" {...getMatchStatusChip(match.status)} />
                   {isDoubles && (
                     <Chip
@@ -613,7 +697,7 @@ export default function AdminRefereeConsole() {
                 </Stack>
               </Stack>
 
-              {/* (tuỳ chọn) progress mỏng khi refetch nền */}
+              {/* progress mỏng khi refetch */}
               {detailFetching && (
                 <Box
                   sx={{
@@ -933,12 +1017,29 @@ export default function AdminRefereeConsole() {
                 mt={2}
                 flexWrap="wrap"
               >
-                <Tooltip title="Sang ván mới khi ván hiện tại đã đủ điều kiện thắng">
+                {/* Checkbox chế độ tự động */}
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={autoNextGame}
+                      onChange={(e) => setAutoNextGame(e.target.checked)}
+                    />
+                  }
+                  label="Tự động sang ván tiếp theo khi ván hiện tại kết thúc"
+                />
+
+                <Tooltip
+                  title={
+                    autoNextGame
+                      ? "Sang ván mới khi ván hiện tại đủ điều kiện thắng"
+                      : "Cho phép sang ván mới ngay cả khi chưa đủ điểm (sẽ hỏi xác nhận)"
+                  }
+                >
                   <span>
                     <Button
                       variant="contained"
-                      onClick={startNextGame}
-                      disabled={!gameDone || matchPointReached || match.status === "finished"}
+                      onClick={onClickStartNext}
+                      disabled={startBtnDisabled || match.status === "finished"}
                     >
                       Bắt đầu ván tiếp theo
                     </Button>
@@ -983,6 +1084,99 @@ export default function AdminRefereeConsole() {
       </Box>
 
       <Footer />
+
+      {/* Dialog kết thúc ván sớm */}
+      <Dialog open={earlyOpen} onClose={() => setEarlyOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Kết thúc ván hiện tại sớm?</DialogTitle>
+        <DialogContent dividers>
+          <Typography>
+            Ván #{currentIndex + 1}: <b>{curA}</b> - <b>{curB}</b>
+          </Typography>
+
+          {curA === curB ? (
+            <>
+              <Typography sx={{ mt: 2 }}>Hai đội đang hòa. Chọn đội thắng ván này:</Typography>
+              <RadioGroup
+                row
+                value={earlyWinner}
+                onChange={(e) => setEarlyWinner(e.target.value)}
+                sx={{ mt: 1 }}
+              >
+                <FormControlLabel
+                  value="A"
+                  control={<Radio />}
+                  label={`A) ${pairLabel(
+                    match?.pairA,
+                    (match?.tournament?.eventType || "double").toLowerCase()
+                  )}`}
+                />
+                <FormControlLabel
+                  value="B"
+                  control={<Radio />}
+                  label={`B) ${pairLabel(
+                    match?.pairB,
+                    (match?.tournament?.eventType || "double").toLowerCase()
+                  )}`}
+                />
+              </RadioGroup>
+
+              <FormControlLabel
+                sx={{ mt: 1 }}
+                control={
+                  <Checkbox
+                    checked={useCurrentScore}
+                    onChange={(e) => setUseCurrentScore(e.target.checked)}
+                    disabled
+                  />
+                }
+                label="Ghi nhận đúng tỉ số hiện tại (không ép về tỉ số tối thiểu)"
+              />
+              <Typography variant="caption" color="text.secondary">
+                Đang hòa nên không thể ghi nhận đúng tỉ số hiện tại. Hãy chọn đội thắng hoặc dùng
+                chế độ theo luật.
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Alert sx={{ mt: 2 }} severity="info">
+                Sẽ chốt thắng ván cho đội <b>{curA > curB ? "A" : "B"}</b>.
+              </Alert>
+
+              <FormControlLabel
+                sx={{ mt: 1 }}
+                control={
+                  <Checkbox
+                    checked={useCurrentScore}
+                    onChange={(e) => setUseCurrentScore(e.target.checked)}
+                  />
+                }
+                label="Ghi nhận đúng tỉ số hiện tại (không ép về tỉ số tối thiểu)"
+              />
+            </>
+          )}
+
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            {useCurrentScore ? (
+              "Hệ thống sẽ ghi nhận đúng tỉ số hiện tại và tạo ván mới."
+            ) : (
+              <>
+                Hệ thống sẽ ghi nhận tỉ số tối thiểu hợp lệ theo luật (tới {rules.pointsToWin}
+                {rules.winByTwo ? ", chênh ≥2" : ", chênh ≥1"}) và tạo ván mới.
+              </>
+            )}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEarlyOpen(false)}>Hủy</Button>
+          <Button
+            variant="contained"
+            onClick={confirmEarlyEnd}
+            disabled={useCurrentScore && curA === curB}
+          >
+            Xác nhận
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snack.open}
