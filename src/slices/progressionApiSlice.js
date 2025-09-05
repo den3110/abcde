@@ -40,6 +40,13 @@ export const progressionApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["Brackets"], // thường sẽ mở draw session mới
     }),
+    feedStageToNext: builder.mutation({
+      query: ({ tournamentId, sourceStage, targetStage, body }) => ({
+        url: `/admin/tournaments/${tournamentId}/stages/${sourceStage}/feed-to/${targetStage}`,
+        method: "POST",
+        body,
+      }),
+    }),
   }),
 });
 
@@ -48,4 +55,5 @@ export const {
   usePreviewAdvancementMutation,
   useCommitAdvancementMutation,
   usePrefillAdvancementMutation,
+  useFeedStageToNextMutation,
 } = progressionApiSlice;

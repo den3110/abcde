@@ -30,6 +30,8 @@ import {
   AccordionDetails,
 } from "@mui/material";
 import SportsTennisIcon from "@mui/icons-material/SportsTennis";
+import { Paper } from "@mui/material";
+import { AccountTree as AccountTreeIcon } from "@mui/icons-material";
 
 import {
   Add as AddIcon,
@@ -41,6 +43,10 @@ import {
   Stadium as StadiumIcon,
   DeleteSweep as DeleteSweepIcon, // ⭐ NEW
   Refresh as RefreshIcon,
+  Bolt as BoltIcon,
+  PlayCircle as PlayIcon,
+  OpenInNew as OpenInNewIcon,
+  ContentCopy as ContentCopyIcon,
 } from "@mui/icons-material";
 
 import { useNavigate, useParams } from "react-router-dom";
@@ -78,7 +84,16 @@ import {
   usePreviewAdvancementMutation,
   useCommitAdvancementMutation,
   usePrefillAdvancementMutation,
+  useFeedStageToNextMutation, // ⭐ NEW
 } from "slices/progressionApiSlice";
+
+const STATUS_LABELS = {
+  scheduled: "chưa xếp",
+  live: "đang diễn ra",
+  finished: "đã kết thúc",
+  paused: "tạm dừng",
+  canceled: "đã huỷ",
+};
 
 /* ===== Helpers cho đơn/đôi ===== */
 function normType(t) {
@@ -89,10 +104,81 @@ function normType(t) {
 }
 const regName = (reg, evType) => {
   if (!reg) return "—";
-  if (evType === "single") return reg?.player1?.fullName || "N/A";
-  const a = reg?.player1?.fullName || "N/A";
-  const b = reg?.player2?.fullName || "N/A";
+  if (evType === "single") return reg?.player1?.nickName || "N/A";
+  const a = reg?.player1?.nickName || "N/A";
+  const b = reg?.player2?.nickName || "N/A";
   return `${a} & ${b}`;
+};
+
+const detectVideoUrl = (m) => m?.video || "";
+const sanitizeVideoUrl = (s) => String(s || "").trim();
+
+// ------ Responsive styles cho Accordion/list ------
+const sxUI = {
+  summary: {
+    "& .MuiAccordionSummary-content": { m: 0, width: "100%" },
+    pr: { xs: 1, sm: 2 },
+  },
+  headerRow: {
+    width: "100%",
+    gap: 1,
+    flexDirection: { xs: "column", md: "row" },
+    alignItems: { xs: "flex-start", md: "center" },
+    justifyContent: "space-between",
+  },
+  headerLeft: {
+    minWidth: 0,
+    flexWrap: "wrap",
+    alignItems: "center",
+    columnGap: 1,
+    rowGap: 0.5,
+  },
+  headerTitle: {
+    typography: { xs: "subtitle1", sm: "h6" },
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    maxWidth: { xs: "100%", md: 520 },
+  },
+  chip: { ml: 0.5 },
+  headerActions: {
+    flexWrap: "wrap",
+    columnGap: 1,
+    rowGap: 0.5,
+    justifyContent: { xs: "flex-start", md: "flex-end" },
+  },
+  bulkBar: {
+    mt: 0.5,
+    mb: 1.5,
+    p: 1.25,
+    borderRadius: 1,
+    border: "1px dashed #ddd",
+    bgcolor: "#fafafa",
+  },
+  matchRow: {
+    p: 1,
+    bgcolor: "#fff",
+    borderRadius: 1,
+    border: "1px solid #eee",
+    display: "grid",
+    gridTemplateColumns: { xs: "1fr", sm: "auto 1fr auto" },
+    gap: 8,
+    alignItems: "center",
+  },
+  actionsBar: {
+    position: "sticky",
+    top: 100,
+    zIndex: 1,
+    p: 1,
+    mb: 1,
+    border: "1px solid #eee",
+    borderRadius: 1,
+    bgcolor: "background.paper",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
 };
 
 export default function AdminBracketsPage() {
@@ -116,7 +202,7 @@ export default function AdminBracketsPage() {
     error: refsError,
   } = useGetUsersQuery({ page: 1, keyword: "", role: "referee" });
   const referees = usersData?.users ?? [];
-  const refName = (u) => u?.fullName || u?.name || u?.email || "Referee";
+  const refName = (u) => u?.nickName || u?.name || u?.email || "Referee";
 
   // 3) Các cặp đăng ký
   const {
@@ -169,6 +255,20 @@ export default function AdminBracketsPage() {
   const [previewAdvancement, { isLoading: loadingPreview }] = usePreviewAdvancementMutation();
   const [commitAdvancement, { isLoading: loadingCommit }] = useCommitAdvancementMutation();
   const [prefillAdvancement, { isLoading: loadingPrefill }] = usePrefillAdvancementMutation();
+  // ⭐ NEW: stage → next-stage auto-feed
+  const [feedStageToNext, { isLoading: feedingStage }] = useFeedStageToNextMutation();
+
+  const [feedDlg, setFeedDlg] = useState({
+    open: false,
+    target: null, // bracket KO hiện tại
+    sourceStage: 1, // mặc định = target.stage - 1
+    targetStage: 1,
+    mode: "AUTO", // AUTO | GROUP_TOP | KO_ROUND_WINNERS | PO_ROUND_WINNERS
+    koRound: 1, // dùng khi *_ROUND_WINNERS
+    forceReset: true, // xoá pair*/previous* trước khi fill
+    entryOrder: "byMatch", // byMatch | snake
+    dryRun: false,
+  });
 
   /* =====================
    *  Snackbar
@@ -223,7 +323,7 @@ export default function AdminBracketsPage() {
   const [newDrawSize, setNewDrawSize] = useState(0); // knockout draw (2^n)
   const [newMaxRounds, setNewMaxRounds] = useState(1); // knockout n
   const [useCustomScale, setUseCustomScale] = useState(false);
-
+  const [newVideo, setNewVideo] = useState("");
   // ⭐ STATE: RoundElim
   const [reDrawSize, setReDrawSize] = useState(0); // 2^n
   const [reCutRounds, setReCutRounds] = useState(1); // 1 => n→n/2, 2 => n→n/4, ...
@@ -283,7 +383,12 @@ export default function AdminBracketsPage() {
   const [selBracket, setSelBracket] = useState("");
   const [pairA, setPairA] = useState("");
   const [pairB, setPairB] = useState("");
-  const [rules, setRules] = useState({ bestOf: 3, pointsToWin: 11, winByTwo: true });
+  const [rules, setRules] = useState({
+    bestOf: 3,
+    pointsToWin: 11,
+    winByTwo: true,
+    cap: { mode: "none", points: null }, // ⭐ NEW
+  });
   const [newRound, setNewRound] = useState(1);
   const [newOrder, setNewOrder] = useState(0);
   const [newReferee, setNewReferee] = useState("");
@@ -311,6 +416,7 @@ export default function AdminBracketsPage() {
   const [emRatingApplied, setEmRatingApplied] = useState(false);
   const [emRatingAppliedAt, setEmRatingAppliedAt] = useState(null);
   const [emResetScores, setEmResetScores] = useState(false);
+  const [emVideo, setEmVideo] = useState("");
   /* =====================
    *  STATE: Tạo vòng sau thủ công
    * ===================== */
@@ -367,6 +473,55 @@ export default function AdminBracketsPage() {
     setNewDrawSize(sz);
     setEbUseCustomScale(false);
   }, [bracketDlg, paidCount, regsCount, editingBracket?.drawRounds]); // eslint-disable-line
+
+  const openFeedDlg = (br) => {
+    const ts = Number(br.stage ?? 1);
+    setFeedDlg({
+      open: true,
+      target: br,
+      sourceStage: Math.max(1, ts - 1),
+      targetStage: ts,
+      mode: "AUTO",
+      koRound: 1,
+      forceReset: true,
+      entryOrder: "byMatch",
+      dryRun: false,
+    });
+  };
+
+  const doFeedStage = async () => {
+    try {
+      const { target, sourceStage, targetStage, mode, koRound, forceReset, entryOrder, dryRun } =
+        feedDlg;
+      if (!target?._id) return;
+
+      const body = {
+        mode,
+        forceReset,
+        entryOrder,
+        dryRun,
+        // giới hạn feed chỉ vào bracket này
+        targetBrackets: [String(target._id)],
+      };
+      if (mode === "KO_ROUND_WINNERS" || mode === "PO_ROUND_WINNERS") {
+        body.koRound = Math.max(1, Number(koRound) || 1);
+      }
+
+      await feedStageToNext({
+        tournamentId,
+        sourceStage: Number(sourceStage),
+        targetStage: Number(targetStage),
+        body,
+      }).unwrap();
+
+      showSnack("success", "Đã auto fill từ stage trước vào bracket này.");
+      setFeedDlg((s) => ({ ...s, open: false }));
+      await refetchMatches();
+      await refetchBrackets();
+    } catch (e) {
+      showSnack("error", e?.data?.message || e.error || "Lỗi auto fill stage");
+    }
+  };
 
   /* =====================
    *  GROUPING (hiển thị)
@@ -861,12 +1016,18 @@ export default function AdminBracketsPage() {
     setSelBracket(br._id);
     setPairA("");
     setPairB("");
-    setRules({ bestOf: 3, pointsToWin: 11, winByTwo: true });
+    setRules({
+      bestOf: 3,
+      pointsToWin: 11,
+      winByTwo: true,
+      cap: { mode: "none", points: null }, // ⭐ NEW
+    });
     setNewRound(1);
     setNewOrder(0);
     setNewReferee("");
     setNewRatingDelta(0);
     setMatchDlg(true);
+    setNewVideo("");
   };
 
   const handleCreateMatch = async () => {
@@ -881,9 +1042,18 @@ export default function AdminBracketsPage() {
           order: newOrder,
           pairA,
           pairB,
-          rules,
+          rules: {
+            bestOf: Number(rules.bestOf),
+            pointsToWin: Number(rules.pointsToWin),
+            winByTwo: !!rules.winByTwo,
+            cap: {
+              mode: rules?.cap?.mode ?? "none",
+              points: rules?.cap?.mode === "none" ? null : Number(rules?.cap?.points) || null,
+            },
+          },
           referee: newReferee || undefined,
           ratingDelta: Math.max(0, Number(newRatingDelta) || 0),
+          video: sanitizeVideoUrl(newVideo) || undefined,
         },
       }).unwrap();
       showSnack("success", "Đã tạo trận");
@@ -1000,6 +1170,13 @@ export default function AdminBracketsPage() {
       bestOf: mt.rules?.bestOf ?? 3,
       pointsToWin: mt.rules?.pointsToWin ?? 11,
       winByTwo: typeof mt.rules?.winByTwo === "boolean" ? mt.rules.winByTwo : true,
+      cap: {
+        mode: mt.rules?.cap?.mode ?? "none",
+        points:
+          mt.rules?.cap?.points === undefined || mt.rules?.cap?.points === null
+            ? null
+            : Number(mt.rules.cap.points),
+      },
     });
     setEmStatus(mt.status || "scheduled");
     setEmWinner(mt.winner || "");
@@ -1011,6 +1188,7 @@ export default function AdminBracketsPage() {
     setEmRatingDelta(mt.ratingDelta ?? 0);
     setEmRatingApplied(!!mt.ratingApplied);
     setEmRatingAppliedAt(mt.ratingAppliedAt || null);
+    setEmVideo(mt.video || "");
   };
 
   const willDowngrade = emOldStatus === "finished" && emStatus !== "finished";
@@ -1033,11 +1211,16 @@ export default function AdminBracketsPage() {
             bestOf: Number(emRules.bestOf),
             pointsToWin: Number(emRules.pointsToWin),
             winByTwo: !!emRules.winByTwo,
+            cap: {
+              mode: emRules?.cap?.mode ?? "none",
+              points: emRules?.cap?.mode === "none" ? null : Number(emRules?.cap?.points) || null,
+            },
           },
           status: emStatus,
           winner: emStatus === "finished" ? emWinner : "",
           referee: emReferee || null,
           ratingDelta: Math.max(0, Number(emRatingDelta) || 0),
+          video: sanitizeVideoUrl(emVideo) || "",
         },
       }).unwrap();
 
@@ -1150,7 +1333,7 @@ export default function AdminBracketsPage() {
       <DashboardNavbar />
       <Box p={3}>
         <Typography variant="h4" gutterBottom>
-          Quản lý Brackets & Matches
+          Quản lý Giai đoạn & Trận đấu
         </Typography>
 
         {loading ? (
@@ -1188,6 +1371,14 @@ export default function AdminBracketsPage() {
             >
               Xem Sơ đồ giải
             </Button>
+            <Button
+              sx={{ mb: 3, ml: 2, color: "white !important" }}
+              startIcon={<AccountTreeIcon />}
+              variant="contained"
+              onClick={() => navigate(`/admin/tournaments/${tournamentId}/blueprint`)}
+            >
+              Tạo sơ đồ giải
+            </Button>
 
             {/* Danh sách Brackets & Matches (Accordion) */}
             <Stack spacing={2}>
@@ -1203,25 +1394,11 @@ export default function AdminBracketsPage() {
                 return (
                   <Accordion key={br._id} disableGutters>
                     <AccordionSummary
-                      expandIcon={
-                        <ExpandMoreIcon
-                          sx={{
-                            "& .MuiAccordionSummary-expandIconWrapper .MuiSvgIcon-root": {
-                              fontSize: 36, // chỉnh 28/32/36 tuỳ ý
-                            },
-                          }}
-                        />
-                      }
+                      expandIcon={<ExpandMoreIcon fontSize="large" />}
+                      sx={sxUI.summary}
                     >
-                      {/* Header + select-all */}
-                      <Stack
-                        direction="row"
-                        justifyContent="space-between"
-                        alignItems="center"
-                        sx={{ width: "100%" }}
-                      >
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          {/* chặn toggle khi bấm checkbox */}
+                      <Stack sx={sxUI.headerRow}>
+                        <Stack direction="row" sx={sxUI.headerLeft}>
                           <Box onClick={(e) => e.stopPropagation()}>
                             <FormControlLabel
                               control={
@@ -1236,15 +1413,15 @@ export default function AdminBracketsPage() {
                                 />
                               }
                               label={
-                                <Typography variant="h6" noWrap>
+                                <Typography sx={sxUI.headerTitle}>
                                   {br.name} (
                                   {br.type === "group"
                                     ? "Vòng bảng"
                                     : br.type === "roundElim"
                                     ? "Round Elimination"
                                     : "Knockout"}
-                                  , stage {br.stage}
-                                  {" • "}order {typeof br.order === "number" ? br.order : 0})
+                                  , stage {br.stage} • order{" "}
+                                  {typeof br.order === "number" ? br.order : 0})
                                 </Typography>
                               }
                               sx={{ m: 0 }}
@@ -1254,152 +1431,159 @@ export default function AdminBracketsPage() {
                           {br?.meta?.drawSize > 0 && (
                             <Chip
                               size="small"
-                              sx={{ ml: 1 }}
+                              sx={sxUI.chip}
                               label={`Quy mô: ${br.meta.drawSize} đội (${
                                 br.meta.maxRounds || toRounds(br.meta.drawSize)
                               } vòng)`}
                             />
                           )}
                         </Stack>
-
-                        {/* Actions ở header (chặn toggle) */}
-                        <Stack
-                          direction="row"
-                          spacing={1}
-                          alignItems="center"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Tooltip title="Làm mới danh sách trận trong bracket này">
-                            <span>
-                              <IconButton
-                                onClick={stop(() => doRefreshBracketMatches(br))}
-                                disabled={!!refreshingByBracket[bid] || loadingM}
-                              >
-                                {refreshingByBracket[bid] ? (
-                                  <CircularProgress size={20} />
-                                ) : (
-                                  <RefreshIcon />
-                                )}
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Button
-                            size="small"
-                            onClick={stop(() => openMatchDialog(br))}
-                            startIcon={<AddIcon />}
-                          >
-                            Tạo trận
-                          </Button>
-                          {/* {console.log(br)} */}
-                          <Button
-                            onClick={() =>
-                              navigate(`/admin/brackets/${br._id}/courts?t=${br.tournament?._id}`, {
-                                state: {
-                                  bracketName: br.name,
-                                  tournamentName: br.tournament?.name,
-                                },
-                              })
-                            }
-                            startIcon={<StadiumIcon />}
-                          >
-                            Cấu hình sân
-                          </Button>
-                          {/* Gợi ý dựng skeleton nếu roundElim và chưa có trận */}
-                          {br.type === "roundElim" && (grouped[bid]?.length ?? 0) === 0 && (
-                            <Tooltip title="Dựng sơ đồ round-elim khi chưa có trận">
-                              <span>
-                                <Button
-                                  size="small"
-                                  disabled={buildingSkeleton}
-                                  onClick={stop(async () => {
-                                    const drawSize = Number(br?.meta?.drawSize) || 0;
-                                    const maxCut = Math.max(1, toRounds(drawSize) - 1);
-                                    const k = Math.min(1, maxCut) || 1; // mặc định 1 vòng
-                                    if (!drawSize || !maxCut) {
-                                      showSnack(
-                                        "warning",
-                                        "Bracket chưa có 'meta.drawSize' hợp lệ. Hãy sửa bracket hoặc tạo lại kèm quy mô."
-                                      );
-                                      return;
-                                    }
-                                    try {
-                                      await buildRoundElimSkeleton({
-                                        bracketId: bid,
-                                        body: { drawSize, cutRounds: k, overwrite: false },
-                                      }).unwrap();
-                                      showSnack("success", `Đã dựng sơ đồ round-elim (k = ${k})`);
-                                      refetchMatches();
-                                    } catch (e) {
-                                      showSnack("error", e?.data?.message || e.error);
-                                    }
-                                  })}
-                                >
-                                  Dựng sơ đồ
-                                </Button>
-                              </span>
-                            </Tooltip>
-                          )}
-
-                          <Button size="small" onClick={stop(() => openNextRoundDialog(br))}>
-                            Tạo vòng sau
-                          </Button>
-
-                          <Button
-                            size="small"
-                            onClick={stop(() => {
-                              setAdvTarget(br);
-                              setAdvDlg(true);
-                              setAdvSourceId("");
-                              setAdvMode("GROUP_TOP");
-                              setAdvTopPerGroup(2);
-                              setAdvRound(1);
-                              setAdvLimit(0);
-                              setAdvSeedMethod("rating");
-                              setAdvPairing("standard");
-                              setAdvFillMode("pairs");
-                              setAdvPreview([]);
-                            })}
-                            startIcon={<ExploreIcon />}
-                          >
-                            Lấy đội từ vòng trước
-                          </Button>
-
-                          <IconButton onClick={stop(() => openEditBracket(br))} title="Sửa bracket">
-                            <EditIcon />
-                          </IconButton>
-                          <Tooltip title="Xoá tất cả trận trong bracket này (không xoá bracket)">
-                            <span>
-                              <IconButton
-                                onClick={stop(() => doClearAllMatches(br))}
-                                disabled={clearingAll}
-                              >
-                                <DeleteSweepIcon />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <IconButton
-                            onClick={stop(() => handleDeleteBracket(br))}
-                            title="Xoá bracket"
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Stack>
                       </Stack>
                     </AccordionSummary>
 
                     <AccordionDetails>
+                      {/* ACTIONS BAR – chuyển xuống dưới header */}
+                      <Box sx={sxUI.actionsBar}>
+                        <Tooltip title="Làm mới danh sách trận trong bracket này">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={stop(() => doRefreshBracketMatches(br))}
+                              disabled={!!refreshingByBracket[bid] || loadingM}
+                            >
+                              {refreshingByBracket[bid] ? (
+                                <CircularProgress size={18} />
+                              ) : (
+                                <RefreshIcon />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+
+                        <Button
+                          size="small"
+                          onClick={stop(() => openMatchDialog(br))}
+                          startIcon={<AddIcon />}
+                        >
+                          Tạo trận
+                        </Button>
+
+                        <Button
+                          size="small"
+                          onClick={() =>
+                            navigate(`/admin/brackets/${br._id}/courts?t=${br.tournament?._id}`, {
+                              state: { bracketName: br.name, tournamentName: br.tournament?.name },
+                            })
+                          }
+                          startIcon={<StadiumIcon />}
+                        >
+                          Cấu hình sân
+                        </Button>
+
+                        {br.type === "roundElim" && (grouped[bid]?.length ?? 0) === 0 && (
+                          <Tooltip title="Dựng sơ đồ round-elim khi chưa có trận">
+                            <span>
+                              <Button
+                                size="small"
+                                disabled={buildingSkeleton}
+                                onClick={stop(async () => {
+                                  const drawSize = Number(br?.meta?.drawSize) || 0;
+                                  const maxCut = Math.max(1, toRounds(drawSize) - 1);
+                                  const k = Math.min(1, maxCut) || 1;
+                                  if (!drawSize || !maxCut) {
+                                    showSnack(
+                                      "warning",
+                                      "Bracket chưa có 'meta.drawSize' hợp lệ. Hãy sửa bracket hoặc tạo lại kèm quy mô."
+                                    );
+                                    return;
+                                  }
+                                  try {
+                                    await buildRoundElimSkeleton({
+                                      bracketId: bid,
+                                      body: { drawSize, cutRounds: k, overwrite: false },
+                                    }).unwrap();
+                                    showSnack("success", `Đã dựng sơ đồ round-elim (k = ${k})`);
+                                    refetchMatches();
+                                  } catch (e) {
+                                    showSnack("error", e?.data?.message || e.error);
+                                  }
+                                })}
+                              >
+                                Dựng sơ đồ
+                              </Button>
+                            </span>
+                          </Tooltip>
+                        )}
+
+                        <Button size="small" onClick={stop(() => openNextRoundDialog(br))}>
+                          Tạo vòng sau
+                        </Button>
+
+                        <Button
+                          size="small"
+                          onClick={stop(() => {
+                            setAdvTarget(br);
+                            setAdvDlg(true);
+                            setAdvSourceId("");
+                            setAdvMode("GROUP_TOP");
+                            setAdvTopPerGroup(2);
+                            setAdvRound(1);
+                            setAdvLimit(0);
+                            setAdvSeedMethod("rating");
+                            setAdvPairing("standard");
+                            setAdvFillMode("pairs");
+                            setAdvPreview([]);
+                          })}
+                          startIcon={<ExploreIcon />}
+                        >
+                          Lấy đội từ vòng trước
+                        </Button>
+                        <Button
+                          size="small"
+                          startIcon={<BoltIcon />}
+                          onClick={stop(() => openFeedDlg(br))}
+                        >
+                          Auto fill từ stage trước
+                        </Button>
+
+                        <Tooltip title="Sửa giai đoạn">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={stop(() => openEditBracket(br))}
+                              title="Sửa giai đoạn"
+                            >
+                              <EditIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+
+                        <Tooltip title="Xoá tất cả trận trong bracket này (không xoá bracket)">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={stop(() => doClearAllMatches(br))}
+                              disabled={clearingAll}
+                            >
+                              <DeleteSweepIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Xoá giai đoạn giải đấu này">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={stop(() => handleDeleteBracket(br))}
+                              title="Xoá bracket"
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
                       {/* Bulk action bar (hiện khi có chọn) */}
                       {selectedCount > 0 && (
-                        <Box
-                          sx={{
-                            mt: 0.5,
-                            mb: 1.5,
-                            p: 1.5,
-                            borderRadius: 1,
-                            border: "1px dashed #ddd",
-                            bgcolor: "#fafafa",
-                          }}
-                        >
+                        <Box sx={sxUI.bulkBar}>
                           <Stack
                             direction={{ xs: "column", sm: "row" }}
                             spacing={1}
@@ -1440,10 +1624,7 @@ export default function AdminBracketsPage() {
                           (() => {
                             const byGroup = groupedByGroup[bid] || {};
                             const entries = Object.entries(byGroup).sort((a, b) =>
-                              a[0].localeCompare(b[0], "vi", {
-                                numeric: true,
-                                sensitivity: "base",
-                              })
+                              a[0].localeCompare(b[0], "vi", { numeric: true, sensitivity: "base" })
                             );
 
                             if (!entries.length)
@@ -1460,74 +1641,152 @@ export default function AdminBracketsPage() {
                                     <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
                                       {formatGroupTitle(gk)}
                                     </Typography>
+
                                     <Stack spacing={1}>
                                       {arr.map((mt, idx) => (
-                                        <Stack
-                                          key={mt._id}
-                                          direction="row"
-                                          justifyContent="space-between"
-                                          alignItems="center"
-                                          sx={{
-                                            p: 1,
-                                            bgcolor: "#fff",
-                                            borderRadius: 1,
-                                            border: "1px solid #eee",
-                                          }}
-                                        >
-                                          <Stack direction="row" alignItems="center" spacing={1}>
+                                        <Paper key={mt._id} elevation={0} sx={sxUI.matchRow}>
+                                          {/* checkbox trái (ẩn trên xs) */}
+                                          <Box sx={{ display: { xs: "none", sm: "block" } }}>
                                             <Checkbox
                                               checked={isSelected(bid, mt._id)}
                                               onChange={() => toggleSelect(bid, mt._id)}
                                             />
-                                            <Box>
+                                          </Box>
+
+                                          {/* nội dung chính */}
+                                          <Box>
+                                            <Stack direction="row" alignItems="center" spacing={1}>
+                                              {/* checkbox inline cho xs */}
+                                              <Box sx={{ display: { xs: "block", sm: "none" } }}>
+                                                <Checkbox
+                                                  checked={isSelected(bid, mt._id)}
+                                                  onChange={() => toggleSelect(bid, mt._id)}
+                                                  size="small"
+                                                />
+                                              </Box>
+
                                               <Typography>
                                                 <strong>Trận #{(mt.order ?? idx) + 1}</strong>:{" "}
                                                 <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
                                                 <strong>{getSideLabel(mt, "B")}</strong>
                                               </Typography>
-                                              <Typography variant="caption" color="text.secondary">
-                                                best‐of {mt.rules.bestOf}, tới{" "}
-                                                {mt.rules.pointsToWin}{" "}
-                                                {mt.rules.winByTwo ? "(chênh 2)" : ""} — trạng thái:{" "}
-                                                {mt.status}
-                                                {mt.status === "finished" && mt.winner && (
-                                                  <> — winner: {mt.winner}</>
-                                                )}
-                                                {mt.referee && (
-                                                  <>
-                                                    {" "}
-                                                    — ref:{" "}
-                                                    {typeof mt.referee === "object"
-                                                      ? refName(mt.referee)
-                                                      : referees.find((r) => r._id === mt.referee)
-                                                          ?.name || mt.referee}
-                                                  </>
-                                                )}
-                                                {typeof mt.ratingDelta !== "undefined" && (
-                                                  <>
-                                                    {" "}
-                                                    — Δ: {mt.ratingDelta ?? 0}
-                                                    {mt.ratingApplied ? " (đã áp dụng)" : ""}
-                                                  </>
-                                                )}
-                                              </Typography>
-                                            </Box>
+                                            </Stack>
+
+                                            <Typography variant="caption" color="text.secondary">
+                                              {detectVideoUrl(mt) ? (
+                                                <Stack
+                                                  direction="row"
+                                                  spacing={1}
+                                                  alignItems="center"
+                                                  sx={{ mt: 0.5, flexWrap: "wrap" }}
+                                                >
+                                                  <Chip
+                                                    size="small"
+                                                    icon={<PlayIcon />}
+                                                    label="Video"
+                                                    sx={{ mr: 0.5 }}
+                                                    component="a"
+                                                    clickable
+                                                    href={detectVideoUrl(mt)}
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                  />
+                                                  <IconButton
+                                                    size="small"
+                                                    onClick={stop(() =>
+                                                      window.open(
+                                                        detectVideoUrl(mt),
+                                                        "_blank",
+                                                        "noopener"
+                                                      )
+                                                    )}
+                                                    title="Mở link video"
+                                                  >
+                                                    <OpenInNewIcon fontSize="small" />
+                                                  </IconButton>
+                                                  <IconButton
+                                                    size="small"
+                                                    onClick={stop(async () => {
+                                                      try {
+                                                        await navigator.clipboard.writeText(
+                                                          detectVideoUrl(mt)
+                                                        );
+                                                        showSnack("success", "Đã copy link video");
+                                                      } catch {
+                                                        showSnack("error", "Copy thất bại");
+                                                      }
+                                                    })}
+                                                    title="Copy link video"
+                                                  >
+                                                    <ContentCopyIcon fontSize="small" />
+                                                  </IconButton>
+                                                </Stack>
+                                              ) : null}
+                                              BO {mt.rules.bestOf}, tới {mt.rules.pointsToWin} điểm
+                                              {mt.rules.winByTwo ? " (chênh 2)" : ""}
+                                              {mt.rules?.cap?.mode && mt.rules.cap.mode !== "none"
+                                                ? ` • giới hạn: ${
+                                                    mt.rules.cap.mode === "hard" ? "cứng" : "mềm"
+                                                  }${
+                                                    mt.rules.cap.points
+                                                      ? " " + mt.rules.cap.points
+                                                      : ""
+                                                  }`
+                                                : ""}{" "}
+                                              — trạng thái: {STATUS_LABELS[mt.status] || mt.status}
+                                              {mt.status === "finished" && mt.winner && (
+                                                <> — đội thắng: {mt.winner}</>
+                                              )}
+                                              {mt.referee && (
+                                                <>
+                                                  {" "}
+                                                  — trọng tài:{" "}
+                                                  {typeof mt.referee === "object"
+                                                    ? refName(mt.referee)
+                                                    : referees.find((r) => r._id === mt.referee)
+                                                        ?.name || mt.referee}
+                                                </>
+                                              )}
+                                              {typeof mt.ratingDelta !== "undefined" && (
+                                                <>
+                                                  {" "}
+                                                  — Δ: {mt.ratingDelta ?? 0}
+                                                  {mt.ratingApplied ? " (đã áp dụng)" : ""}
+                                                </>
+                                              )}
+                                            </Typography>
+                                          </Box>
+
+                                          {/* actions */}
+                                          <Stack
+                                            direction="row"
+                                            spacing={0.5}
+                                            justifyContent="flex-end"
+                                          >
+                                            <Tooltip title="Sửa trận">
+                                              <span>
+                                                <IconButton
+                                                  onClick={() => openEditMatch(mt)}
+                                                  title="Sửa trận"
+                                                  size="small"
+                                                >
+                                                  <EditIcon />
+                                                </IconButton>
+                                              </span>
+                                            </Tooltip>
+                                            <Tooltip title="Xoá trận">
+                                              <span>
+                                                <IconButton
+                                                  onClick={() => handleDeleteMatch(mt)}
+                                                  title="Xoá trận"
+                                                  size="small"
+                                                >
+                                                  <DeleteIcon />
+                                                </IconButton>
+                                              </span>
+                                            </Tooltip>
                                           </Stack>
-                                          <Stack direction="row" spacing={0.5}>
-                                            <IconButton
-                                              onClick={() => openEditMatch(mt)}
-                                              title="Sửa trận"
-                                            >
-                                              <EditIcon />
-                                            </IconButton>
-                                            <IconButton
-                                              onClick={() => handleDeleteMatch(mt)}
-                                              title="Xoá trận"
-                                            >
-                                              <DeleteIcon />
-                                            </IconButton>
-                                          </Stack>
-                                        </Stack>
+                                        </Paper>
                                       ))}
                                     </Stack>
                                   </Box>
@@ -1538,67 +1797,145 @@ export default function AdminBracketsPage() {
                         ) : (
                           <>
                             {(grouped[bid] || []).map((mt, idx) => (
-                              <Stack
-                                key={mt._id}
-                                direction="row"
-                                justifyContent="space-between"
-                                alignItems="center"
-                                sx={{ p: 1, backgroundColor: "#fafafa", borderRadius: 1 }}
-                              >
-                                <Stack direction="row" alignItems="center" spacing={1}>
+                              <Paper key={mt._id} elevation={0} sx={sxUI.matchRow}>
+                                {/* checkbox trái (ẩn trên xs) */}
+                                <Box sx={{ display: { xs: "none", sm: "block" } }}>
                                   <Checkbox
                                     checked={isSelected(bid, mt._id)}
                                     onChange={() => toggleSelect(bid, mt._id)}
                                   />
-                                  <Box>
+                                </Box>
+
+                                {/* nội dung chính */}
+                                <Box>
+                                  <Stack direction="row" alignItems="center" spacing={1}>
+                                    <Box sx={{ display: { xs: "block", sm: "none" } }}>
+                                      <Checkbox
+                                        checked={isSelected(bid, mt._id)}
+                                        onChange={() => toggleSelect(bid, mt._id)}
+                                        size="small"
+                                      />
+                                    </Box>
+
                                     <Typography>
-                                      Vòng {mt.round || 1} — <strong>#{mt.order ?? idx}</strong>:{" "}
+                                      Vòng {mt.round || 1} —{" "}
+                                      <strong>#{(mt.order ?? idx) + 1}</strong>:{" "}
                                       <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
                                       <strong>{getSideLabel(mt, "B")}</strong>
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                      best‐of {mt.rules.bestOf}, tới {mt.rules.pointsToWin}{" "}
-                                      {mt.rules.winByTwo ? "(chênh 2)" : ""} — trạng thái:{" "}
-                                      {mt.status}
-                                      {mt.status === "finished" && mt.winner && (
-                                        <> — winner: {mt.winner}</>
-                                      )}
-                                      {mt.referee && (
-                                        <>
-                                          {" "}
-                                          — ref:{" "}
-                                          {typeof mt.referee === "object"
-                                            ? refName(mt.referee)
-                                            : referees.find((r) => r._id === mt.referee)?.name ||
-                                              mt.referee}
-                                        </>
-                                      )}
-                                      {typeof mt.ratingDelta !== "undefined" && (
-                                        <>
-                                          {" "}
-                                          — Δ: {mt.ratingDelta ?? 0}
-                                          {mt.ratingApplied ? " (đã áp dụng)" : ""}
-                                        </>
-                                      )}
-                                    </Typography>
-                                  </Box>
+                                  </Stack>
+
+                                  <Typography variant="caption" color="text.secondary">
+                                    {detectVideoUrl(mt) ? (
+                                      <Stack
+                                        direction="row"
+                                        spacing={1}
+                                        alignItems="center"
+                                        sx={{ mt: 0.5, flexWrap: "wrap" }}
+                                      >
+                                        <Chip
+                                          size="small"
+                                          icon={<PlayIcon />}
+                                          label="Video"
+                                          sx={{ mr: 0.5 }}
+                                          component="a"
+                                          clickable
+                                          href={detectVideoUrl(mt)}
+                                          target="_blank"
+                                          rel="noopener"
+                                        />
+                                        <IconButton
+                                          size="small"
+                                          onClick={stop(() =>
+                                            window.open(detectVideoUrl(mt), "_blank", "noopener")
+                                          )}
+                                          title="Mở link video"
+                                        >
+                                          <OpenInNewIcon fontSize="small" />
+                                        </IconButton>
+                                        <IconButton
+                                          size="small"
+                                          onClick={stop(async () => {
+                                            try {
+                                              await navigator.clipboard.writeText(
+                                                detectVideoUrl(mt)
+                                              );
+                                              showSnack("success", "Đã copy link video");
+                                            } catch {
+                                              showSnack("error", "Copy thất bại");
+                                            }
+                                          })}
+                                          title="Copy link video"
+                                        >
+                                          <ContentCopyIcon fontSize="small" />
+                                        </IconButton>
+                                      </Stack>
+                                    ) : null}
+                                    BO {mt.rules.bestOf}, tới {mt.rules.pointsToWin} điểm
+                                    {mt.rules.winByTwo ? " (chênh 2)" : ""}
+                                    {mt.rules?.cap?.mode &&
+                                    mt.rules.cap.mode !== "none" &&
+                                    mt.rules.cap.points ? (
+                                      <>
+                                        {" — điểm chạm "}
+                                        {mt.rules.cap.points}
+                                        {mt.rules.cap.mode === "hard"
+                                          ? " (giới hạn cứng)"
+                                          : " (giới hạn mềm)"}
+                                      </>
+                                    ) : null}
+                                    {" — trạng thái: "}
+                                    {STATUS_LABELS[mt.status] || mt.status}
+                                    {mt.status === "finished" && mt.winner && (
+                                      <> — đội thắng: {mt.winner}</>
+                                    )}
+                                    {mt.referee && (
+                                      <>
+                                        {" — trọng tài: "}
+                                        {typeof mt.referee === "object"
+                                          ? refName(mt.referee)
+                                          : referees.find((r) => r._id === mt.referee)?.name ||
+                                            mt.referee}
+                                      </>
+                                    )}
+                                    {typeof mt.ratingDelta !== "undefined" && (
+                                      <>
+                                        {" — Δ: "}
+                                        {mt.ratingDelta ?? 0}
+                                        {mt.ratingApplied ? " (đã áp dụng)" : ""}
+                                      </>
+                                    )}
+                                  </Typography>
+                                </Box>
+
+                                {/* actions */}
+                                <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                                  <Tooltip title="Sửa trận">
+                                    <span>
+                                      <IconButton
+                                        onClick={stop(() => openEditMatch(mt))}
+                                        title="Sửa trận"
+                                        size="small"
+                                      >
+                                        <EditIcon />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                  <Tooltip title="Xoá trận">
+                                    <span>
+                                      <IconButton
+                                        onClick={stop(() => handleDeleteMatch(mt))}
+                                        title="Xoá trận"
+                                        size="small"
+                                      >
+                                        <DeleteIcon />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
                                 </Stack>
-                                <Stack direction="row" spacing={0.5}>
-                                  <IconButton
-                                    onClick={stop(() => openEditMatch(mt))}
-                                    title="Sửa trận"
-                                  >
-                                    <EditIcon />
-                                  </IconButton>
-                                  <IconButton
-                                    onClick={stop(() => handleDeleteMatch(mt))}
-                                    title="Xoá trận"
-                                  >
-                                    <DeleteIcon />
-                                  </IconButton>
-                                </Stack>
-                              </Stack>
+                              </Paper>
                             ))}
+
                             {!grouped[bid]?.length && (
                               <Typography variant="body2" color="text.secondary">
                                 Chưa có trận nào.
@@ -2117,7 +2454,14 @@ export default function AdminBracketsPage() {
                 </MenuItem>
               ))}
             </TextField>
-
+            <TextField
+              label="Link video"
+              fullWidth
+              value={newVideo}
+              onChange={(e) => setNewVideo(e.target.value)}
+              placeholder="https://..., m3u8, rtmp://..., v.v."
+              helperText="Nhập URL video/stream (YouTube, Facebook, Twitch, HLS, RTMP,...)"
+            />
             <TextField
               select
               fullWidth
@@ -2196,7 +2540,54 @@ export default function AdminBracketsPage() {
                   <MenuItem value="no">Không</MenuItem>
                 </TextField>
               </Grid>
-
+              <Grid item xs={6} md={4}>
+                <TextField
+                  select
+                  label="Chế độ chạm (cap)"
+                  fullWidth
+                  value={rules?.cap?.mode ?? "none"}
+                  onChange={(e) =>
+                    setRules((r) => ({
+                      ...r,
+                      cap: {
+                        ...(r.cap || {}),
+                        mode: e.target.value,
+                        points: r.cap?.points ?? null,
+                      },
+                    }))
+                  }
+                  sx={{
+                    "& .MuiInputBase-root": { minHeight: 56 },
+                    "& .MuiSelect-select": { py: 2 },
+                  }}
+                  helperText="hard: ai chạm điểm là thắng ngay • soft: ≥cap thì hơn 1 là kết thúc"
+                >
+                  <MenuItem value="none">Không dùng</MenuItem>
+                  <MenuItem value="hard">Hard cap (chạm là thắng)</MenuItem>
+                  <MenuItem value="soft">Soft cap (≥cap, hơn 1 là xong)</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={6} md={4}>
+                <TextField
+                  label="Điểm chạm (cap)"
+                  type="number"
+                  fullWidth
+                  value={rules?.cap?.points ?? ""}
+                  onChange={(e) =>
+                    setRules((r) => ({
+                      ...r,
+                      cap: {
+                        ...(r.cap || { mode: "none" }),
+                        points:
+                          e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1),
+                      },
+                    }))
+                  }
+                  disabled={(rules?.cap?.mode ?? "none") === "none"}
+                  helperText="VD: 15 → ai chạm 15 trước là win (hard) hoặc ≥15 hơn 1 là win (soft)"
+                  inputProps={{ min: 1, step: 1 }}
+                />
+              </Grid>
               <Grid item xs={12}>
                 <TextField
                   label="Điểm cộng/trừ (rating delta)"
@@ -2252,7 +2643,14 @@ export default function AdminBracketsPage() {
                 onChange={(e) => setEmOrder(Math.max(0, Number(e.target.value)))}
               />
             </Stack>
-
+            <TextField
+              label="Link video"
+              fullWidth
+              value={emVideo}
+              onChange={(e) => setEmVideo(e.target.value)}
+              placeholder="https://..., m3u8, rtmp://..., v.v."
+              helperText="Để trống rồi Lưu để xoá link video"
+            />
             <TextField
               select
               fullWidth
@@ -2373,6 +2771,46 @@ export default function AdminBracketsPage() {
                   <MenuItem value="yes">Có</MenuItem>
                   <MenuItem value="no">Không</MenuItem>
                 </TextField>
+              </Grid>
+              <Grid item xs={6} md={4}>
+                <TextField
+                  select
+                  label="Chế độ chạm (cap)"
+                  fullWidth
+                  value={emRules?.cap?.mode ?? "none"}
+                  onChange={(e) =>
+                    setEmRules((r) => ({ ...r, cap: { ...(r.cap || {}), mode: e.target.value } }))
+                  }
+                  sx={{
+                    "& .MuiInputBase-root": { minHeight: 56 },
+                    "& .MuiSelect-select": { py: 2 },
+                  }}
+                >
+                  <MenuItem value="none">Không dùng</MenuItem>
+                  <MenuItem value="hard">Hard cap (chạm là thắng)</MenuItem>
+                  <MenuItem value="soft">Soft cap (≥cap, hơn 1 là xong)</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={6} md={4}>
+                <TextField
+                  label="Điểm chạm (cap)"
+                  type="number"
+                  fullWidth
+                  value={emRules?.cap?.points ?? ""}
+                  onChange={(e) =>
+                    setEmRules((r) => ({
+                      ...r,
+                      cap: {
+                        ...(r.cap || { mode: "none" }),
+                        points:
+                          e.target.value === "" ? "" : Math.max(1, Number(e.target.value) || 1),
+                      },
+                    }))
+                  }
+                  disabled={(emRules?.cap?.mode ?? "none") === "none"}
+                  inputProps={{ min: 1, step: 1 }}
+                  helperText="VD: 15"
+                />
               </Grid>
 
               <Grid item xs={12}>
@@ -3051,6 +3489,134 @@ export default function AdminBracketsPage() {
             disabled={!advTarget || !advSourceId || loadingCommit}
           >
             {loadingCommit ? "Đang commit..." : "Commit tạo trận ngay"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {/* Dialog: Auto fill từ stage trước (Stage → Stage) */}
+      <Dialog
+        open={feedDlg.open}
+        onClose={() => setFeedDlg((s) => ({ ...s, open: false }))}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          Auto fill từ stage {feedDlg.sourceStage} → {feedDlg.targetStage}
+          {feedDlg.target ? (
+            <>
+              {" "}
+              • <b>{feedDlg.target.name}</b>
+            </>
+          ) : null}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            <Alert severity="info">
+              Dùng cho các tình huống: <b>Group → KO</b> (lấy TOP theo BXH), <b>PO/KO → KO</b>
+              (lấy winners của 1 round). Hệ thống sẽ nối khung KO (matchWinner → previousA/B) sau
+              khi fill.
+            </Alert>
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                label="Source stage"
+                type="number"
+                value={feedDlg.sourceStage}
+                onChange={(e) =>
+                  setFeedDlg((s) => ({
+                    ...s,
+                    sourceStage: Math.max(1, Number(e.target.value) || 1),
+                  }))
+                }
+                sx={{ minWidth: 160 }}
+              />
+              <TextField
+                label="Target stage"
+                type="number"
+                value={feedDlg.targetStage}
+                onChange={(e) =>
+                  setFeedDlg((s) => ({
+                    ...s,
+                    targetStage: Math.max(1, Number(e.target.value) || 1),
+                  }))
+                }
+                sx={{ minWidth: 160 }}
+              />
+            </Stack>
+
+            <TextField
+              select
+              label="Chế độ"
+              value={feedDlg.mode}
+              onChange={(e) => setFeedDlg((s) => ({ ...s, mode: e.target.value }))}
+              sx={{ minWidth: 260 }}
+            >
+              <MenuItem value="AUTO">AUTO — tự nhận group/KO/PO</MenuItem>
+              <MenuItem value="GROUP_TOP">GROUP_TOP — BXH → KO</MenuItem>
+              <MenuItem value="KO_ROUND_WINNERS">
+                KO_ROUND_WINNERS — lấy winners của 1 round
+              </MenuItem>
+              <MenuItem value="PO_ROUND_WINNERS">
+                PO_ROUND_WINNERS — (roundElim/PO) winners
+              </MenuItem>
+            </TextField>
+
+            {(feedDlg.mode === "KO_ROUND_WINNERS" || feedDlg.mode === "PO_ROUND_WINNERS") && (
+              <TextField
+                type="number"
+                label="Round (nguồn)"
+                value={feedDlg.koRound}
+                onChange={(e) =>
+                  setFeedDlg((s) => ({ ...s, koRound: Math.max(1, Number(e.target.value) || 1) }))
+                }
+                helperText="VD: round 1 (vòng đầu) của KO/PO nguồn"
+                sx={{ minWidth: 200 }}
+              />
+            )}
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                select
+                label="Bố trí slot R1"
+                value={feedDlg.entryOrder}
+                onChange={(e) => setFeedDlg((s) => ({ ...s, entryOrder: e.target.value }))}
+                helperText="byMatch: A rồi B; snake: xen kẽ A/B cho match lẻ"
+                sx={{ minWidth: 220 }}
+              >
+                <MenuItem value="byMatch">byMatch</MenuItem>
+                <MenuItem value="snake">snake</MenuItem>
+              </TextField>
+
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={feedDlg.forceReset}
+                    onChange={(e) => setFeedDlg((s) => ({ ...s, forceReset: e.target.checked }))}
+                  />
+                }
+                label="Force reset slot KO trước khi fill"
+              />
+
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={feedDlg.dryRun}
+                    onChange={(e) => setFeedDlg((s) => ({ ...s, dryRun: e.target.checked }))}
+                  />
+                }
+                label="Dry-run (chỉ xem số lượng)"
+              />
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setFeedDlg((s) => ({ ...s, open: false }))}>Huỷ</Button>
+          <Button
+            onClick={doFeedStage}
+            variant="contained"
+            disabled={feedingStage}
+            sx={{ color: "white !important" }}
+          >
+            {feedingStage ? "Đang áp dụng..." : "Áp dụng"}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Box,
   Card,
@@ -31,7 +31,6 @@ import {
   Stop,
   Add,
   Remove,
-  Refresh,
   Flag,
   SportsScore,
   Keyboard as KeyboardIcon,
@@ -39,9 +38,8 @@ import {
   Stadium as StadiumIcon,
   Info as InfoIcon,
   GridView as PoolIcon,
-  ExpandMore as ExpandMoreIcon,
-  FilterAlt as FilterAltIcon,
-  Search as SearchIcon,
+  Casino as CasinoIcon,
+  RestartAlt as RestartIcon,
 } from "@mui/icons-material";
 import { keyframes } from "@emotion/react";
 
@@ -50,22 +48,18 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
 
 import {
-  // ✨ Hooks mới cho sidebar (nhớ thêm trong tournamentsApiSlice như đã hướng dẫn):
-  useGetRefereeTournamentsQuery,
-  useGetRefereeBracketsQuery,
-  useListRefereeMatchesByTournamentQuery,
-  // Chi tiết + thao tác trận giữ nguyên:
   useGetMatchQuery,
   useRefereeIncPointMutation,
   useRefereeSetGameScoreMutation,
   useRefereeSetStatusMutation,
   useRefereeSetWinnerMutation,
+  // 👇 NEW: dùng API nextGame thay vì tự setGame để mở ván mới
+  useRefereeNextGameMutation,
 } from "slices/tournamentsApiSlice";
 import { useSocket } from "context/SocketContext";
 import RefereeMatchesPanel from "./RefereeMatchesPanel";
 
 /* ================= helpers ================= */
-// Việt hoá đầy đủ trạng thái trận
 export const VI_MATCH_STATUS = {
   all: { label: "Tất cả", color: "default" },
   scheduled: { label: "Chưa xếp", color: "default" },
@@ -77,15 +71,20 @@ export const VI_MATCH_STATUS = {
 export const getMatchStatusChip = (s) =>
   VI_MATCH_STATUS[s] || { label: s || "—", color: "default" };
 
-// đặt cạnh các helpers khác
+// ===== cap hint (UI) =====
+const capHint = (rules) => {
+  const mode = String(rules?.cap?.mode || "none");
+  const pts = Number(rules?.cap?.points);
+  if (!pts || !Number.isFinite(pts) || mode === "none") return "";
+  const flavor = mode === "hard" ? "cứng – chạm là kết thúc" : "mềm – chạm là bỏ luật chênh 2";
+  return ` • Điểm chạm ${pts} (${flavor})`;
+};
+
 const isEditableTarget = (el) => {
   if (!el) return false;
   const tag = el.tagName?.toLowerCase();
-  // input/textarea/select thật sự
   if (tag === "input" || tag === "textarea" || tag === "select") return true;
-  // contenteditable
   if (el.isContentEditable) return true;
-  // MUI input wrapper hoặc những nơi ta đánh dấu bỏ qua
   if (
     el.closest?.(
       '.MuiInputBase-root, [role="combobox"], [contenteditable="true"], [data-hotkeys-ignore="true"]'
@@ -97,10 +96,11 @@ const isEditableTarget = (el) => {
 };
 
 function nickOrName(p) {
-  return p?.nickname || p?.nick || p?.shortName || p?.fullName || p?.name || "N/A";
+  return p?.nickname || p?.nick || p?.shortName || p?.fullName || p?.name || "Chưa có đội";
 }
+
 export function pairLabel(reg, eventType = "double") {
-  if (!reg) return "—";
+  if (!reg) return "Chưa có đội";
   const p1 = nickOrName(reg.player1 || reg.p1);
   const p2 = nickOrName(reg.player2 || reg.p2);
   return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
@@ -114,7 +114,6 @@ const isGameWin = (a = 0, b = 0, pointsToWin = 11, winByTwo = true) => {
   return winByTwo ? diff >= 2 : diff >= 1;
 };
 
-// Gợi ý chú thích vòng bảng
 export const poolNote = (m) => {
   const isGroup =
     (m?.format || "").toLowerCase() === "group" ||
@@ -128,11 +127,6 @@ export const poolNote = (m) => {
 const isGroupType = (m) =>
   (m?.format || "").toLowerCase() === "group" || (m?.bracket?.type || "").toLowerCase() === "group";
 
-/** Trả về số thứ tự trận để hiển thị (#)
- * - Vòng bảng: +1
- * - Khác: giữ nguyên
- * - Nếu không có order: group -> 1, non-group -> 0
- */
 export const displayOrder = (m) => {
   const hasOrd = Number.isFinite(Number(m?.order));
   const ord = hasOrd ? Number(m.order) : null;
@@ -140,7 +134,6 @@ export const displayOrder = (m) => {
   return isGroupType(m) ? ord + 1 : ord;
 };
 
-// Mã trận: KO/PO -> R{round}#{order}, Group -> G{pool}#{displayOrder}, còn lại fallback R{round}#{order}
 export function matchCode(m) {
   const t = (m?.bracket?.type || m?.format || "").toLowerCase();
   const ord = Number.isFinite(Number(m?.order)) ? Number(m.order) : 0;
@@ -154,17 +147,7 @@ export function matchCode(m) {
   return `R${m?.round ?? "?"}#${ord}`;
 }
 
-// debounce nho nhỏ cho ô tìm kiếm
-function useDebounced(value, delay = 400) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return v;
-}
-
-/* ======== Animations ======== */
+/* ======== Animations (visual only) ======== */
 const pulse = keyframes`
   0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(25,118,210,.35); }
   40%  { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(25,118,210,0); }
@@ -184,6 +167,182 @@ const sparkle = keyframes`
   30%  { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%,-50%) rotate(40deg) scale(1.4); }
 `;
+const flipPulse = keyframes`
+  0%   { transform: scale(1);   filter: brightness(1); }
+  50%  { transform: scale(1.02); filter: brightness(1.06); }
+  100% { transform: scale(1);   filter: brightness(1); }
+`;
+
+function ColorCoinToss() {
+  const [phase, setPhase] = React.useState("idle");
+  const [active, setActive] = React.useState("blue");
+  const [result, setResult] = React.useState(null);
+  const flipTimeoutRef = React.useRef(null);
+  const stopTimeoutRef = React.useRef(null);
+  const startAtRef = React.useRef(0);
+  const activeRef = React.useRef(active);
+  React.useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+  const clearTimers = React.useCallback(() => {
+    if (flipTimeoutRef.current) {
+      clearTimeout(flipTimeoutRef.current);
+      flipTimeoutRef.current = null;
+    }
+    if (stopTimeoutRef.current) {
+      clearTimeout(stopTimeoutRef.current);
+      stopTimeoutRef.current = null;
+    }
+  }, []);
+  React.useEffect(() => () => clearTimers(), [clearTimers]);
+  const tickFlip = React.useCallback(() => {
+    const now =
+      typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    const elapsed = now - startAtRef.current;
+    const total = 5000;
+    const progress = Math.min(1, elapsed / total);
+    const base = 90;
+    const slowFactor = 700;
+    const delay = Math.round(base + slowFactor * progress);
+    setActive((p) => (p === "blue" ? "red" : "blue"));
+    flipTimeoutRef.current = setTimeout(tickFlip, delay);
+  }, []);
+  const start = React.useCallback(() => {
+    if (phase === "running") return;
+    clearTimers();
+    setResult(null);
+    setPhase("running");
+    setActive(Math.random() < 0.5 ? "blue" : "red");
+    startAtRef.current =
+      typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    tickFlip();
+    stopTimeoutRef.current = setTimeout(() => {
+      if (flipTimeoutRef.current) {
+        clearTimeout(flipTimeoutRef.current);
+        flipTimeoutRef.current = null;
+      }
+      const finalColor = activeRef.current;
+      setPhase("done");
+      setResult(finalColor);
+      setActive(finalColor);
+    }, 5000);
+  }, [phase, clearTimers, tickFlip]);
+  const reset = React.useCallback(() => {
+    clearTimers();
+    setPhase("idle");
+    setActive("blue");
+    setResult(null);
+  }, [clearTimers]);
+  const Panel = ({ kind }) => {
+    const isActive = phase === "running" && active === kind;
+    const isResult = phase === "done" && result === kind;
+    const label = kind === "blue" ? "ĐỘI XANH" : "ĐỘI ĐỎ";
+    const color = kind === "blue" ? "primary.main" : "error.main";
+    return (
+      <Paper
+        variant="outlined"
+        sx={{
+          p: 2,
+          flex: 1,
+          minHeight: 120,
+          display: "grid",
+          alignContent: "center",
+          justifyItems: "center",
+          position: "relative",
+          borderWidth: 2,
+          borderColor: isResult ? color : "divider",
+          boxShadow: isActive
+            ? "0 0 0 2px rgba(0,0,0,.06) inset, 0 0 24px rgba(0,0,0,.12)"
+            : "none",
+          animation: isActive ? `${flipPulse} 600ms ease-in-out infinite` : "none",
+          overflow: "hidden",
+          transition: "border-color .25s ease, box-shadow .25s ease",
+        }}
+      >
+        <Typography variant="h5" fontWeight={900}>
+          {label}
+        </Typography>
+        <Chip size="small" sx={{ mt: 1, bgcolor: color, color: "#fff" }} label={label} />
+        {isResult && (
+          <Chip
+            size="small"
+            color={kind === "blue" ? "primary" : "error"}
+            sx={{ position: "absolute", top: 8, right: 8 }}
+            label="KẾT QUẢ"
+          />
+        )}
+      </Paper>
+    );
+  };
+  const barColor = phase === "idle" ? "divider" : active === "blue" ? "primary.main" : "error.main";
+  const barAnim = phase === "running" ? `${flipPulse} 700ms ease-in-out infinite` : "none";
+  return (
+    <Card sx={{ p: 2 }}>
+      <Box sx={{ mb: 1 }}>
+        <Box
+          sx={{
+            height: 10,
+            borderRadius: 1,
+            bgcolor: barColor,
+            transition: "background-color .2s ease",
+            animation: barAnim,
+          }}
+        />
+        <Stack direction="row" justifyContent="center" alignItems="center" sx={{ mt: 1 }}>
+          {phase === "running" && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`Đang bốc thăm: ${active === "blue" ? "Đội Xanh" : "Đội Đỏ"}`}
+            />
+          )}
+          {phase === "done" && result && (
+            <Chip
+              size="small"
+              color={result === "blue" ? "primary" : "error"}
+              label={`KẾT QUẢ: ${result === "blue" ? "Đội Xanh" : "Đội Đỏ"}`}
+            />
+          )}
+        </Stack>
+      </Box>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography variant="h6" fontWeight={800}>
+          Bốc thăm màu (5s)
+        </Typography>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="contained"
+            startIcon={<CasinoIcon />}
+            onClick={start}
+            disabled={phase === "running"}
+          >
+            Bắt đầu
+          </Button>
+          <Button
+            variant="outlined"
+            color="inherit"
+            startIcon={<RestartIcon />}
+            onClick={reset}
+            disabled={phase === "running"}
+          >
+            Reset
+          </Button>
+        </Stack>
+      </Stack>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="stretch">
+        <Panel kind="blue" />
+        <Panel kind="red" />
+      </Stack>
+      <Box sx={{ mt: 2 }}>
+        {phase === "idle" && (
+          <Typography variant="body2" color="text.secondary">
+            Kết quả chỉ xác định lúc dừng; trong 5s sẽ nhảy Xanh ↔ Đỏ liên tục để không lộ trước.
+          </Typography>
+        )}
+      </Box>
+    </Card>
+  );
+}
 
 function ScoreBurst({ show, color = "primary.main" }) {
   return (
@@ -259,7 +418,6 @@ function ScoreBurst({ show, color = "primary.main" }) {
   );
 }
 
-/* ======= Helper: chốt ván sớm -> tạo tỉ số tối thiểu hợp lệ ======= */
 function computeEarlyFinalizeScore(curA, curB, { pointsToWin = 11, winByTwo = true }, winner) {
   const needGap = winByTwo ? 2 : 1;
   if (winner === "A") {
@@ -282,7 +440,6 @@ function computeEarlyFinalizeScore(curA, curB, { pointsToWin = 11, winByTwo = tr
 export default function AdminRefereeConsole() {
   const [selectedId, setSelectedId] = useState(null);
 
-  // Chi tiết trận
   const {
     data: match,
     isLoading: detailLoading,
@@ -295,6 +452,7 @@ export default function AdminRefereeConsole() {
   const [setGame] = useRefereeSetGameScoreMutation();
   const [setStatus] = useRefereeSetStatusMutation();
   const [setWinner] = useRefereeSetWinnerMutation();
+  const [nextGame] = useRefereeNextGameMutation(); // 👈 dùng để mở ván mới
 
   const socket = useSocket();
 
@@ -312,9 +470,7 @@ export default function AdminRefereeConsole() {
   // join room & realtime
   useEffect(() => {
     if (!socket || !selectedId) return;
-
     socket.emit("match:join", { matchId: selectedId });
-
     const onPatched = (payload) => {
       const id = payload?.matchId || payload?.data?._id || payload?._id;
       if (id === selectedId) refetchDetail();
@@ -324,7 +480,6 @@ export default function AdminRefereeConsole() {
     socket.on("match:patched", onPatched);
     socket.on("match:update", onPatched);
     socket.on("match:snapshot", onPatched);
-
     return () => {
       socket.emit("match:leave", { matchId: selectedId });
       socket.off("match:patched", onPatched);
@@ -335,22 +490,14 @@ export default function AdminRefereeConsole() {
     };
   }, [socket, selectedId, refetchDetail]);
 
-  const refreshDetail = () => {
-    if (selectedId) refetchDetail();
-  };
-
-  /* ===== derived from detail ===== */
   const rules = match?.rules || { bestOf: 3, pointsToWin: 11, winByTwo: true };
   const eventType = (match?.tournament?.eventType || "double").toLowerCase();
-  const isSingles = eventType === "single";
-  const isDoubles = !isSingles;
+  const isDoubles = eventType !== "single";
   const gs = match?.gameScores || [];
   const needSetWinsVal = needWins(rules.bestOf);
-
   const currentIndex = Math.max(0, gs.length - 1);
   const curA = gs[currentIndex]?.a ?? 0;
   const curB = gs[currentIndex]?.b ?? 0;
-
   const serve = match?.serve || { side: "A", server: 2 };
   const callout = isDoubles
     ? serve.side === "A"
@@ -371,13 +518,11 @@ export default function AdminRefereeConsole() {
   const [flashA, setFlashA] = useState(false);
   const [flashB, setFlashB] = useState(false);
   const prevRef = useRef({ matchId: null, gi: 0, a: 0, b: 0 });
-
   useEffect(() => {
     if (!match) return;
     const gi = currentIndex;
     const a = curA;
     const b = curB;
-
     if (prevRef.current.matchId === match._id && prevRef.current.gi === gi) {
       if (a > prevRef.current.a) {
         setFlashA(true);
@@ -397,13 +542,21 @@ export default function AdminRefereeConsole() {
     try {
       await setStatus({ matchId: match._id, status: "live" }).unwrap();
       socket?.emit("status:update", { matchId: match._id, status: "live" });
+      socket?.emit("match:started", { matchId: match._id });
       if (gs.length === 0) {
-        await setGame({ matchId: match._id, gameIndex: 0, a: 0, b: 0 }).unwrap();
+        await setGame({
+          matchId: match._id,
+          gameIndex: 0,
+          a: 0,
+          b: 0,
+          autoNext: autoNextGame,
+        }).unwrap();
       }
     } catch (e) {
       showSnack("error", e?.data?.message || e?.error || "Không thể start");
     }
   };
+
   const onFinish = async () => {
     if (!match) return;
     let w = match.winner || "";
@@ -416,6 +569,7 @@ export default function AdminRefereeConsole() {
       showSnack("error", e?.data?.message || e?.error || "Không thể finish");
     }
   };
+
   const onPickWinner = async (w) => {
     if (!match) return;
     try {
@@ -426,11 +580,11 @@ export default function AdminRefereeConsole() {
     }
   };
 
-  const inc = async (side /* 'A'|'B' */) => {
+  const inc = async (side) => {
     if (!match || match.status !== "live") return;
     try {
-      await incPoint({ matchId: match._id, side, delta: +1 }).unwrap();
-      socket?.emit("score:inc", { matchId: match._id, side, delta: +1 });
+      await incPoint({ matchId: match._id, side, delta: +1, autoNext: autoNextGame }).unwrap();
+      socket?.emit("score:inc", { matchId: match._id, side, delta: +1, autoNext: autoNextGame });
       if (side === "A") {
         setFlashA(true);
         setTimeout(() => setFlashA(false), 750);
@@ -442,22 +596,24 @@ export default function AdminRefereeConsole() {
       showSnack("error", e?.data?.message || e?.error || "Không thể cộng điểm");
     }
   };
+
   const dec = async (side) => {
     if (!match || match.status === "finished") return;
     try {
-      await incPoint({ matchId: match._id, side, delta: -1 }).unwrap();
-      socket?.emit("score:inc", { matchId: match._id, side, delta: -1 });
+      await incPoint({ matchId: match._id, side, delta: -1, autoNext: autoNextGame }).unwrap();
+      socket?.emit("score:inc", { matchId: match._id, side, delta: -1, autoNext: autoNextGame });
     } catch (e) {
       showSnack("error", e?.data?.message || e?.error || "Không thể trừ điểm");
     }
   };
 
+  // 👉 DÙNG nextGame API để mở ván mới (BE sẽ chặn khi không tick hoặc khi đã đủ set)
   const startNextGame = async () => {
     if (!match) return;
-    if (!gameDone || matchPointReached) return;
     try {
-      await setGame({ matchId: match._id, gameIndex: gs.length, a: 0, b: 0 }).unwrap();
-      socket?.emit("match:patched", { matchId: match._id });
+      await nextGame({ matchId: match._id, autoNext: autoNextGame }).unwrap();
+      await refetchDetail();
+      socket?.emit("match:patched", { matchId: match._id, autoNext: autoNextGame });
     } catch (e) {
       showSnack("error", e?.data?.message || e?.error || "Không thể tạo ván mới");
     }
@@ -466,17 +622,27 @@ export default function AdminRefereeConsole() {
   const onClickStartNext = () => {
     if (!match) return;
     if (autoNextGame) {
+      // Auto mode: cứ gọi nextGame, BE quyết định
       startNextGame();
     } else {
-      setEarlyWinner("A");
-      setUseCurrentScore(false);
-      setEarlyOpen(true);
+      // Manual mode: nếu ván chưa đủ điều kiện, yêu cầu chốt sớm; nếu đủ thì gọi luôn
+      if (isGameWin(curA, curB, rules.pointsToWin, rules.winByTwo)) {
+        startNextGame();
+      } else {
+        setEarlyWinner("A");
+        setUseCurrentScore(false);
+        setEarlyOpen(true);
+      }
     }
   };
 
   const confirmEarlyEnd = async () => {
     if (!match) return;
+
     try {
+      // 1) Tính điểm chốt ván
+      let aFinal, bFinal;
+
       if (useCurrentScore) {
         if (curA === curB) {
           showSnack(
@@ -485,63 +651,77 @@ export default function AdminRefereeConsole() {
           );
           return;
         }
-        await setGame({
-          matchId: match._id,
-          gameIndex: currentIndex,
-          a: curA,
-          b: curB,
-        }).unwrap();
-
-        if (!matchPointReached && gs.length < rules.bestOf) {
-          await setGame({ matchId: match._id, gameIndex: gs.length, a: 0, b: 0 }).unwrap();
-        }
-
-        socket?.emit("match:patched", { matchId: match._id });
-        setEarlyOpen(false);
-        showSnack(
-          "success",
-          `Đã chốt ván #${currentIndex + 1} (${curA > curB ? "A" : "B"} thắng) và bắt đầu ván mới`
-        );
-        return;
+        aFinal = curA;
+        bFinal = curB;
+      } else {
+        const winner = curA === curB ? earlyWinner : curA > curB ? "A" : "B";
+        const fin = computeEarlyFinalizeScore(curA, curB, rules, winner);
+        aFinal = fin.a;
+        bFinal = fin.b;
       }
 
-      const winner = curA === curB ? earlyWinner : curA > curB ? "A" : "B";
-      const fin = computeEarlyFinalizeScore(curA, curB, rules, winner);
-
-      await setGame({
+      // 2) Chốt ván hiện tại (để BE biết autoNext hay không)
+      const setRes = await setGame({
         matchId: match._id,
         gameIndex: currentIndex,
-        a: fin.a,
-        b: fin.b,
+        a: aFinal,
+        b: bFinal,
+        autoNext: autoNextGame,
       }).unwrap();
 
-      if (!matchPointReached && gs.length < rules.bestOf) {
-        await setGame({ matchId: match._id, gameIndex: gs.length, a: 0, b: 0 }).unwrap();
+      // 3) Tính lại số ván thắng từ response để biết trận đã đủ set chưa
+      const scores = Array.isArray(setRes?.gameScores)
+        ? setRes.gameScores
+        : gs.map((g, i) => (i === currentIndex ? { a: aFinal, b: bFinal } : g));
+
+      const aW = scores.filter(
+        (g) => isGameWin(g?.a, g?.b, rules.pointsToWin, rules.winByTwo) && (g?.a ?? 0) > (g?.b ?? 0)
+      ).length;
+      const bW = scores.filter(
+        (g) => isGameWin(g?.a, g?.b, rules.pointsToWin, rules.winByTwo) && (g?.b ?? 0) > (g?.a ?? 0)
+      ).length;
+      const need = needWins(rules.bestOf);
+      const matchDoneNow = aW >= need || bW >= need;
+
+      // 4) Hành vi theo autoNext
+      if (autoNextGame) {
+        // BE có quyền tự mở ván/hoặc tự kết thúc nếu đủ set
+        // => chỉ thông báo gọn, BE đã xử lý.
+        showSnack("success", `Đã chốt ván #${currentIndex + 1}`);
+      } else {
+        // MỌI THỨ THỦ CÔNG
+        if (!matchDoneNow) {
+          // Chưa đủ set → mở ván mới thủ công bằng nextGame
+          try {
+            await nextGame({ matchId: match._id, autoNext: false }).unwrap();
+            showSnack("success", `Đã chốt ván #${currentIndex + 1} và mở ván mới`);
+          } catch (e) {
+            // BE có thể trả 409/400 tùy tình huống; ta chỉ coi như đã chốt xong
+            showSnack("success", `Đã chốt ván #${currentIndex + 1}`);
+          }
+        } else {
+          // Đủ set rồi → KHÔNG mở ván, KHÔNG kết thúc trận tự động
+          showSnack(
+            "info",
+            `Đã chốt ván #${currentIndex + 1}. Trận đã đủ số ván thắng — hãy bấm "Kết thúc trận".`
+          );
+        }
       }
 
       socket?.emit("match:patched", { matchId: match._id });
       setEarlyOpen(false);
-      showSnack(
-        "success",
-        `Đã chốt ván #${currentIndex + 1} (thắng: ${winner}) và bắt đầu ván mới`
-      );
     } catch (e) {
       showSnack("error", e?.data?.message || e?.error || "Không thể kết thúc ván sớm");
     }
   };
 
-  // hotkeys
+  // Hotkeys
   useEffect(() => {
     const onKey = (e) => {
-      // ❗ BỎ QUA khi đang gõ trong input/textarea/autocomplete hoặc đang mở dialog
       if (isEditableTarget(e.target) || earlyOpen) return;
-
       if (!match) return;
       const k = e.key.toLowerCase();
-
-      // chỉ chặn khi thực sự dùng hotkeys ngoài input
       if (["a", "z", "k", "m", " "].includes(k)) e.preventDefault();
-
       if (k === "a") inc("A");
       if (k === "z") dec("A");
       if (k === "k") inc("B");
@@ -551,43 +731,22 @@ export default function AdminRefereeConsole() {
         else onFinish();
       }
     };
-
     window.addEventListener("keydown", onKey, { passive: false });
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line
   }, [match?.status, selectedId, gs.length, curA, curB, earlyOpen]);
 
-  // Auto-next khi ván kết thúc
-  const lastGameDoneRef = useRef(false);
-  useEffect(() => {
-    if (!match) return;
-    if (
-      autoNextGame &&
-      match.status === "live" &&
-      !matchPointReached &&
-      gs.length < rules.bestOf &&
-      gameDone &&
-      !lastGameDoneRef.current
-    ) {
-      startNextGame();
-    }
-    lastGameDoneRef.current = gameDone;
-    // eslint-disable-next-line
-  }, [autoNextGame, gameDone, match?.status, matchPointReached, gs.length, rules.bestOf]);
-
-  const startBtnDisabled = autoNextGame
-    ? !(match?.status === "live" && gameDone && !matchPointReached && gs.length < rules.bestOf)
-    : !(match?.status === "live" && !matchPointReached && gs.length < rules.bestOf);
+  // ❌ BỎ hoàn toàn auto-next effect ở FE — để BE kiểm soát
+  // (Giữ một ref nếu sau này cần so sánh trạng thái highlight)
+  const startBtnDisabled = match?.status !== "live"; // để BE quyết định hợp lệ
 
   /* ================= Render ================= */
   return (
     <DashboardLayout>
       <DashboardNavbar />
       <Box p={2} display="grid" gridTemplateColumns={{ xs: "1fr", md: "380px 1fr" }} gap={2}>
-        {/* ===== Sidebar mới: accordion theo giải ===== */}
         <RefereeMatchesPanel selectedId={selectedId} onPickMatch={(id) => setSelectedId(id)} />
 
-        {/* ===== Main ===== */}
         {!selectedId ? (
           <Box display="grid" placeItems="center" minHeight={400}>
             <Typography>Chọn một trận ở bên trái để bắt đầu chấm điểm.</Typography>
@@ -625,8 +784,6 @@ export default function AdminRefereeConsole() {
                       )}
                     </Typography>
                   </Stack>
-
-                  {/* dòng mô tả */}
                   <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                     <Typography variant="body2" color="text.secondary">
                       {match.tournament?.name} • Nhánh {match.bracket?.name} ({match.bracket?.type})
@@ -651,15 +808,13 @@ export default function AdminRefereeConsole() {
                       />
                     )}
                   </Stack>
-
                   <Typography variant="caption" color="text.secondary">
                     Thắng {Math.ceil(rules.bestOf / 2)}/{rules.bestOf} ván • Tới {rules.pointsToWin}{" "}
                     điểm {rules.winByTwo ? "(phải hơn 2 điểm)" : "(không cần hơn 2 điểm)"}
+                    {capHint(rules)}
                   </Typography>
                 </Box>
-
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                  {/* Trạng thái trận */}
                   <Chip size="small" {...getMatchStatusChip(match.status)} />
                   {isDoubles && (
                     <Chip
@@ -696,8 +851,6 @@ export default function AdminRefereeConsole() {
                   </Tooltip>
                 </Stack>
               </Stack>
-
-              {/* progress mỏng khi refetch */}
               {detailFetching && (
                 <Box
                   sx={{
@@ -711,6 +864,8 @@ export default function AdminRefereeConsole() {
                 />
               )}
             </Card>
+
+            {match?.status !== "finished" && <ColorCoinToss />}
 
             {/* Big scoreboard */}
             <Card sx={{ p: 2, position: "relative" }}>
@@ -894,7 +1049,6 @@ export default function AdminRefereeConsole() {
 
               <Divider sx={{ my: 2 }} />
 
-              {/* Pickleball callout + chỉnh giao bóng */}
               {isDoubles && (
                 <Stack
                   direction={{ xs: "column", md: "row" }}
@@ -984,7 +1138,6 @@ export default function AdminRefereeConsole() {
                 </Stack>
               )}
 
-              {/* sets */}
               <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
                 <SportsScore fontSize="small" />
                 <Typography fontWeight={700}>Tỷ số từng ván</Typography>
@@ -1017,7 +1170,6 @@ export default function AdminRefereeConsole() {
                 mt={2}
                 flexWrap="wrap"
               >
-                {/* Checkbox chế độ tự động */}
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -1032,14 +1184,14 @@ export default function AdminRefereeConsole() {
                   title={
                     autoNextGame
                       ? "Sang ván mới khi ván hiện tại đủ điều kiện thắng"
-                      : "Cho phép sang ván mới ngay cả khi chưa đủ điểm (sẽ hỏi xác nhận)"
+                      : "Chế độ thủ công: nhấn nút để chốt/mở ván mới"
                   }
                 >
                   <span>
                     <Button
                       variant="contained"
                       onClick={onClickStartNext}
-                      disabled={startBtnDisabled || match.status === "finished"}
+                      disabled={startBtnDisabled}
                     >
                       Bắt đầu ván tiếp theo
                     </Button>
@@ -1119,7 +1271,6 @@ export default function AdminRefereeConsole() {
                   )}`}
                 />
               </RadioGroup>
-
               <FormControlLabel
                 sx={{ mt: 1 }}
                 control={
@@ -1141,7 +1292,6 @@ export default function AdminRefereeConsole() {
               <Alert sx={{ mt: 2 }} severity="info">
                 Sẽ chốt thắng ván cho đội <b>{curA > curB ? "A" : "B"}</b>.
               </Alert>
-
               <FormControlLabel
                 sx={{ mt: 1 }}
                 control={
@@ -1157,11 +1307,11 @@ export default function AdminRefereeConsole() {
 
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
             {useCurrentScore ? (
-              "Hệ thống sẽ ghi nhận đúng tỉ số hiện tại và tạo ván mới."
+              "Hệ thống sẽ ghi nhận đúng tỉ số hiện tại."
             ) : (
               <>
                 Hệ thống sẽ ghi nhận tỉ số tối thiểu hợp lệ theo luật (tới {rules.pointsToWin}
-                {rules.winByTwo ? ", chênh ≥2" : ", chênh ≥1"}) và tạo ván mới.
+                {rules.winByTwo ? ", chênh ≥2" : ", chênh ≥1"}).
               </>
             )}
           </Typography>

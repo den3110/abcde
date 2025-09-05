@@ -25,26 +25,18 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useGetRefereeTournamentsQuery } from "slices/tournamentsApiSlice";
 import {
-  PlayArrow,
-  Stop,
-  Add,
-  Remove,
   Refresh,
-  Flag,
-  SportsScore,
-  Keyboard as KeyboardIcon,
-  SportsTennis as ServeIcon,
-  Stadium as StadiumIcon,
-  Info as InfoIcon,
-  GridView as PoolIcon,
-  ExpandMore as ExpandMoreIcon,
-  RestartAlt as RestartAltIcon,
   Close as CloseIcon,
   FilterAlt as FilterAltIcon,
   Search as SearchIcon,
+  Stadium as StadiumIcon,
+  GridView as PoolIcon,
+  ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
-import { useListRefereeMatchesByTournamentQuery } from "slices/tournamentsApiSlice";
-import { useGetRefereeBracketsQuery } from "slices/tournamentsApiSlice";
+import {
+  useListRefereeMatchesByTournamentQuery,
+  useGetRefereeBracketsQuery,
+} from "slices/tournamentsApiSlice";
 import {
   displayOrder,
   getMatchStatusChip,
@@ -55,7 +47,7 @@ import {
 } from "./AdminRefereeConsole";
 import PropTypes from "prop-types";
 
-// debounce nho nhỏ cho ô tìm kiếm
+/* ============ debounce nhỏ cho ô tìm kiếm ============ */
 function useDebounced(value, delay = 400) {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -79,7 +71,7 @@ function TournamentAccordion({
   onPickMatch,
   selectedId,
 }) {
-  // Brackets (load khi mở)
+  // Brackets (load khi mở) – vẫn cần để fill dropdown filter
   const { data: brData, isLoading: brLoading } = useGetRefereeBracketsQuery(
     { tournamentId: tournament._id },
     { skip: !open }
@@ -99,12 +91,37 @@ function TournamentAccordion({
     data: matchesResp,
     isFetching: listFetching,
     isLoading: listLoading,
+    isUninitialized: listUninitialized,
     error: listErr,
     refetch: refetchList,
   } = useListRefereeMatchesByTournamentQuery(queryArgs, { skip: !open });
-  console.log("list error", listErr);
+
   const items = matchesResp?.items || [];
   const totalPages = matchesResp?.totalPages || 1;
+
+  // Hiển thị mã ưu tiên codeResolved (server đã chuẩn hoá theo bảng)
+  const renderMatchCode = (m) => m?.codeResolved ?? m?.code ?? matchCode(m);
+
+  // Render chip “Bảng …” khi là vòng bảng & có index
+  const renderGroupChip = (m) => {
+    if ((m?.bracket?.type || "") !== "group") return null;
+    const gi = m?.groupIndex;
+    if (!Number.isFinite(gi)) return null;
+
+    // Tránh trùng với poolNote (nếu poolNote đã là "Bảng X")
+    const pn = poolNote(m);
+    const label = `Bảng ${gi}`;
+    if (pn && String(pn).toLowerCase() === String(label).toLowerCase()) return null;
+
+    return (
+      <Chip
+        size="small"
+        icon={<PoolIcon sx={{ fontSize: 14 }} />}
+        label={label}
+        variant="outlined"
+      />
+    );
+  };
 
   return (
     <Accordion expanded={open} onChange={(_, v) => onToggle(v)} disableGutters>
@@ -116,14 +133,21 @@ function TournamentAccordion({
               {typeof tournament?.pendingCount === "number" && tournament.pendingCount > 0 && (
                 <Chip size="small" color="warning" label={`Đang chờ: ${tournament.pendingCount}`} />
               )}
-              <Tooltip title="Làm mới danh sách trận của giải này">
+              <Tooltip
+                title={
+                  !open || listUninitialized
+                    ? "Mở accordion để tải danh sách trước khi làm mới"
+                    : "Làm mới danh sách trận của giải này"
+                }
+              >
                 <span>
                   <IconButton
                     size="small"
                     onClick={(e) => {
                       e.stopPropagation();
-                      refetchList();
+                      if (!listUninitialized) refetchList();
                     }}
+                    disabled={!open || listUninitialized || listFetching}
                   >
                     <Refresh fontSize="small" />
                   </IconButton>
@@ -190,7 +214,7 @@ function TournamentAccordion({
                       primary={
                         <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
                           <Typography variant="body2" fontWeight={700}>
-                            {matchCode(m)}
+                            {renderMatchCode(m)}
                           </Typography>
                           <Chip size="small" color={chip.color} label={chip.label} />
                           <Typography variant="caption" color="text.secondary">
@@ -205,7 +229,10 @@ function TournamentAccordion({
                               variant="outlined"
                             />
                           )}
-                          {poolNote(m) && (
+                          {/* Ưu tiên chip “Bảng …” từ server */}
+                          {renderGroupChip(m)}
+                          {/* Nếu server không có groupIndex nhưng bạn vẫn có poolNote thì hiển thị */}
+                          {!m.groupIndex && poolNote(m) && (
                             <Chip
                               size="small"
                               icon={<PoolIcon sx={{ fontSize: 14 }} />}
@@ -338,7 +365,7 @@ function RefereeMatchesPanel({ selectedId, onPickMatch }) {
                 placeholder={params.inputProps?.value ? "" : "Chọn 1 hoặc nhiều giải"}
                 inputProps={{
                   ...params.inputProps,
-                  "data-hotkeys-ignore": "true", // 👈 thêm dòng này
+                  "data-hotkeys-ignore": "true",
                 }}
                 InputProps={{
                   ...params.InputProps,
@@ -354,7 +381,8 @@ function RefereeMatchesPanel({ selectedId, onPickMatch }) {
               />
             )}
           />
-          <div style={{ marginTop: 10, marginBottom: 10 }}></div>
+          <div style={{ marginTop: 10, marginBottom: 10 }} />
+
           {/* Trạng thái */}
           <TextField
             select
@@ -405,7 +433,7 @@ function RefereeMatchesPanel({ selectedId, onPickMatch }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             sx={{ flex: 1.2, minWidth: 260 }}
-            inputProps={{ "data-hotkeys-ignore": "true" }} // 👈 thêm dòng này
+            inputProps={{ "data-hotkeys-ignore": "true" }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -420,7 +448,7 @@ function RefereeMatchesPanel({ selectedId, onPickMatch }) {
                 </InputAdornment>
               ) : null,
             }}
-            placeholder="VD: R3#12, G-A#5, 'Nam Anh', 'Lan'"
+            placeholder="VD: #V1-B2#5, R3#12, 'Nam Anh', 'Lan'"
           />
 
           {/* Reset */}
@@ -432,7 +460,6 @@ function RefereeMatchesPanel({ selectedId, onPickMatch }) {
               setQuery("");
               setSelectedTourneys([]);
             }}
-            startIcon={<RestartAltIcon />}
             sx={{
               borderRadius: 2,
               borderStyle: "dashed",
@@ -467,13 +494,19 @@ function RefereeMatchesPanel({ selectedId, onPickMatch }) {
               key={t._id}
               tournament={t}
               open={!!openAcc[t._id]}
-              onToggle={(v) => toggleAccordion(t._id, v)}
+              onToggle={(v) => {
+                if (v) setPage(t._id, 1); // reset page khi mở
+                toggleAccordion(t._id, v);
+              }}
               status={status}
               q={q}
               page={pageMap[t._id] || 1}
               onPageChange={(p) => setPage(t._id, p)}
               bracketId={bracketMap[t._id] || "all"}
-              onBracketChange={(bid) => setBracket(t._id, bid)}
+              onBracketChange={(bid) => {
+                setBracket(t._id, bid);
+                setPage(t._id, 1);
+              }}
               pageSize={pageSize}
               onPickMatch={onPickMatch}
               selectedId={selectedId}
@@ -489,7 +522,7 @@ export default RefereeMatchesPanel;
 
 RefereeMatchesPanel.propTypes = {
   selectedId: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
-  onPickMatch: PropTypes.func, // gọi khi chọn 1 match
+  onPickMatch: PropTypes.func,
 };
 
 RefereeMatchesPanel.defaultProps = {
@@ -506,22 +539,16 @@ TournamentAccordion.propTypes = {
     endDate: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
     pendingCount: PropTypes.number,
   }).isRequired,
-
-  open: PropTypes.bool, // accordion mở/đóng
-  onToggle: PropTypes.func.isRequired, // (bool) => void
-
+  open: PropTypes.bool,
+  onToggle: PropTypes.func.isRequired,
   status: PropTypes.oneOf(["all", "scheduled", "queued", "assigned", "live", "finished"]),
   q: PropTypes.string,
-
   page: PropTypes.number,
   onPageChange: PropTypes.func.isRequired,
-
-  bracketId: PropTypes.string, // "all" | bracketId
+  bracketId: PropTypes.string,
   onBracketChange: PropTypes.func.isRequired,
-
   pageSize: PropTypes.number,
-
-  onPickMatch: PropTypes.func, // (matchId) => void
+  onPickMatch: PropTypes.func,
   selectedId: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
 };
 

@@ -2,11 +2,18 @@ import { apiSlice } from "./apiSlice";
 
 export const adminApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
+    // =========================
+    // USER MANAGEMENT (cũ)
+    // =========================
     getUsers: builder.query({
-      query: ({ page = 1, keyword = "", role = "" }) =>
-        `/admin/users?page=${page}&keyword=${keyword}&role=${role}`,
+      query: ({ page = 1, keyword = "", role = "", cccdStatus = "" }) =>
+        `/admin/users?page=${page}&keyword=${encodeURIComponent(
+          keyword
+        )}&role=${role}&cccdStatus=${cccdStatus}`,
       providesTags: ["User"],
+      keepUnusedDataFor: 30,
     }),
+
     updateUserRole: builder.mutation({
       query: ({ id, role }) => ({
         url: `/admin/users/${id}/role`,
@@ -15,10 +22,12 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["User"],
     }),
+
     deleteUser: builder.mutation({
       query: (id) => ({ url: `/admin/users/${id}`, method: "DELETE" }),
       invalidatesTags: ["User"],
     }),
+
     /** ✨ SỬA hồ sơ (name, phone, …) */
     updateUserInfo: builder.mutation({
       query: ({ id, body }) => ({
@@ -38,6 +47,7 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["User"],
     }),
+
     updateRanking: builder.mutation({
       query: ({ id, single, double }) => ({
         url: `/admin/rankings/${id}`,
@@ -46,14 +56,77 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["User"],
     }),
+
+    // =========================
+    // EVALUATOR MANAGEMENT (mới)
+    // =========================
+    /** Danh sách evaluator + filter */
+    getEvaluators: builder.query({
+      query: ({ page = 1, keyword = "", province, sport } = {}) => {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        if (keyword) params.set("keyword", keyword);
+        if (province) params.set("province", province);
+        if (sport) params.set("sport", sport);
+        return `/admin/evaluators?${params.toString()}`;
+      },
+      // dùng chung tag "User" để tự động refetch các bảng liên quan
+      providesTags: ["User"],
+      keepUnusedDataFor: 30,
+    }),
+
+    /** Cập nhật phạm vi chấm (nhiều tỉnh + nhiều môn) */
+    updateEvaluatorScopes: builder.mutation({
+      query: ({ id, body }) => ({
+        url: `/admin/evaluators/${id}/scopes`,
+        method: "PATCH",
+        body, // { provinces: string[], sports: string[] }
+      }),
+      invalidatesTags: ["User"],
+    }),
+
+    /** Promote user -> evaluator */
+    promoteToEvaluator: builder.mutation({
+      query: ({ idOrEmail, provinces, sports }) => ({
+        url: `/admin/evaluators/promote`,
+        method: "POST",
+        body: { idOrEmail, provinces, sports },
+      }),
+      invalidatesTags: ["User"],
+    }),
+
+    /** Demote evaluator -> role khác (mặc định: user) */
+    demoteEvaluator: builder.mutation({
+      query: ({ id, body }) => ({
+        url: `/admin/evaluators/${id}/demote`,
+        method: "PATCH",
+        body: body ?? { toRole: "user" },
+      }),
+      invalidatesTags: ["User"],
+    }),
+    changeUserPassword: builder.mutation({
+      query: ({ id, body }) => ({
+        url: `/admin/users/${id}/password`,
+        method: "PATCH",
+        body, // { newPassword: string }
+      }),
+    }),
   }),
 });
 
 export const {
+  // users
   useGetUsersQuery,
   useUpdateUserRoleMutation,
   useDeleteUserMutation,
   useReviewKycMutation,
   useUpdateUserInfoMutation,
   useUpdateRankingMutation,
+
+  // evaluators
+  useGetEvaluatorsQuery,
+  useUpdateEvaluatorScopesMutation,
+  usePromoteToEvaluatorMutation,
+  useDemoteEvaluatorMutation,
+  useChangeUserPasswordMutation,
 } = adminApiSlice;

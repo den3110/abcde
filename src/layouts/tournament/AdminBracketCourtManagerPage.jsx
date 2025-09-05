@@ -29,6 +29,11 @@ import {
   Chip,
   Snackbar,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  Autocomplete,
+  DialogActions,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SaveIcon from "@mui/icons-material/Save";
@@ -39,6 +44,9 @@ import { DataGrid } from "@mui/x-data-grid";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { toast } from "react-toastify";
+import EditNoteIcon from "@mui/icons-material/EditNote"; /* ⭐ NEW: icon sửa trận */
+import RestartAltIcon from "@mui/icons-material/RestartAlt"; /* ⭐ NEW: icon reset all */
+import CloseIcon from "@mui/icons-material/Close";
 
 /* ================= Helpers (labels, formatters) ================= */
 const isNum = (x) => typeof x === "number" && Number.isFinite(x);
@@ -238,6 +246,10 @@ export default function AdminBracketCourtManagerPage() {
   const notifQueueRef = useRef([]);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "info" });
 
+  /* ⭐ NEW: state cho dialog sửa trận */
+  const [assignDlgOpen, setAssignDlgOpen] = useState(false);
+  const [assignDlgCourt, setAssignDlgCourt] = useState(null); // court object
+  const [assignDlgMatchId, setAssignDlgMatchId] = useState("");
   // ---------- RTKQ mutations ----------
   const [upsertCourts, { isLoading: savingCourts }] = useUpsertCourtsMutation();
   const [buildQueue, { isLoading: buildingQueue }] = useBuildGroupsQueueMutation();
@@ -263,6 +275,35 @@ export default function AdminBracketCourtManagerPage() {
     for (const m of socketMatches) map.set(String(m._id || m.id), m);
     return map;
   }, [socketMatches]);
+  /* ⭐ NEW: list các trận có thể chọn để "sửa vào sân" */
+  const selectableMatches = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    const push = (m) => {
+      if (!m) return;
+      const id = String(m._id || m.id);
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push(m);
+    };
+    // ưu tiên hàng đợi
+    for (const m of queue || []) push(m);
+    // bổ sung từ socket (scheduled/queued/assigned)
+    for (const m of socketMatches || []) {
+      const st = String(m?.status || "");
+      if (["scheduled", "queued", "assigned"].includes(st)) push(m);
+    }
+    return out;
+  }, [queue, socketMatches]);
+
+  const matchListLabel = (m) => {
+    if (!m) return "";
+    const code = buildMatchCode(m);
+    const A = m.pairAName || (m.pairA ? pairName(m.pairA) : "Đội A");
+    const B = m.pairBName || (m.pairB ? pairName(m.pairB) : "Đội B");
+    const st = viMatchStatus(m.status);
+    return `${code} · ${A} vs ${B} · ${st}`;
+  };
 
   const courtIdToName = useMemo(() => {
     const map = new Map();
@@ -367,6 +408,61 @@ export default function AdminBracketCourtManagerPage() {
     if (!tournamentId || !bracket || !courtId) return;
     socket?.emit?.("scheduler:assignNext", { tournamentId, courtId, bracket });
     await assignNextHttp({ tournamentId, courtId, bracket }).unwrap();
+  };
+
+  /* ⭐ NEW: mở dialog sửa trận vào sân C */
+  const openAssignDialog = (court) => {
+    setAssignDlgCourt(court || null);
+    setAssignDlgMatchId("");
+    setAssignDlgOpen(true);
+  };
+  const closeAssignDialog = () => {
+    setAssignDlgOpen(false);
+    setAssignDlgCourt(null);
+    setAssignDlgMatchId("");
+  };
+
+  /* ⭐ NEW: xác nhận gán matchId cụ thể vào court */
+  const handleAssignSpecific = async () => {
+    if (!tournamentId || !bracket || !assignDlgCourt || !assignDlgMatchId) {
+      toast.error("Thiếu thông tin sân hoặc trận để gán.");
+      return;
+    }
+    try {
+      // Emit socket: BE nên xử lý thay thế nếu sân đang có trận
+      socket?.emit?.("scheduler:assignSpecific", {
+        tournamentId,
+        bracket,
+        courtId: assignDlgCourt._id || assignDlgCourt.id,
+        matchId: assignDlgMatchId,
+        replace: true,
+      });
+      setSnackbar({ open: true, severity: "success", message: "Đã yêu cầu gán trận vào sân." });
+    } catch (e) {
+      setSnackbar({ open: true, severity: "error", message: "Gán trận thất bại." });
+    } finally {
+      socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
+      closeAssignDialog();
+    }
+  };
+
+  /* ⭐ NEW: reset tất cả sân và gán */
+  const handleResetAllCourts = async () => {
+    if (!tournamentId || !bracket) return;
+    const ok = window.confirm("Xoá TẤT CẢ sân và các gán trận hiện tại?");
+    if (!ok) return;
+    try {
+      // Emit socket reset-all (BE cần hiện thực: xóa courts & dọn gán)
+      socket?.emit?.("scheduler:resetAll", { tournamentId, bracket });
+      setSnackbar({ open: true, severity: "success", message: "Đã gửi lệnh reset tất cả sân." });
+      // (Tuỳ chọn) nếu muốn xoá hết court về 0 qua HTTP:
+      // await upsertCourts({ tournamentId, bracket, count: 0 }).unwrap();
+    } catch (e) {
+      setSnackbar({ open: true, severity: "error", message: "Reset thất bại." });
+    } finally {
+      socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
+      refetchFinished?.();
+    }
   };
 
   const handleRefresh = () => {
@@ -550,6 +646,55 @@ export default function AdminBracketCourtManagerPage() {
     return base;
   }, [showPoolFinished, showRRFinished]);
 
+  /* ⭐ NEW: Dialog sửa trận vào sân */
+  const AssignDialog = () => {
+    const currentLabel =
+      assignDlgCourt?.name ||
+      assignDlgCourt?.label ||
+      assignDlgCourt?.title ||
+      assignDlgCourt?.code ||
+      "";
+    const valueObj =
+      selectableMatches.find((m) => String(m._id || m.id) === assignDlgMatchId) || null;
+    return (
+      <Dialog open={assignDlgOpen} onClose={closeAssignDialog} fullWidth maxWidth="sm">
+        <DialogTitle
+          sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+        >
+          Gán trận vào sân
+          <IconButton onClick={closeAssignDialog} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Alert severity="info">
+              Sân: <strong>{currentLabel || "(không rõ)"}</strong>
+            </Alert>
+            <Autocomplete
+              options={selectableMatches}
+              getOptionKey={(o) => String(o._id || o.id)}
+              getOptionLabel={(o) => matchListLabel(o)}
+              value={valueObj}
+              onChange={(e, v) => setAssignDlgMatchId(v ? String(v._id || v.id) : "")}
+              renderInput={(params) => <TextField {...params} label="Chọn trận để gán" />}
+              isOptionEqualToValue={(o, v) => String(o._id || o.id) === String(v._id || v.id)}
+            />
+            <Typography variant="caption" color="text.secondary">
+              * Hệ thống sẽ thay thế trận đang gán (nếu có) bằng trận bạn chọn.
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeAssignDialog}>Huỷ</Button>
+          <Button variant="contained" onClick={handleAssignSpecific} disabled={!assignDlgMatchId}>
+            Xác nhận gán
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
   return (
     <DashboardLayout>
       <DashboardNavbar />
@@ -599,6 +744,17 @@ export default function AdminBracketCourtManagerPage() {
             </Box>
 
             <Stack direction="row" spacing={1} alignItems="center">
+              <Tooltip title="Reset tất cả sân (xoá sân & gỡ gán)">
+                <Button
+                  onClick={handleResetAllCourts}
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  startIcon={<RestartAltIcon />}
+                >
+                  Reset tất cả sân
+                </Button>
+              </Tooltip>
               <Tooltip title="Làm mới">
                 <IconButton onClick={handleRefresh}>
                   <RefreshIcon />
@@ -774,6 +930,14 @@ export default function AdminBracketCourtManagerPage() {
                         <Button
                           size="small"
                           variant="outlined"
+                          startIcon={<EditNoteIcon />}
+                          onClick={() => openAssignDialog(c)}
+                        >
+                          Sửa trận vào sân
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
                           startIcon={<AutorenewIcon />}
                           disabled={c.status !== "idle"}
                           onClick={() => handleAssignNext(c._id)}
@@ -891,6 +1055,7 @@ export default function AdminBracketCourtManagerPage() {
           </Alert>
         </Snackbar>
       </Box>
+      <AssignDialog />
     </DashboardLayout>
   );
 }

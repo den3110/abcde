@@ -277,10 +277,10 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
 
     // 3) referee cộng/trừ điểm (delta: +1|-1)
     refereeIncPoint: builder.mutation({
-      query: ({ matchId, side, delta }) => ({
+      query: ({ matchId, side, delta, autoNext }) => ({
         url: `/referee/matches/${matchId}/score`,
         method: "PATCH",
-        body: { op: "inc", side, delta },
+        body: { op: "inc", side, delta, autoNext: !!autoNext },
       }),
 
       // ✅ Optimistic update chi tiết trận
@@ -311,13 +311,19 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       // ✅ Refetch lại getMatch(matchId) để đồng bộ với server
       invalidatesTags: (_res, _err, { matchId }) => [{ type: "Match", id: matchId }],
     }),
-
-    // (tuỳ chọn) set điểm tuyệt đối cho ván hiện tại
-    refereeSetGameScore: builder.mutation({
-      query: ({ matchId, gameIndex, a, b }) => ({
+    refereeNextGame: builder.mutation({
+      query: ({ matchId, autoNext }) => ({
         url: `/referee/matches/${matchId}/score`,
         method: "PATCH",
-        body: { op: "setGame", gameIndex, a, b },
+        body: { op: "nextGame", autoNext },
+      }),
+    }),
+    // (tuỳ chọn) set điểm tuyệt đối cho ván hiện tại
+    refereeSetGameScore: builder.mutation({
+      query: ({ matchId, gameIndex, a, b, autoNext }) => ({
+        url: `/referee/matches/${matchId}/score`,
+        method: "PATCH",
+        body: { op: "setGame", gameIndex, a, b, autoNext: !!autoNext },
       }),
       async onQueryStarted({ matchId, gameIndex, a, b }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
@@ -681,4 +687,5 @@ export const {
   useGetRefereeTournamentsQuery,
   useGetRefereeBracketsQuery,
   useListRefereeMatchesByTournamentQuery,
+  useRefereeNextGameMutation,
 } = tournamentsApiSlice;

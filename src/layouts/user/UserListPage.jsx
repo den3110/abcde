@@ -22,6 +22,9 @@ import {
   Alert,
   FormControl,
   InputLabel,
+  Checkbox,
+  FormControlLabel,
+  InputAdornment,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -29,6 +32,8 @@ import EditIcon from "@mui/icons-material/Edit";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import VerifiedIcon from "@mui/icons-material/HowToReg";
 import CancelIcon from "@mui/icons-material/Cancel";
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import { useDispatch, useSelector } from "react-redux";
 
 import MDBox from "components/MDBox";
@@ -45,16 +50,19 @@ import {
   useUpdateUserInfoMutation,
   useReviewKycMutation,
   useUpdateRankingMutation,
+  // 🔥 NEW:
+  useChangeUserPasswordMutation,
 } from "slices/adminApiSlice";
 import { setPage, setKeyword, setRole } from "slices/adminUiSlice";
 
+/* ================== Consts ================== */
 const GENDER_OPTIONS = [
   { value: "unspecified", label: "--" },
   { value: "male", label: "Nam" },
   { value: "female", label: "Nữ" },
   { value: "other", label: "Khác" },
 ];
-// Provinces
+
 const PROVINCES = [
   "An Giang",
   "Bà Rịa-Vũng Tàu",
@@ -121,12 +129,27 @@ const PROVINCES = [
   "Yên Bái",
 ];
 
-// Helper
+const KYC_LABEL = {
+  unverified: "Chưa KYC",
+  pending: "Chờ KYC",
+  verified: "Đã KYC",
+  rejected: "Từ chối",
+};
+const KYC_COLOR = {
+  unverified: "default",
+  pending: "warning",
+  verified: "success",
+  rejected: "error",
+};
+
 const prettyDate = (d) => (d ? new Date(d).toLocaleDateString("vi-VN") : "—");
 
+/* ================== Component ================== */
 export default function UserManagement() {
   const dispatch = useDispatch();
   const { page, keyword, role = "" } = useSelector((s) => s.adminUi);
+
+  const [kycFilter, setKycFilter] = useState("");
 
   // mutations
   const [updateRoleMut] = useUpdateUserRoleMutation();
@@ -134,11 +157,15 @@ export default function UserManagement() {
   const [reviewKycMut] = useReviewKycMutation();
   const [deleteUserMut] = useDeleteUserMutation();
   const [updateRanking] = useUpdateRankingMutation();
+  // 🔥 NEW:
+  const [changePasswordMut, { isLoading: changingPass }] = useChangeUserPasswordMutation();
 
   const [score, setScore] = useState(null);
 
-  // list
-  const { data, isFetching, refetch } = useGetUsersQuery({ page: page + 1, keyword, role });
+  const { data, isFetching, refetch } = useGetUsersQuery(
+    { page: page + 1, keyword, role, cccdStatus: kycFilter },
+    { refetchOnMountOrArgChange: true }
+  );
 
   // dialogs
   const [edit, setEdit] = useState(null);
@@ -157,7 +184,6 @@ export default function UserManagement() {
     return () => clearTimeout(t);
   }, [search, dispatch]);
 
-  // helpers async
   const handle = async (promise, successMsg) => {
     try {
       await promise;
@@ -181,17 +207,8 @@ export default function UserManagement() {
   ];
 
   const rows =
-    data?.users.map((u) => {
+    (data?.users || []).map((u) => {
       const st = u.cccdStatus || "unverified";
-      const color =
-        st === "verified"
-          ? "success"
-          : st === "pending"
-          ? "warning"
-          : st === "rejected"
-          ? "error"
-          : "default";
-
       return {
         name: <MDTypography variant="button">{u.name}</MDTypography>,
         email: <MDTypography variant="button">{u.email}</MDTypography>,
@@ -216,18 +233,7 @@ export default function UserManagement() {
         ),
         cccd: (
           <Stack direction="row" spacing={1} justifyContent="center">
-            <Chip
-              size="small"
-              label={
-                {
-                  unverified: "Chưa KYC",
-                  pending: "Chờ KYC",
-                  verified: "Đã KYC",
-                  rejected: "Từ chối",
-                }[st]
-              }
-              color={color}
-            />
+            <Chip size="small" label={KYC_LABEL[st]} color={KYC_COLOR[st]} />
             {u.cccdImages?.front && (
               <Tooltip title="Xem ảnh CCCD">
                 <IconButton size="small" onClick={() => setKyc(u)}>
@@ -261,6 +267,31 @@ export default function UserManagement() {
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
 
+  /* ================== Password UI states ================== */
+  const [changePass, setChangePass] = useState(false);
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  // reset khi mở dialog edit
+  useEffect(() => {
+    if (edit) {
+      setChangePass(false);
+      setNewPass("");
+      setConfirmPass("");
+      setShowNew(false);
+      setShowConfirm(false);
+    }
+  }, [edit]);
+
+  const passTooShort = newPass && newPass.length < 6;
+  const passNotMatch = confirmPass && confirmPass !== newPass;
+  const passHasError = changePass && (passTooShort || passNotMatch);
+
+  const canChangePass =
+    !!edit && changePass && newPass.length >= 6 && confirmPass === newPass && !changingPass;
+
   // render
   return (
     <DashboardLayout>
@@ -268,7 +299,12 @@ export default function UserManagement() {
 
       {/* Toolbar */}
       <MDBox px={3} pt={4}>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={2}
+          alignItems="center"
+          sx={{ flexWrap: "wrap" }}
+        >
           <TextField
             size="small"
             placeholder="Tìm tên / email"
@@ -277,29 +313,68 @@ export default function UserManagement() {
             InputProps={{ startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1 }} /> }}
             sx={{ width: { xs: "100%", sm: 280 } }}
           />
-          <Select
-            size="small"
-            value={role}
-            onChange={(e) => dispatch(setRole(e.target.value))}
-            displayEmpty
-            renderValue={(selected) => {
-              if (selected === "") return "Tất cả";
-              return selected === "user"
-                ? "User"
-                : selected === "referee"
-                ? "Trọng tài"
-                : selected === "admin"
-                ? "Admin"
-                : selected;
-            }}
-          >
-            <MenuItem value="">
-              <em>Tất cả</em>
-            </MenuItem>
-            <MenuItem value="user">User</MenuItem>
-            <MenuItem value="referee">Trọng tài</MenuItem>
-            <MenuItem value="admin">Admin</MenuItem>
-          </Select>
+
+          {/* Lọc theo role */}
+          <FormControl size="small" sx={{ minWidth: 160 }} variant="outlined">
+            <InputLabel id="role-filter" shrink>
+              Role
+            </InputLabel>
+            <Select
+              labelId="role-filter"
+              label="Role"
+              value={role}
+              onChange={(e) => {
+                dispatch(setRole(e.target.value));
+                dispatch(setPage(0));
+              }}
+              displayEmpty
+              renderValue={(selected) => {
+                if (selected === "") return "Tất cả";
+                return selected === "user"
+                  ? "User"
+                  : selected === "referee"
+                  ? "Trọng tài"
+                  : selected === "admin"
+                  ? "Admin"
+                  : selected;
+              }}
+            >
+              <MenuItem value="">
+                <em>Tất cả</em>
+              </MenuItem>
+              <MenuItem value="user">User</MenuItem>
+              <MenuItem value="referee">Trọng tài</MenuItem>
+              <MenuItem value="admin">Admin</MenuItem>
+            </Select>
+          </FormControl>
+
+          {/* Lọc trạng thái CCCD */}
+          <FormControl size="small" sx={{ minWidth: 180 }} variant="outlined">
+            <InputLabel id="cccd-filter" shrink>
+              Trạng thái CCCD
+            </InputLabel>
+            <Select
+              labelId="cccd-filter"
+              label="Trạng thái CCCD"
+              value={kycFilter}
+              onChange={(e) => {
+                setKycFilter(String(e.target.value));
+                dispatch(setPage(0));
+              }}
+              displayEmpty
+              renderValue={(selected) =>
+                selected === "" ? "Tất cả" : KYC_LABEL[selected] || "Tất cả"
+              }
+            >
+              <MenuItem value="">
+                <em>Tất cả</em>
+              </MenuItem>
+              <MenuItem value="unverified">{KYC_LABEL.unverified}</MenuItem>
+              <MenuItem value="pending">{KYC_LABEL.pending}</MenuItem>
+              <MenuItem value="verified">{KYC_LABEL.verified}</MenuItem>
+              <MenuItem value="rejected">{KYC_LABEL.rejected}</MenuItem>
+            </Select>
+          </FormControl>
         </Stack>
       </MDBox>
 
@@ -394,23 +469,8 @@ export default function UserManagement() {
                     <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
                       <Chip
                         size="small"
-                        label={
-                          {
-                            unverified: "Chưa KYC",
-                            pending: "Chờ KYC",
-                            verified: "Đã KYC",
-                            rejected: "Từ chối",
-                          }[kyc.cccdStatus || "unverified"]
-                        }
-                        color={
-                          kyc.cccdStatus === "verified"
-                            ? "success"
-                            : kyc.cccdStatus === "pending"
-                            ? "warning"
-                            : kyc.cccdStatus === "rejected"
-                            ? "error"
-                            : "default"
-                        }
+                        label={KYC_LABEL[kyc.cccdStatus || "unverified"]}
+                        color={KYC_COLOR[kyc.cccdStatus || "unverified"]}
                       />
                     </Stack>
 
@@ -536,7 +596,7 @@ export default function UserManagement() {
                 onChange={(e) => setEdit({ ...edit, dob: e.target.value })}
               />
 
-              {/* Giới tính: dùng enum */}
+              {/* Giới tính */}
               <FormControl fullWidth size="small" sx={{ ".MuiInputBase-root": { height: 40 } }}>
                 <InputLabel id="gender-lbl">Giới tính</InputLabel>
                 <Select
@@ -575,10 +635,107 @@ export default function UserManagement() {
                   ))}
                 </Select>
               </FormControl>
+
+              {/* ====== NEW: Khối Đổi mật khẩu (nút riêng, API riêng) ====== */}
+              <Box sx={{ mt: 1, pt: 1.5, borderTop: "1px dashed #e0e0e0" }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={changePass}
+                      onChange={(e) => setChangePass(e.target.checked)}
+                    />
+                  }
+                  label="Đổi mật khẩu"
+                />
+
+                {changePass && (
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+                    <TextField
+                      label="Mật khẩu mới"
+                      type={showNew ? "text" : "password"}
+                      value={newPass}
+                      onChange={(e) => setNewPass(e.target.value)}
+                      error={Boolean(passTooShort)}
+                      helperText={passTooShort ? "Tối thiểu 6 ký tự" : " "}
+                      InputProps={{
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton
+                              edge="end"
+                              onClick={() => setShowNew((s) => !s)}
+                              aria-label="toggle password visibility"
+                            >
+                              {showNew ? <VisibilityOff /> : <Visibility />}
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                    <TextField
+                      label="Xác nhận mật khẩu mới"
+                      type={showConfirm ? "text" : "password"}
+                      value={confirmPass}
+                      onChange={(e) => setConfirmPass(e.target.value)}
+                      error={Boolean(passNotMatch)}
+                      helperText={passNotMatch ? "Không khớp" : " "}
+                      InputProps={{
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton
+                              edge="end"
+                              onClick={() => setShowConfirm((s) => !s)}
+                              aria-label="toggle password visibility"
+                            >
+                              {showConfirm ? <VisibilityOff /> : <Visibility />}
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+
+                    <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+                      <Button
+                        variant="outlined"
+                        onClick={() => {
+                          setChangePass(false);
+                          setNewPass("");
+                          setConfirmPass("");
+                          setShowNew(false);
+                          setShowConfirm(false);
+                        }}
+                      >
+                        Huỷ đổi mật khẩu
+                      </Button>
+                      <Button
+                        variant="contained"
+                        color="secondary"
+                        disabled={!canChangePass}
+                        onClick={() =>
+                          handle(
+                            changePasswordMut({
+                              id: edit._id,
+                              body: { newPassword: newPass }, // 🔥 gọi API riêng
+                            }).unwrap(),
+                            "Đã đổi mật khẩu"
+                          ).then(() => {
+                            setChangePass(false);
+                            setNewPass("");
+                            setConfirmPass("");
+                            setShowNew(false);
+                            setShowConfirm(false);
+                          })
+                        }
+                      >
+                        Cập nhật mật khẩu
+                      </Button>
+                    </Box>
+                  </Box>
+                )}
+              </Box>
             </DialogContent>
 
             <DialogActions>
-              <Button onClick={() => setEdit(null)}>Huỷ</Button>
+              <Button onClick={() => setEdit(null)}>Đóng</Button>
               <Button
                 onClick={() =>
                   handle(
@@ -601,7 +758,7 @@ export default function UserManagement() {
                   ).then(() => setEdit(null))
                 }
               >
-                Lưu
+                Lưu thông tin
               </Button>
             </DialogActions>
           </>

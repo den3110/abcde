@@ -39,6 +39,7 @@ import AdminMatchDetailPage from "layouts/match/AdminMatchDetailPage";
 import AdminCourtManagerPage from "layouts/tournament/AdminCourtManagerPage";
 import AdminBracketCourtManagerPage from "layouts/tournament/AdminBracketCourtManagerPage";
 import RatingTesterPage from "layouts/tools/RatingTesterPage";
+import AdminEvaluatorManagement from "layouts/tournament/AdminEvaluatorManagement";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -82,6 +83,18 @@ const routes = [
     icon: <Icon fontSize="small">people</Icon>,
     route: "/users",
     component: <UserManagement />,
+    private: true,
+    roles: ["admin"],
+  },
+
+  // 🆕 Người chấm trình (Admin)
+  {
+    type: "collapse",
+    name: "Người chấm trình",
+    key: "evaluator-management",
+    icon: <Icon fontSize="small">how_to_reg</Icon>,
+    route: "/admin/evaluators",
+    component: <AdminEvaluatorManagement />,
     private: true,
     roles: ["admin"],
   },

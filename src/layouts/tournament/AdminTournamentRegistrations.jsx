@@ -23,6 +23,8 @@ import {
   TextField,
   Autocomplete,
   Divider,
+  Checkbox,
+  Paper,
 } from "@mui/material";
 import { ArrowBack, Paid, MoneyOff, Delete as DeleteIcon } from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
@@ -73,13 +75,14 @@ export default function AdminTournamentRegistrations() {
     isFetching: managersLoading,
   } = useListTournamentManagersQuery(id);
 
-  /* ───── mutation ───── */
+  /* ───── mutations ───── */
   const [updatePay] = useUpdatePaymentMutation();
   const [deleteReg] = useDeleteRegistrationMutation();
   const [addManager] = useAddTournamentManagerMutation();
   const [removeManager] = useRemoveTournamentManagerMutation();
 
   const [confirmDel, setConfirmDel] = useState(null); // reg obj or null
+  const [confirmBulkDel, setConfirmBulkDel] = useState(false);
 
   /* ───── snackbar ───── */
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
@@ -97,6 +100,33 @@ export default function AdminTournamentRegistrations() {
 
   const evType = normType(tour?.eventType);
   const isSingles = evType === "single";
+
+  /* ───── selection (per reg._id) ───── */
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const pageIds = useMemo(() => paged.map((r) => r._id), [paged]);
+  const selectedOnPageCount = pageIds.filter((id) => selectedIds.has(id)).length;
+  const allOnPage = pageIds.length > 0 && selectedOnPageCount === pageIds.length;
+  const someOnPage = selectedOnPageCount > 0 && !allOnPage;
+
+  const toggleSelect = (id, checked) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPage = (checked) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) pageIds.forEach((id) => next.add(id));
+      else pageIds.forEach((id) => next.delete(id));
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
 
   /* ───── side-effects ───── */
   useEffect(() => {
@@ -165,7 +195,7 @@ export default function AdminTournamentRegistrations() {
 
   const { data: userSearch, isFetching: searchingUsers } = useGetUsersQuery(
     { page: 1, keyword: mgrKeyword, role: "" },
-    { skip: mgrKeyword.trim().length < 1 } // gõ mới search
+    { skip: mgrKeyword.trim().length < 1 }
   );
 
   const userOptions = (userSearch?.users || []).map((u) => ({
@@ -201,9 +231,63 @@ export default function AdminTournamentRegistrations() {
     }
   };
 
-  /* ───── DataTable config ───── */
+  /* ───── Bulk actions ───── */
+  const [bulkWorking, setBulkWorking] = useState(false);
+
+  const bulkUpdateStatus = async (status) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    try {
+      setBulkWorking(true);
+      await Promise.all(ids.map((regId) => updatePay({ regId, status }).unwrap()));
+      showSnack(
+        "success",
+        status === "Paid"
+          ? "Đã xác nhận thanh toán cho mục đã chọn"
+          : "Đã đặt về chưa thanh toán cho mục đã chọn"
+      );
+      clearSelection();
+      refetch();
+    } catch (err) {
+      showSnack("error", err?.data?.message || err.error || "Cập nhật hàng loạt thất bại");
+    } finally {
+      setBulkWorking(false);
+    }
+  };
+
+  const bulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    try {
+      setBulkWorking(true);
+      await Promise.all(ids.map((regId) => deleteReg(regId).unwrap()));
+      showSnack("success", "Đã xoá các đăng ký đã chọn");
+      clearSelection();
+      refetch();
+    } catch (err) {
+      showSnack("error", err?.data?.message || err.error || "Xoá hàng loạt thất bại");
+    } finally {
+      setBulkWorking(false);
+      setConfirmBulkDel(false);
+    }
+  };
+
+  /* ───── DataTable config (desktop) ───── */
   const columns = useMemo(() => {
+    const selHeader = (
+      <Box display="flex" justifyContent="center" alignItems="center">
+        <Checkbox
+          size="small"
+          indeterminate={someOnPage}
+          checked={allOnPage}
+          onChange={(e) => toggleSelectAllPage(e.target.checked)}
+          inputProps={{ "aria-label": "Chọn tất cả trang này" }}
+        />
+      </Box>
+    );
+
     const base = [
+      { Header: selHeader, accessor: "sel", align: "center", width: "6%" },
       { Header: "#", accessor: "idx", align: "center", width: "6%" },
       { Header: isSingles ? "Vận động viên" : "Vận động viên 1", accessor: "ath1" },
     ];
@@ -214,11 +298,19 @@ export default function AdminTournamentRegistrations() {
       { Header: "Thao tác", accessor: "act", align: "center" }
     );
     return base;
-  }, [isSingles]);
+  }, [isSingles, someOnPage, allOnPage, pageIds]);
 
   const rows = useMemo(
     () =>
       paged.map((r, i) => ({
+        sel: (
+          <Checkbox
+            size="small"
+            checked={selectedIds.has(r._id)}
+            onChange={(e) => toggleSelect(r._id, e.target.checked)}
+            inputProps={{ "aria-label": `Chọn đăng ký ${r._id}` }}
+          />
+        ),
         idx: <MDTypography variant="caption">{(page - 1) * perPage + i + 1}</MDTypography>,
         ath1: renderAthlete(r.player1),
         ...(isSingles ? {} : { ath2: renderAthlete(r.player2) }),
@@ -249,8 +341,70 @@ export default function AdminTournamentRegistrations() {
           </>
         ),
       })),
-    [paged, page, isSingles]
+    [paged, page, isSingles, selectedIds]
   );
+
+  const BulkBar = () =>
+    selectedIds.size > 0 ? (
+      <Paper
+        elevation={8}
+        sx={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: (t) => t.zIndex.drawer + 1,
+          borderTop: "1px solid",
+          borderColor: "divider",
+          p: 1.5,
+          backdropFilter: "saturate(180%) blur(8px)",
+        }}
+      >
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          spacing={1.5}
+          alignItems={{ xs: "stretch", md: "center" }}
+          justifyContent="space-between"
+        >
+          <Typography variant="subtitle2">
+            Đã chọn <b>{selectedIds.size}</b> đăng ký
+          </Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<Paid />}
+              disabled={bulkWorking}
+              onClick={() => bulkUpdateStatus("Paid")}
+            >
+              Tất cả thanh toán
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<MoneyOff />}
+              disabled={bulkWorking}
+              onClick={() => bulkUpdateStatus("Unpaid")}
+            >
+              Tất cả chưa thanh toán
+            </Button>
+            <Button
+              size="small"
+              color="error"
+              variant="outlined"
+              startIcon={<DeleteIcon />}
+              disabled={bulkWorking}
+              onClick={() => setConfirmBulkDel(true)}
+            >
+              Xoá đăng ký
+            </Button>
+            <Button size="small" onClick={clearSelection} disabled={bulkWorking}>
+              Bỏ chọn
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
+    ) : null;
 
   /* ───── render ───── */
   return (
@@ -295,7 +449,7 @@ export default function AdminTournamentRegistrations() {
                 onInputChange={(_, v) => setMgrKeyword(v)}
                 options={userOptions}
                 loading={searchingUsers}
-                filterOptions={(x) => x} // không filter client, rely server
+                filterOptions={(x) => x}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -394,76 +548,102 @@ export default function AdminTournamentRegistrations() {
       </MDBox>
 
       {/* content: registrations */}
-      <MDBox px={3} pb={3}>
+      <MDBox px={3} pb={8 /* chừa chỗ cho BulkBar */}>
         {regsLoading ? (
           <Box textAlign="center" py={6}>
             <CircularProgress />
           </Box>
         ) : isMobile ? (
-          /* mobile cards */
-          <Stack spacing={2}>
-            {paged.map((r, i) => (
-              <Card key={r._id} sx={{ p: 2 }}>
-                <Stack direction="row" justifyContent="space-between" mb={1}>
-                  <MDTypography variant="subtitle2">#{(page - 1) * perPage + i + 1}</MDTypography>
-                  <Chip
-                    size="small"
-                    color={r.payment.status === "Paid" ? "success" : "default"}
-                    label={r.payment.status === "Paid" ? "Đã thanh toán" : "Chưa thanh toán"}
-                  />
-                </Stack>
-
-                {[r.player1, r.player2].filter(Boolean).map((pl) => (
-                  <Stack
-                    key={(pl.user || pl.fullName) + (pl.phone || "")}
-                    direction="row"
-                    spacing={1}
-                    alignItems="center"
-                    mb={1}
-                  >
-                    <Avatar src={pl.avatar || PLACE} />
-                    <Box>
-                      <MDTypography variant="body2">{pl.fullName}</MDTypography>
-                      <div></div>
-                      <MDTypography variant="caption" color="text">
-                        {pl.phone}
-                      </MDTypography>
-                    </Box>
-                  </Stack>
-                ))}
-
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <MDTypography variant="caption">
-                    {new Date(r.createdAt).toLocaleString()}
-                  </MDTypography>
-                  <Stack direction="row" spacing={1}>
-                    <IconButton
-                      color={r.payment.status === "Paid" ? "error" : "success"}
-                      onClick={() => handleToggle(r)}
-                      title={
-                        r.payment.status === "Paid"
-                          ? "Đánh dấu chưa thanh toán"
-                          : "Xác nhận thanh toán"
-                      }
-                    >
-                      {r.payment.status === "Paid" ? <MoneyOff /> : <Paid />}
-                    </IconButton>
-                    <IconButton color="error" onClick={() => setConfirmDel(r)} title="Xoá đăng ký">
-                      <DeleteIcon />
-                    </IconButton>
-                  </Stack>
-                </Stack>
-              </Card>
-            ))}
-            <Box display="flex" justifyContent="center" mt={2}>
-              <Pagination
-                count={totalPages}
-                page={page}
-                onChange={(_, v) => setPage(v)}
+          <>
+            {/* Select all (mobile) */}
+            <Stack direction="row" alignItems="center" spacing={1} mb={1}>
+              <Checkbox
                 size="small"
+                indeterminate={someOnPage}
+                checked={allOnPage}
+                onChange={(e) => toggleSelectAllPage(e.target.checked)}
               />
-            </Box>
-          </Stack>
+              <Typography variant="body2">Chọn tất cả trang này</Typography>
+            </Stack>
+
+            {/* mobile cards */}
+            <Stack spacing={2}>
+              {paged.map((r, i) => (
+                <Card key={r._id} sx={{ p: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" mb={1} alignItems="center">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Checkbox
+                        size="small"
+                        checked={selectedIds.has(r._id)}
+                        onChange={(e) => toggleSelect(r._id, e.target.checked)}
+                      />
+                      <MDTypography variant="subtitle2">
+                        #{(page - 1) * perPage + i + 1}
+                      </MDTypography>
+                    </Stack>
+                    <Chip
+                      size="small"
+                      color={r.payment.status === "Paid" ? "success" : "default"}
+                      label={r.payment.status === "Paid" ? "Đã thanh toán" : "Chưa thanh toán"}
+                    />
+                  </Stack>
+
+                  {[r.player1, r.player2].filter(Boolean).map((pl) => (
+                    <Stack
+                      key={(pl.user || pl.fullName) + (pl.phone || "")}
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      mb={1}
+                    >
+                      <Avatar src={pl.avatar || PLACE} />
+                      <Box>
+                        <MDTypography variant="body2">{pl.fullName}</MDTypography>
+                        <div></div>
+                        <MDTypography variant="caption" color="text">
+                          {pl.phone}
+                        </MDTypography>
+                      </Box>
+                    </Stack>
+                  ))}
+
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <MDTypography variant="caption">
+                      {new Date(r.createdAt).toLocaleString()}
+                    </MDTypography>
+                    <Stack direction="row" spacing={1}>
+                      <IconButton
+                        color={r.payment.status === "Paid" ? "error" : "success"}
+                        onClick={() => handleToggle(r)}
+                        title={
+                          r.payment.status === "Paid"
+                            ? "Đánh dấu chưa thanh toán"
+                            : "Xác nhận thanh toán"
+                        }
+                      >
+                        {r.payment.status === "Paid" ? <MoneyOff /> : <Paid />}
+                      </IconButton>
+                      <IconButton
+                        color="error"
+                        onClick={() => setConfirmDel(r)}
+                        title="Xoá đăng ký"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Stack>
+                  </Stack>
+                </Card>
+              ))}
+              <Box display="flex" justifyContent="center" mt={2}>
+                <Pagination
+                  count={totalPages}
+                  page={page}
+                  onChange={(_, v) => setPage(v)}
+                  size="small"
+                />
+              </Box>
+            </Stack>
+          </>
         ) : (
           /* desktop table */
           <Card>
@@ -484,6 +664,9 @@ export default function AdminTournamentRegistrations() {
 
       <Footer />
 
+      {/* Bulk action bar */}
+      <BulkBar />
+
       {/* Snackbar */}
       <Snackbar
         open={snack.open}
@@ -496,7 +679,7 @@ export default function AdminTournamentRegistrations() {
         </Alert>
       </Snackbar>
 
-      {/* Confirm delete */}
+      {/* Confirm delete (single) */}
       <Dialog open={!!confirmDel} onClose={() => setConfirmDel(null)}>
         <DialogTitle>Xoá đăng ký?</DialogTitle>
         <DialogContent>
@@ -522,6 +705,17 @@ export default function AdminTournamentRegistrations() {
         <DialogActions>
           <Button onClick={() => setConfirmDel(null)}>Huỷ</Button>
           <Button color="error" onClick={handleDelete}>
+            Xoá
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirm delete (bulk) */}
+      <Dialog open={confirmBulkDel} onClose={() => setConfirmBulkDel(false)}>
+        <DialogTitle>Xoá {selectedIds.size} đăng ký đã chọn?</DialogTitle>
+        <DialogActions>
+          <Button onClick={() => setConfirmBulkDel(false)}>Huỷ</Button>
+          <Button color="error" onClick={bulkDelete} disabled={bulkWorking}>
             Xoá
           </Button>
         </DialogActions>

@@ -142,6 +142,25 @@ export const adminCourtApiSlice = apiSlice.injectEndpoints({
       forceRefetch: () => true, // luôn refetch khi có subscriber mới
       providesTags: () => [{ type: "ADMIN_MATCHES", id: "LIST" }],
     }),
+    // ⭐ NEW: Gán 1 trận cụ thể vào 1 sân
+    assignSpecificHttp: builder.mutation({
+      query: ({ tournamentId, courtId, bracket, matchId, replace = true }) => ({
+        url: `/admin/tournaments/${tournamentId}/courts/${courtId}/assign-specific`,
+        method: "POST",
+        body: { bracket, matchId, replace },
+      }),
+      invalidatesTags: [{ type: "Scheduler", id: "STATE" }],
+    }),
+
+    // ⭐ NEW: Reset tất cả sân & gỡ gán
+    resetCourtsHttp: builder.mutation({
+      query: ({ tournamentId, bracket }) => ({
+        url: `/admin/tournaments/${tournamentId}/courts/reset`,
+        method: "POST",
+        body: { bracket },
+      }),
+      invalidatesTags: [{ type: "Scheduler", id: "STATE" }],
+    }),
   }),
 
   // nếu file này được inject nhiều lần ở môi trường hot-reload:
@@ -155,4 +174,6 @@ export const {
   useFreeCourtHttpMutation,
   useGetSchedulerStateQuery,
   useListMatchesQuery,
+  useAssignSpecificHttpMutation,
+  useResetCourtsHttpMutation,
 } = adminCourtApiSlice;
