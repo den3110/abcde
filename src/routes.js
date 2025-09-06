@@ -40,6 +40,7 @@ import AdminCourtManagerPage from "layouts/tournament/AdminCourtManagerPage";
 import AdminBracketCourtManagerPage from "layouts/tournament/AdminBracketCourtManagerPage";
 import RatingTesterPage from "layouts/tools/RatingTesterPage";
 import AdminEvaluatorManagement from "layouts/tournament/AdminEvaluatorManagement";
+import GroupPreassignBoard from "layouts/tournament/GroupPreassignBoard";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -240,6 +241,16 @@ const routes = [
     key: "tournament-bracket-view",
     route: "/admin/tournaments/:id/bracket",
     component: <TournamentBracketView />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Cơ cấu vòng bảng",
+    key: "bracket-preassign",
+    route: "/admin/brackets/:bracketId/preassign",
+    component: <GroupPreassignBoard />,
     private: true,
     roles: ["admin"],
   },

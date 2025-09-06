@@ -134,19 +134,70 @@ export const displayOrder = (m) => {
   return isGroupType(m) ? ord + 1 : ord;
 };
 
-export function matchCode(m) {
-  const t = (m?.bracket?.type || m?.format || "").toLowerCase();
-  const ord = Number.isFinite(Number(m?.order)) ? Number(m.order) : 0;
-  if (t === "knockout" || t === "ko" || t === "roundelim" || t === "po") {
-    return `R${m?.round ?? "?"}#${ord}`;
-  }
-  if (t === "group") {
-    const pool = m?.pool?.name ? String(m.pool.name) : "";
-    return `G${pool || "-"}#${displayOrder(m)}`;
-  }
-  return `R${m?.round ?? "?"}#${ord}`;
-}
+// Helpers nhỏ để an toàn dữ liệu xấu
+const toInt = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+const str = (v) => (v == null ? "" : String(v).trim());
 
+/** Lấy stage/type chuẩn hóa */
+const typeOf = (m) => str(m?.bracket?.type || m?.format).toLowerCase();
+
+/** Ưu tiên order trong bracket (thứ tự vòng/buổi của bracket) */
+const bracketOrderOf = (m) => {
+  return (
+    toInt(m?.bracket?.order) ??
+    toInt(m?.bracketOrder) ??
+    toInt(m?.stageOrder) ??
+    // fallback cuối: dùng round nếu không có order riêng cho bracket
+    toInt(m?.round) ??
+    1
+  );
+};
+
+/** Nhãn "Bảng X": ưu tiên groupIndex (số), sau đó pool.name / groupName */
+const groupLabelOf = (m) => {
+  const gi = toInt(m?.groupIndex);
+  if (gi != null) return String(gi);
+
+  const name = str(m?.pool?.name || m?.groupName);
+  if (!name) return "?";
+  // Nếu server đã để "Bảng A/B/C..." thì bỏ prefix "Bảng"
+  return name.replace(/^bảng\s*/i, "") || "?";
+};
+
+/** Thứ tự trận TRONG BẢNG (khác với order toàn bracket) */
+const orderInGroupOf = (m) => {
+  return (
+    toInt(m?.orderInGroup) ??
+    toInt(m?.groupOrder) ??
+    toInt(m?.poolOrder) ??
+    toInt(m?.displayOrderInGroup) ??
+    // fallback cuối: dùng order toàn cục nếu không có field riêng theo bảng
+    toInt(m?.order) ??
+    toInt(m?.displayOrder) ??
+    0
+  );
+};
+
+export function matchCode(m) {
+  const t = typeOf(m);
+  const round = toInt(m?.round);
+  const ordGlobal = toInt(m?.order) ?? toInt(m?.displayOrder) ?? 0;
+
+  // ===== Knockout / RoundElim (kể cả giai đoạn "po") =====
+  if (["knockout", "ko", "roundElim", "roundelim", "singleElim", "single_elim"].includes(t)) {
+    return `R${round ?? "?"}#${ordGlobal?.toString() || "?"}`;
+  }
+  // ===== Group (vòng bảng) =====
+  if (t === "group") {
+    const v = bracketOrderOf(m); // "Vòng{...}" lấy từ bracket.order (fallback round/1)
+    const g = groupLabelOf(m); // "Bảng{...}" từ groupIndex/pool.name
+    const og = orderInGroupOf(m); // "#{...}" là thứ tự trận trong chính bảng đó
+    return `V${v}-B${g}#${parseInt(og) + parseInt(1) || "?"}`;
+  }
+
+  // ===== Mặc định =====
+  return `R${round ?? "?"}#${ordGlobal?.toString() || "?"}`;
+}
 /* ======== Animations (visual only) ======== */
 const pulse = keyframes`
   0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(25,118,210,.35); }

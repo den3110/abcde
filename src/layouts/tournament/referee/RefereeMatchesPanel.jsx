@@ -100,7 +100,7 @@ function TournamentAccordion({
   const totalPages = matchesResp?.totalPages || 1;
 
   // Hiển thị mã ưu tiên codeResolved (server đã chuẩn hoá theo bảng)
-  const renderMatchCode = (m) => m?.codeResolved ?? m?.code ?? matchCode(m);
+  const renderMatchCode = (m) => matchCode(m);
 
   // Render chip “Bảng …” khi là vòng bảng & có index
   const renderGroupChip = (m) => {

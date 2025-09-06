@@ -1545,7 +1545,15 @@ export default function AdminBracketsPage() {
                         >
                           Auto fill từ stage trước
                         </Button>
-
+                        <Button
+                          size="small"
+                          startIcon={<BoltIcon />}
+                          onClick={() =>
+                            navigate(`/admin/brackets/${br._id}/preassign?t=${br.tournament?._id}`)
+                          }
+                        >
+                          Cấu hình vòng bảng
+                        </Button>
                         <Tooltip title="Sửa giai đoạn">
                           <span>
                             <IconButton
