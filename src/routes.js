@@ -3,7 +3,6 @@ import Dashboard from "layouts/dashboard";
 import Tables from "layouts/tables";
 import Billing from "layouts/billing";
 import RTL from "layouts/rtl";
-import Notifications from "layouts/notifications";
 import Profile from "layouts/profile";
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
@@ -41,6 +40,7 @@ import AdminBracketCourtManagerPage from "layouts/tournament/AdminBracketCourtMa
 import RatingTesterPage from "layouts/tools/RatingTesterPage";
 import AdminEvaluatorManagement from "layouts/tournament/AdminEvaluatorManagement";
 import GroupPreassignBoard from "layouts/tournament/GroupPreassignBoard";
+import BroadcastPage from "layouts/Notifications/Broadcast";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -364,6 +364,16 @@ const routes = [
     icon: <Icon fontSize="small">calculate</Icon>,
     route: "/admin/tools/rating-tester",
     component: <RatingTesterPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Gửi thông báo",
+    key: "admin-broadcast",
+    icon: <Icon fontSize="small">campaign</Icon>,
+    route: "/admin/notifications/broadcast",
+    component: <BroadcastPage />,
     private: true,
     roles: ["admin"],
   },

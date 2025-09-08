@@ -30,6 +30,10 @@ const mergeContact = (prev, src = {}) => ({
     ...prev.socials,
     ...(src.socials || {}),
   },
+  apps: {
+    ...prev.apps,
+    ...(src.apps || {}),
+  },
 });
 
 export default function CmsContactEditor() {
@@ -48,6 +52,7 @@ export default function CmsContactEditor() {
       salesEmail: "",
     },
     socials: { facebook: "", youtube: "", zalo: "" },
+    apps: { appStore: "", playStore: "" }, // 👈 thêm nhánh apps
   });
 
   // Chỉ hydrate 1 lần để tránh overwrite khi user đã gõ
@@ -67,10 +72,11 @@ export default function CmsContactEditor() {
   const setSocial = (k) => (e) =>
     setForm((f) => ({ ...f, socials: { ...f.socials, [k]: e.target.value } }));
 
+  const setApp = (k) => (e) => setForm((f) => ({ ...f, apps: { ...f.apps, [k]: e.target.value } }));
+
   const onSave = async () => {
     try {
-      // BE expects { data: ... } → hook đã bọc sẵn
-      await updateContact(form).unwrap();
+      await updateContact(form).unwrap(); // BE nhận full object, thêm fields sẽ được lưu
       toast.success("Lưu liên hệ thành công");
       await refetch();
     } catch (err) {
@@ -183,6 +189,30 @@ export default function CmsContactEditor() {
                 fullWidth
                 value={form.socials.zalo}
                 onChange={setSocial("zalo")}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Divider />
+            </Grid>
+
+            {/* 👇 Thêm khu vực liên kết cửa hàng ứng dụng */}
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="App Store URL (iOS)"
+                placeholder="https://apps.apple.com/app/idXXXXXXXXX"
+                fullWidth
+                value={form.apps.appStore}
+                onChange={setApp("appStore")}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Google Play URL (Android)"
+                placeholder="https://play.google.com/store/apps/details?id=..."
+                fullWidth
+                value={form.apps.playStore}
+                onChange={setApp("playStore")}
               />
             </Grid>
           </Grid>
