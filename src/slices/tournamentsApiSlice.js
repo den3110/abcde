@@ -465,10 +465,10 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       }),
     }),
     batchAssignReferee: builder.mutation({
-      query: ({ ids, referee }) => ({
+      query: ({ ids, referees }) => ({
         url: `/admin/matches/batch/update-referee`,
         method: "POST",
-        body: { ids, referee },
+        body: { ids, referees },
       }),
     }),
     batchDeleteMatches: builder.mutation({

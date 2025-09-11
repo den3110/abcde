@@ -1,11 +1,12 @@
 /*
-  Admin Evaluator Management (MUI) – v2
+  Admin Evaluator Management (MUI) – v2 (no delete user)
   -------------------------------------------------------
   Cập nhật theo yêu cầu:
-  - Dialog "Thêm người chấm trình": chọn User bằng Autocomplete (có tìm kiếm – lấy từ useGetUsersQuery).
-  - Chọn TỈNH: dùng Autocomplete multiple + checkbox + search (cả ở dialog Thêm và Sửa phạm vi).
-  - Toolbar filter tỉnh: chuyển sang Autocomplete để tránh label đè chữ.
-  - Giữ lại các API RTK đã wiring.
+  - Gỡ toàn bộ tính năng xoá user.
+  - Dialog "Thêm người chấm trình": chọn User bằng Autocomplete (search – useGetUsersQuery).
+  - Chọn TỈNH: Autocomplete multiple + checkbox + search (ở dialog Thêm và Sửa phạm vi).
+  - Toolbar filter tỉnh: Autocomplete để tránh label đè chữ.
+  - Giữ lại các API RTK đã wiring (trừ delete).
 */
 
 /* eslint-disable react/prop-types */
@@ -39,8 +40,7 @@ import {
   Checkbox,
   ListItemText,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/PersonAddAlt";
-import DeleteIcon from "@mui/icons-material/Delete";
+import PersonAddAltIcon from "@mui/icons-material/PersonAddAlt";
 import EditIcon from "@mui/icons-material/Edit";
 import TuneIcon from "@mui/icons-material/Tune";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
@@ -58,7 +58,6 @@ import {
   useUpdateEvaluatorScopesMutation,
   usePromoteToEvaluatorMutation,
   useDemoteEvaluatorMutation,
-  useDeleteUserMutation,
   useUpdateUserInfoMutation,
   useGetUsersQuery, // ⬅️ lấy list user cho Autocomplete
 } from "slices/adminApiSlice";
@@ -168,7 +167,6 @@ export default function AdminEvaluatorManagement() {
   const [updateScopes] = useUpdateEvaluatorScopesMutation();
   const [promote] = usePromoteToEvaluatorMutation();
   const [demote] = useDemoteEvaluatorMutation();
-  const [deleteUser] = useDeleteUserMutation();
   const [updateInfo] = useUpdateUserInfoMutation();
 
   // dialogs
@@ -176,7 +174,6 @@ export default function AdminEvaluatorManagement() {
   const [dlgEdit, setDlgEdit] = useState(null); // basic info
   const [dlgAdd, setDlgAdd] = useState(false); // promote/create
   const [dlgDemote, setDlgDemote] = useState(null); // user object
-  const [dlgDelete, setDlgDelete] = useState(null); // user object
 
   // ADD dialog state
   const [addSelectedUser, setAddSelectedUser] = useState(null); // object từ Autocomplete
@@ -205,7 +202,10 @@ export default function AdminEvaluatorManagement() {
   // debounce main search (toolbar)
   const [search, setSearch] = useState(keyword);
   useEffect(() => {
-    const t = setTimeout(() => setKeyword(search.trim()), 450);
+    const t = setTimeout(() => {
+      setKeyword(search.trim());
+      setPage(0);
+    }, 450);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -226,7 +226,7 @@ export default function AdminEvaluatorManagement() {
       { Header: "Tỉnh được chấm", accessor: "provinces", align: "left", width: "24%" },
       { Header: "Môn", accessor: "sports", align: "center" },
       { Header: "Cập nhật", accessor: "updatedAt", align: "center" },
-      { Header: "Thao tác", accessor: "act", align: "center", width: "18%" },
+      { Header: "Thao tác", accessor: "act", align: "center", width: "14%" },
     ],
     []
   );
@@ -282,12 +282,6 @@ export default function AdminEvaluatorManagement() {
                 <ArrowDropDownIcon fontSize="inherit" />
               </IconButton>
             </Tooltip>
-
-            <Tooltip title="Xoá người dùng">
-              <IconButton size="small" color="error" onClick={() => setDlgDelete(u)}>
-                <DeleteIcon fontSize="inherit" />
-              </IconButton>
-            </Tooltip>
           </Stack>
         ),
       })) || [],
@@ -314,7 +308,7 @@ export default function AdminEvaluatorManagement() {
           <Grid item xs={12} sm="auto">
             <TextField
               size="small"
-              label="Tìm tên / email" // ⬅️ thêm label để không bị đè
+              label="Tìm tên / email"
               placeholder="Nhập từ khóa..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -369,12 +363,13 @@ export default function AdminEvaluatorManagement() {
             </FormControl>
           </Grid>
 
-          <Grid item xs>
-            {/* spacer */}
-          </Grid>
-
+          <Grid item xs />
           <Grid item xs={12} sm="auto">
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDlgAdd(true)}>
+            <Button
+              variant="contained"
+              startIcon={<PersonAddAltIcon />}
+              onClick={() => setDlgAdd(true)}
+            >
               Thêm người chấm trình
             </Button>
           </Grid>
@@ -560,7 +555,7 @@ export default function AdminEvaluatorManagement() {
           <Button onClick={() => setDlgAdd(false)}>Huỷ</Button>
           <Button
             variant="contained"
-            startIcon={<AddIcon />}
+            startIcon={<PersonAddAltIcon />}
             onClick={() =>
               handle(
                 promote({
@@ -584,7 +579,7 @@ export default function AdminEvaluatorManagement() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: Edit basic info (giữ nguyên) */}
+      {/* Dialog: Edit basic info */}
       <Dialog open={!!dlgEdit} onClose={() => setDlgEdit(null)} maxWidth="sm" fullWidth>
         {dlgEdit && (
           <>
@@ -672,30 +667,6 @@ export default function AdminEvaluatorManagement() {
                 }
               >
                 Hạ cấp
-              </Button>
-            </DialogActions>
-          </>
-        )}
-      </Dialog>
-
-      {/* Dialog: Delete */}
-      <Dialog open={!!dlgDelete} onClose={() => setDlgDelete(null)}>
-        {dlgDelete && (
-          <>
-            <DialogTitle>Xoá {dlgDelete.name}?</DialogTitle>
-            <DialogContent>Xoá vĩnh viễn người dùng này. Không thể hoàn tác.</DialogContent>
-            <DialogActions>
-              <Button onClick={() => setDlgDelete(null)}>Huỷ</Button>
-              <Button
-                color="error"
-                variant="contained"
-                onClick={() =>
-                  handle(deleteUser(dlgDelete._id).unwrap(), "Đã xoá người dùng").then(() =>
-                    setDlgDelete(null)
-                  )
-                }
-              >
-                Xoá
               </Button>
             </DialogActions>
           </>

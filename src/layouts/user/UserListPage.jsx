@@ -27,7 +27,6 @@ import {
   InputAdornment,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
-import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import VerifiedIcon from "@mui/icons-material/HowToReg";
@@ -46,12 +45,12 @@ import DataTable from "examples/Tables/DataTable";
 import {
   useGetUsersQuery,
   useUpdateUserRoleMutation,
-  useDeleteUserMutation,
   useUpdateUserInfoMutation,
   useReviewKycMutation,
   useUpdateRankingMutation,
-  // 🔥 NEW:
   useChangeUserPasswordMutation,
+  usePromoteToEvaluatorMutation,
+  useDemoteEvaluatorMutation,
 } from "slices/adminApiSlice";
 import { setPage, setKeyword, setRole } from "slices/adminUiSlice";
 
@@ -128,6 +127,7 @@ const PROVINCES = [
   "Vĩnh Phúc",
   "Yên Bái",
 ];
+const PROVINCES_SET = new Set(PROVINCES);
 
 const KYC_LABEL = {
   unverified: "Chưa KYC",
@@ -144,22 +144,36 @@ const KYC_COLOR = {
 
 const prettyDate = (d) => (d ? new Date(d).toLocaleDateString("vi-VN") : "—");
 
+/* ================== Helpers ================== */
+const roleText = (r) => (r === "admin" ? "Admin" : r === "referee" ? "Trọng tài" : "User");
+
+const getEvalProvinces = (u) => {
+  const list = u?.evaluator?.gradingScopes?.provinces || [];
+  return Array.isArray(list) ? list.filter(Boolean) : [];
+};
+
+// FULL tỉnh = "admin chấm trình"
+const getIsFullEvaluator = (u) => {
+  const list = getEvalProvinces(u);
+  if (!list.length) return false;
+  const normalized = Array.from(new Set(list.filter((p) => PROVINCES_SET.has(p))));
+  return normalized.length === PROVINCES.length;
+};
+
 /* ================== Component ================== */
 export default function UserManagement() {
   const dispatch = useDispatch();
   const { page, keyword, role = "" } = useSelector((s) => s.adminUi);
-
   const [kycFilter, setKycFilter] = useState("");
 
   // mutations
   const [updateRoleMut] = useUpdateUserRoleMutation();
   const [updateInfoMut] = useUpdateUserInfoMutation();
   const [reviewKycMut] = useReviewKycMutation();
-  const [deleteUserMut] = useDeleteUserMutation();
   const [updateRanking] = useUpdateRankingMutation();
-  // 🔥 NEW:
   const [changePasswordMut, { isLoading: changingPass }] = useChangeUserPasswordMutation();
-
+  const [promoteEvaluatorMut] = usePromoteToEvaluatorMutation();
+  const [demoteEvaluatorMut] = useDemoteEvaluatorMutation();
   const [score, setScore] = useState(null);
 
   const { data, isFetching, refetch } = useGetUsersQuery(
@@ -169,7 +183,6 @@ export default function UserManagement() {
 
   // dialogs
   const [edit, setEdit] = useState(null);
-  const [del, setDel] = useState(null);
   const [kyc, setKyc] = useState(null);
   const [zoom, setZoom] = useState(null);
 
@@ -184,6 +197,16 @@ export default function UserManagement() {
     return () => clearTimeout(t);
   }, [search, dispatch]);
 
+  // ✅ Optimistic map: { [userId]: boolean } → true nếu FULL tỉnh (admin chấm trình)
+  const [fullMap, setFullMap] = useState({});
+  useEffect(() => {
+    if (data?.users) {
+      const next = {};
+      data.users.forEach((u) => (next[u._id] = getIsFullEvaluator(u)));
+      setFullMap(next);
+    }
+  }, [data?.users]);
+
   const handle = async (promise, successMsg) => {
     try {
       await promise;
@@ -194,7 +217,38 @@ export default function UserManagement() {
     }
   };
 
-  // table
+  // Bật/tắt "Admin chấm trình (FULL tỉnh)"
+  const toggleAdminEvaluator = async (userId, enable) => {
+    // optimistic UI
+    setFullMap((m) => ({ ...m, [userId]: enable }));
+    try {
+      if (enable) {
+        // ✅ BẬT = promote full tỉnh
+        await promoteEvaluatorMut({
+          idOrEmail: userId,
+          provinces: PROVINCES,
+          sports: [], // để BE tự default "pickleball"
+        }).unwrap();
+        showSnack("success", "Đã bật Admin chấm trình (FULL tỉnh)");
+      } else {
+        // ✅ TẮT = DEMOTE (chuẩn tham số: { id, body })
+        await demoteEvaluatorMut({
+          id: userId,
+          body: { toRole: "user" }, // hoặc "referee" tuỳ bạn
+        }).unwrap();
+        showSnack("success", "Đã tắt Admin chấm trình");
+      }
+      refetch();
+    } catch (err) {
+      // rollback khi lỗi
+      setFullMap((m) => ({ ...m, [userId]: !enable }));
+      showSnack("error", err?.data?.message || err.error || "Đã xảy ra lỗi");
+    }
+  };
+  // chỉ thêm " (admin chấm trình)" nếu FULL tỉnh
+  const renderEvalSuffix = (u) => (fullMap[u._id] ? " (admin chấm trình)" : "");
+
+  /* ================== Table ================== */
   const columns = [
     { Header: "Tên", accessor: "name", align: "left" },
     { Header: "Email", accessor: "email", align: "left" },
@@ -203,12 +257,14 @@ export default function UserManagement() {
     { Header: "Điểm đôi", accessor: "double", align: "center" },
     { Header: "Role", accessor: "role", align: "center" },
     { Header: "CCCD", accessor: "cccd", align: "center" },
-    { Header: "Thao tác", accessor: "act", align: "center", width: "17%" },
+    { Header: "Thao tác", accessor: "act", align: "center", width: "14%" },
   ];
 
   const rows =
     (data?.users || []).map((u) => {
       const st = u.cccdStatus || "unverified";
+      const isFull = !!fullMap[u._id];
+
       return {
         name: <MDTypography variant="button">{u.name}</MDTypography>,
         email: <MDTypography variant="button">{u.email}</MDTypography>,
@@ -216,20 +272,43 @@ export default function UserManagement() {
         single: <MDTypography variant="button">{u.single}</MDTypography>,
         double: <MDTypography variant="button">{u.double}</MDTypography>,
         role: (
-          <Select
-            size="small"
-            value={u.role}
-            onChange={(e) =>
-              handle(
-                updateRoleMut({ id: u._id, role: e.target.value }).unwrap(),
-                "Đã cập nhật role"
-              )
-            }
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={1.5}
+            justifyContent="center"
+            sx={{ minWidth: 320 }}
           >
-            <MenuItem value="user">User</MenuItem>
-            <MenuItem value="referee">Trọng tài</MenuItem>
-            <MenuItem value="admin">Admin</MenuItem>
-          </Select>
+            <Select
+              size="small"
+              value={u.role}
+              renderValue={(val) => `${roleText(val)}`}
+              onChange={(e) =>
+                handle(
+                  updateRoleMut({ id: u._id, role: e.target.value }).unwrap(),
+                  "Đã cập nhật role"
+                )
+              }
+              sx={{ minWidth: 160 }}
+            >
+              <MenuItem value="user">User</MenuItem>
+              <MenuItem value="referee">Trọng tài</MenuItem>
+              <MenuItem value="admin">Admin</MenuItem>
+            </Select>
+
+            {/* Checkbox: Admin chấm trình (FULL tỉnh) */}
+            <FormControlLabel
+              sx={{ m: 0 }}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={isFull}
+                  onChange={(e) => toggleAdminEvaluator(u._id, e.target.checked)}
+                />
+              }
+              label="Admin chấm trình"
+            />
+          </Stack>
         ),
         cccd: (
           <Stack direction="row" spacing={1} justifyContent="center">
@@ -255,17 +334,13 @@ export default function UserManagement() {
                 <EditIcon fontSize="inherit" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Xoá">
-              <IconButton size="small" color="error" onClick={() => setDel(u)}>
-                <DeleteIcon fontSize="inherit" />
-              </IconButton>
-            </Tooltip>
+            {/* (đã bỏ nút xoá theo yêu cầu) */}
           </Stack>
         ),
       };
     }) || [];
 
-  const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
+  const totalPages = data ? Math.ceil((data.total || 0) / (data.pageSize || 1)) : 0;
 
   /* ================== Password UI states ================== */
   const [changePass, setChangePass] = useState(false);
@@ -274,7 +349,6 @@ export default function UserManagement() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // reset khi mở dialog edit
   useEffect(() => {
     if (edit) {
       setChangePass(false);
@@ -287,12 +361,10 @@ export default function UserManagement() {
 
   const passTooShort = newPass && newPass.length < 6;
   const passNotMatch = confirmPass && confirmPass !== newPass;
-  const passHasError = changePass && (passTooShort || passNotMatch);
-
   const canChangePass =
     !!edit && changePass && newPass.length >= 6 && confirmPass === newPass && !changingPass;
 
-  // render
+  /* ================== Render ================== */
   return (
     <DashboardLayout>
       <DashboardNavbar />
@@ -328,16 +400,7 @@ export default function UserManagement() {
                 dispatch(setPage(0));
               }}
               displayEmpty
-              renderValue={(selected) => {
-                if (selected === "") return "Tất cả";
-                return selected === "user"
-                  ? "User"
-                  : selected === "referee"
-                  ? "Trọng tài"
-                  : selected === "admin"
-                  ? "Admin"
-                  : selected;
-              }}
+              renderValue={(selected) => (selected === "" ? "Tất cả" : roleText(selected))}
             >
               <MenuItem value="">
                 <em>Tất cả</em>
@@ -636,7 +699,7 @@ export default function UserManagement() {
                 </Select>
               </FormControl>
 
-              {/* ====== NEW: Khối Đổi mật khẩu (nút riêng, API riêng) ====== */}
+              {/* ====== Đổi mật khẩu ====== */}
               <Box sx={{ mt: 1, pt: 1.5, borderTop: "1px dashed #e0e0e0" }}>
                 <FormControlLabel
                   control={
@@ -714,7 +777,7 @@ export default function UserManagement() {
                           handle(
                             changePasswordMut({
                               id: edit._id,
-                              body: { newPassword: newPass }, // 🔥 gọi API riêng
+                              body: { newPassword: newPass },
                             }).unwrap(),
                             "Đã đổi mật khẩu"
                           ).then(() => {
@@ -763,25 +826,6 @@ export default function UserManagement() {
             </DialogActions>
           </>
         )}
-      </Dialog>
-
-      {/* Delete dialog */}
-      <Dialog open={!!del} onClose={() => setDel(null)}>
-        <DialogTitle>Xoá người dùng?</DialogTitle>
-        <DialogContent>
-          Bạn chắc chắn xoá <b>{del?.name}</b> ({del?.email})?
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDel(null)}>Huỷ</Button>
-          <Button
-            color="error"
-            onClick={() =>
-              handle(deleteUserMut(del._id).unwrap(), "Đã xoá người dùng").then(() => setDel(null))
-            }
-          >
-            Xoá
-          </Button>
-        </DialogActions>
       </Dialog>
 
       {/* Cập nhật điểm */}

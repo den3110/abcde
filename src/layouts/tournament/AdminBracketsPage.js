@@ -28,6 +28,7 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  FormGroup,
 } from "@mui/material";
 import SportsTennisIcon from "@mui/icons-material/SportsTennis";
 import { Paper } from "@mui/material";
@@ -59,6 +60,7 @@ import Footer from "examples/Footer";
 /* ===== tournament slices ===== */
 import {
   useGetTournamentQuery,
+  useUpdateTournamentMutation,
   useGetRegistrationsQuery,
   useListBracketsQuery,
   useCreateBracketMutation,
@@ -191,7 +193,8 @@ export default function AdminBracketsPage() {
     isLoading: loadingT,
     error: errorT,
   } = useGetTournamentQuery(tournamentId);
-
+  const [updateTournament] = useUpdateTournamentMutation(); // ⭐
+  const noRankEffectiveForBracket = (br) => !!(br?.noRankDelta || tournament?.noRankDelta); // ⭐ NEW: ưu tiên Bracket > Giải
   const evType = normType(tournament?.eventType);
   const isSingles = evType === "single";
 
@@ -203,6 +206,18 @@ export default function AdminBracketsPage() {
   } = useGetUsersQuery({ page: 1, keyword: "", role: "referee" });
   const referees = usersData?.users ?? [];
   const refName = (u) => u?.nickName || u?.name || u?.email || "Referee";
+  const formatReferees = (refField) => {
+    if (!refField) return "";
+    const arr = Array.isArray(refField) ? refField : [refField];
+    return arr
+      .map((r) =>
+        typeof r === "object"
+          ? refName(r)
+          : referees.find((u) => String(u._id) === String(r))?.name || String(r)
+      )
+      .filter(Boolean)
+      .join(", ");
+  };
 
   // 3) Các cặp đăng ký
   const {
@@ -328,6 +343,17 @@ export default function AdminBracketsPage() {
   const [reDrawSize, setReDrawSize] = useState(0); // 2^n
   const [reCutRounds, setReCutRounds] = useState(1); // 1 => n→n/2, 2 => n→n/4, ...
 
+  // useEffect(() => {
+  //   if (!tournament || !brackets?.length) return;
+  //   const allOn = brackets.every((b) => !!b.noRankDelta);
+  //   if (allOn && !tournament.noRankDelta) {
+  //     // ⭐ NEW: tự đồng bộ bật ở cấp Giải
+  //     updateTournament({ id: tournamentId, body: { noRankDelta: true } })
+  //       .unwrap()
+  //       .catch(() => {});
+  //   }
+  // }, [tournament, brackets, tournamentId, updateTournament]);
+
   // Gợi ý order mỗi khi mở dialog
   useEffect(() => {
     if (!bracketDlg) return;
@@ -366,6 +392,7 @@ export default function AdminBracketsPage() {
    *  STATE: Sửa Bracket
    * ===================== */
   const [editingBracket, setEditingBracket] = useState(null);
+  const [ebNoRankDelta, setEbNoRankDelta] = useState(false); // ⭐ NEW
   const editBracketOpen = Boolean(editingBracket);
   const [ebId, setEbId] = useState("");
   const [ebName, setEbName] = useState("");
@@ -391,7 +418,7 @@ export default function AdminBracketsPage() {
   });
   const [newRound, setNewRound] = useState(1);
   const [newOrder, setNewOrder] = useState(0);
-  const [newReferee, setNewReferee] = useState("");
+  const [newReferees, setNewReferees] = useState([]);
   const [newRatingDelta, setNewRatingDelta] = useState(0);
 
   /* =====================
@@ -411,7 +438,7 @@ export default function AdminBracketsPage() {
   const [emOldStatus, setEmOldStatus] = useState("scheduled");
   const [emOldWinner, setEmOldWinner] = useState("");
   const [emCascade, setEmCascade] = useState(false);
-  const [emReferee, setEmReferee] = useState("");
+  const [emReferees, setEmReferees] = useState([]);
   const [emRatingDelta, setEmRatingDelta] = useState(0);
   const [emRatingApplied, setEmRatingApplied] = useState(false);
   const [emRatingAppliedAt, setEmRatingAppliedAt] = useState(null);
@@ -442,6 +469,12 @@ export default function AdminBracketsPage() {
   const [advPairing, setAdvPairing] = useState("standard");
   const [advFillMode, setAdvFillMode] = useState("pairs");
   const [advPreview, setAdvPreview] = useState([]);
+
+  const editBracketObj = useMemo(
+    () => brackets.find((b) => idOf(b._id) === idOf(emBracketId)),
+    [emBracketId, brackets]
+  );
+  const editNRD = !!(editBracketObj?.noRankDelta || tournament?.noRankDelta); // ⭐ NEW
 
   const {
     data: advSourcesResp,
@@ -618,24 +651,25 @@ export default function AdminBracketsPage() {
   /* =====================
    *  BULK actions state
    * ===================== */
+  // 👉 BẰNG:
   const [bulkRefDlg, setBulkRefDlg] = useState({
     open: false,
     bracketId: "",
     ids: [],
-    referee: "",
+    referees: [],
   });
 
   const openBulkRefDlg = (br) => {
     const bid = idOf(br._id);
     const ids = Array.from(getSelectedSet(bid));
-    setBulkRefDlg({ open: true, bracketId: bid, ids, referee: "" });
+    setBulkRefDlg({ open: true, bracketId: bid, ids, referees: [] });
   };
 
   const doBulkAssignRef = async () => {
     try {
       const ids = bulkRefDlg.ids;
       if (!ids.length) return;
-      await batchAssignReferee({ ids, referee: bulkRefDlg.referee || null }).unwrap();
+      await batchAssignReferee({ ids, referees: bulkRefDlg.referees || [] }).unwrap();
       showSnack("success", `Đã gán trọng tài cho ${ids.length} trận`);
       setBulkRefDlg({ open: false, bracketId: "", ids: [], referee: "" });
       refetchMatches();
@@ -724,6 +758,7 @@ export default function AdminBracketsPage() {
         type: newBracketType,
         stage: newBracketStage,
         order: Number(newBracketOrder),
+        noRankDelta: !!tournament?.noRankDelta, // ⭐ NEW
       };
 
       // Knockout: có thể gửi drawRounds + meta khi bật custom scale
@@ -1024,11 +1059,17 @@ export default function AdminBracketsPage() {
     });
     setNewRound(1);
     setNewOrder(0);
-    setNewReferee("");
+    setNewReferees([]);
     setNewRatingDelta(0);
     setMatchDlg(true);
     setNewVideo("");
   };
+
+  const selBracketObj = useMemo(
+    () => brackets.find((b) => idOf(b._id) === idOf(selBracket)),
+    [selBracket, brackets]
+  );
+  const createNRD = !!(selBracketObj?.noRankDelta || tournament?.noRankDelta); // ⭐ NEW
 
   const handleCreateMatch = async () => {
     if (!pairA || !pairB || pairA === pairB) {
@@ -1051,7 +1092,7 @@ export default function AdminBracketsPage() {
               points: rules?.cap?.mode === "none" ? null : Number(rules?.cap?.points) || null,
             },
           },
-          referee: newReferee || undefined,
+          referee: Array.isArray(newReferees) ? newReferees : [],
           ratingDelta: Math.max(0, Number(newRatingDelta) || 0),
           video: sanitizeVideoUrl(newVideo) || undefined,
         },
@@ -1123,6 +1164,7 @@ export default function AdminBracketsPage() {
       (Number(br?.drawRounds) > 0 || !!br?.meta?.drawSize || !!br?.meta?.maxRounds) &&
       br.type === "knockout";
     setEbUseCustomScale(hadScale);
+    setEbNoRankDelta(!!br.noRankDelta); // ⭐ NEW
   };
 
   const saveEditBracket = async () => {
@@ -1133,6 +1175,7 @@ export default function AdminBracketsPage() {
         type: ebType,
         stage: Number(ebStage),
         order: Number(ebOrder),
+        noRankDelta: !!ebNoRankDelta, // ⭐ NEW
       };
 
       if (ebType === "knockout" && ebUseCustomScale) {
@@ -1184,7 +1227,13 @@ export default function AdminBracketsPage() {
     setEmOldWinner(mt.winner || "");
     setEmCascade(false);
     setEmResetScores(false);
-    setEmReferee(mt.referee?._id || mt.referee || "");
+    setEmReferees(
+      Array.isArray(mt.referee)
+        ? mt.referee.map((r) => (typeof r === "object" ? r._id : r)).filter(Boolean)
+        : mt.referee
+        ? [typeof mt.referee === "object" ? mt.referee._id : mt.referee]
+        : []
+    );
     setEmRatingDelta(mt.ratingDelta ?? 0);
     setEmRatingApplied(!!mt.ratingApplied);
     setEmRatingAppliedAt(mt.ratingAppliedAt || null);
@@ -1218,7 +1267,7 @@ export default function AdminBracketsPage() {
           },
           status: emStatus,
           winner: emStatus === "finished" ? emWinner : "",
-          referee: emReferee || null,
+          referee: Array.isArray(emReferees) ? emReferees : [],
           ratingDelta: Math.max(0, Number(emRatingDelta) || 0),
           video: sanitizeVideoUrl(emVideo) || "",
         },
@@ -1353,7 +1402,56 @@ export default function AdminBracketsPage() {
               {isSingles ? "Giải đơn" : "Giải đôi"}
             </Typography>
             <Divider sx={{ mb: 2 }} />
-
+            {/* ⭐ NEW: Công tắc toàn giải */}
+            <Box sx={{ ...sxUI.actionsBar, mb: 2 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={!!tournament?.noRankDelta}
+                    onChange={async (e) => {
+                      const checked = e.target.checked;
+                      try {
+                        await updateTournament({
+                          id: tournamentId,
+                          body: { noRankDelta: checked },
+                        }).unwrap();
+                        // Nếu bật ở giải → tự bật tất cả bracket (theo yêu cầu)
+                        if (checked && Array.isArray(brackets) && brackets.length) {
+                          await Promise.all(
+                            brackets.map((b) =>
+                              updateBracket({
+                                tournamentId,
+                                bracketId: b._id,
+                                body: { noRankDelta: true },
+                              })
+                                .unwrap()
+                                .catch(() => {})
+                            )
+                          );
+                        }
+                        showSnack(
+                          "success",
+                          checked
+                            ? "Đã bật 'không tính điểm' cho toàn giải (và toàn bộ Bracket)."
+                            : "Đã tắt 'không tính điểm' ở cấp Giải (Bracket nào đang bật vẫn giữ nguyên)."
+                        );
+                        refetchBrackets();
+                      } catch (e2) {
+                        showSnack(
+                          "error",
+                          e2?.data?.message || e2.error || "Lỗi cập nhật cài đặt giải"
+                        );
+                      }
+                    }}
+                  />
+                }
+                label="Không tính điểm trình (toàn giải)"
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                Khi bật ở Giải: toàn bộ Bracket sẽ được bật theo. Khi tắt ở Giải: các Bracket đang
+                bật vẫn giữ nguyên.
+              </Typography>
+            </Box>
             {/* Action buttons */}
             <Button
               startIcon={<AddIcon />}
@@ -1436,6 +1534,9 @@ export default function AdminBracketsPage() {
                                 br.meta.maxRounds || toRounds(br.meta.drawSize)
                               } vòng)`}
                             />
+                          )}
+                          {noRankEffectiveForBracket(br) && (
+                            <Chip size="small" sx={sxUI.chip} color="warning" label="Δ tắt" />
                           )}
                         </Stack>
                       </Stack>
@@ -1577,6 +1678,33 @@ export default function AdminBracketsPage() {
                             </IconButton>
                           </span>
                         </Tooltip>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={!!br.noRankDelta}
+                              onChange={async (e) => {
+                                const checked = e.target.checked;
+                                try {
+                                  await updateBracket({
+                                    tournamentId,
+                                    bracketId: br._id,
+                                    body: { noRankDelta: checked },
+                                  }).unwrap();
+                                  showSnack(
+                                    "success",
+                                    checked
+                                      ? `Đã bật 'không tính điểm' cho "${br.name}".`
+                                      : `Đã tắt 'không tính điểm' cho "${br.name}".`
+                                  );
+                                  refetchBrackets();
+                                } catch (err) {
+                                  showSnack("error", err?.data?.message || err.error);
+                                }
+                              }}
+                            />
+                          }
+                          label="Không áp dụng tính điểm delta"
+                        />
                         <Tooltip title="Xoá giai đoạn giải đấu này">
                           <span>
                             <IconButton
@@ -1745,21 +1873,21 @@ export default function AdminBracketsPage() {
                                               {mt.status === "finished" && mt.winner && (
                                                 <> — đội thắng: {mt.winner}</>
                                               )}
-                                              {mt.referee && (
-                                                <>
-                                                  {" "}
-                                                  — trọng tài:{" "}
-                                                  {typeof mt.referee === "object"
-                                                    ? refName(mt.referee)
-                                                    : referees.find((r) => r._id === mt.referee)
-                                                        ?.name || mt.referee}
-                                                </>
-                                              )}
+                                              {mt.referee &&
+                                                (Array.isArray(mt.referee)
+                                                  ? mt.referee.length > 0
+                                                  : true) && (
+                                                  <> — trọng tài: {formatReferees(mt.referee)}</>
+                                                )}
                                               {typeof mt.ratingDelta !== "undefined" && (
                                                 <>
                                                   {" "}
-                                                  — Δ: {mt.ratingDelta ?? 0}
-                                                  {mt.ratingApplied ? " (đã áp dụng)" : ""}
+                                                  — Δ:{" "}
+                                                  {noRankEffectiveForBracket(br)
+                                                    ? "OFF"
+                                                    : mt.ratingDelta ?? 0}
+                                                  {!noRankEffectiveForBracket(br) &&
+                                                    (mt.ratingApplied ? " (đã áp dụng)" : "")}
                                                 </>
                                               )}
                                             </Typography>
@@ -1897,15 +2025,10 @@ export default function AdminBracketsPage() {
                                     {mt.status === "finished" && mt.winner && (
                                       <> — đội thắng: {mt.winner}</>
                                     )}
-                                    {mt.referee && (
-                                      <>
-                                        {" — trọng tài: "}
-                                        {typeof mt.referee === "object"
-                                          ? refName(mt.referee)
-                                          : referees.find((r) => r._id === mt.referee)?.name ||
-                                            mt.referee}
-                                      </>
-                                    )}
+                                    {mt.referee &&
+                                      (Array.isArray(mt.referee)
+                                        ? mt.referee.length > 0
+                                        : true) && <> — trọng tài: {formatReferees(mt.referee)}</>}
                                     {typeof mt.ratingDelta !== "undefined" && (
                                       <>
                                         {" — Δ: "}
@@ -1962,7 +2085,12 @@ export default function AdminBracketsPage() {
       </Box>
 
       {/* Dialog: Tạo Bracket */}
-      <Dialog open={bracketDlg} onClose={() => setBracketDlg(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={bracketDlg}
+        onClose={() => setBulkRefDlg({ open: false, bracketId: "", ids: [], referees: [] })}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Tạo Bracket mới</DialogTitle>
         <DialogContent>
           <Stack spacing={2} mt={1}>
@@ -2387,6 +2515,16 @@ export default function AdminBracketsPage() {
                     </TextField>
                   </Stack>
                 )}
+                <Divider sx={{ my: 2 }} />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={!!ebNoRankDelta}
+                      onChange={(e) => setEbNoRankDelta(e.target.checked)}
+                    />
+                  }
+                  label="Không tính điểm (bracket)"
+                />
               </>
             )}
           </Stack>
@@ -2470,28 +2608,33 @@ export default function AdminBracketsPage() {
               placeholder="https://..., m3u8, rtmp://..., v.v."
               helperText="Nhập URL video/stream (YouTube, Facebook, Twitch, HLS, RTMP,...)"
             />
-            <TextField
-              select
-              fullWidth
-              label="Trọng tài"
-              value={newReferee}
-              onChange={(e) => setNewReferee(e.target.value)}
-              sx={{
-                mt: 1,
-                "& .MuiInputBase-root": { minHeight: 56 },
-                "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
-              }}
-              helperText={refsError ? "Lỗi tải danh sách trọng tài" : ""}
-            >
-              <MenuItem value="">
-                <em>— Chưa gán —</em>
-              </MenuItem>
-              {referees.map((u) => (
-                <MenuItem key={u._id} value={u._id}>
-                  {u.name} {u.nickname ? `(${u.nickname})` : ""}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Stack>
+              <Typography variant="subtitle2" sx={{ mt: 1, mb: 0.5 }}>
+                Trọng tài
+              </Typography>
+              <FormGroup>
+                {referees.map((u) => {
+                  const id = String(u._id);
+                  const checked = newReferees.includes(id);
+                  return (
+                    <FormControlLabel
+                      key={id}
+                      control={
+                        <Checkbox
+                          checked={checked}
+                          onChange={() =>
+                            setNewReferees((prev) =>
+                              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                            )
+                          }
+                        />
+                      }
+                      label={`${u.name}${u.nickname ? ` (${u.nickname})` : ""}`}
+                    />
+                  );
+                })}
+              </FormGroup>
+            </Stack>
 
             <Grid container spacing={2} mt={1} p={2}>
               <Grid item xs={4}>
@@ -2604,7 +2747,12 @@ export default function AdminBracketsPage() {
                   value={newRatingDelta}
                   onChange={(e) => setNewRatingDelta(Math.max(0, Number(e.target.value) || 0))}
                   inputProps={{ min: 0, step: 1 }}
-                  helperText="Áp dụng khi set trận 'finished' + có 'winner'. 0 = Áp dụng delta tự động."
+                  helperText={
+                    createNRD
+                      ? "Đang tắt tính điểm cho bracket/giải này — Δ sẽ không được áp dụng."
+                      : "Áp dụng khi set trận 'finished' + có 'winner'. 0 = Áp dụng delta tự động."
+                  }
+                  disabled={createNRD}
                 />
                 <Alert severity="info">
                   Điểm delta tự động được tính và áp dụng sau trận đấu. Chỉnh giá trị khác 0 nếu bạn
@@ -2659,27 +2807,33 @@ export default function AdminBracketsPage() {
               placeholder="https://..., m3u8, rtmp://..., v.v."
               helperText="Để trống rồi Lưu để xoá link video"
             />
-            <TextField
-              select
-              fullWidth
-              label="Trọng tài"
-              value={emReferee}
-              onChange={(e) => setEmReferee(e.target.value)}
-              sx={{
-                mt: 1,
-                "& .MuiInputBase-root": { minHeight: 56 },
-                "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
-              }}
-            >
-              <MenuItem value="">
-                <em>— Chưa gán —</em>
-              </MenuItem>
-              {referees.map((u) => (
-                <MenuItem key={u._id} value={u._id}>
-                  {u.name} {u.nickname ? `(${u.nickname})` : ""}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Stack>
+              <Typography variant="subtitle2" sx={{ mt: 1, mb: 0.5 }}>
+                Trọng tài
+              </Typography>
+              <FormGroup>
+                {referees.map((u) => {
+                  const id = String(u._id);
+                  const checked = emReferees.includes(id);
+                  return (
+                    <FormControlLabel
+                      key={id}
+                      control={
+                        <Checkbox
+                          checked={checked}
+                          onChange={() =>
+                            setEmReferees((prev) =>
+                              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                            )
+                          }
+                        />
+                      }
+                      label={`${u.name}${u.nickname ? ` (${u.nickname})` : ""}`}
+                    />
+                  );
+                })}
+              </FormGroup>
+            </Stack>
 
             <TextField
               select
@@ -2829,7 +2983,12 @@ export default function AdminBracketsPage() {
                   value={emRatingDelta}
                   onChange={(e) => setEmRatingDelta(Math.max(0, Number(e.target.value) || 0))}
                   inputProps={{ min: 0, step: 1 }}
-                  helperText="Áp dụng khi set trận 'finished' + có 'winner'. 0 = Áp dụng delta tự động."
+                  helperText={
+                    editNRD
+                      ? "Đang tắt tính điểm cho bracket/giải này — Δ sẽ không được áp dụng."
+                      : "Áp dụng khi set trận 'finished' + có 'winner'. 0 = Áp dụng delta tự động."
+                  }
+                  disabled={editNRD}
                 />
                 {emRatingApplied && (
                   <Alert severity="info" sx={{ mt: 1 }}>
@@ -2949,28 +3108,37 @@ export default function AdminBracketsPage() {
       >
         <DialogTitle>Gán trọng tài cho {bulkRefDlg.ids.length} trận</DialogTitle>
         <DialogContent>
-          <TextField
-            select
-            fullWidth
-            label="Chọn trọng tài"
-            value={bulkRefDlg.referee}
-            onChange={(e) => setBulkRefDlg((s) => ({ ...s, referee: e.target.value }))}
-            sx={{
-              mt: 2,
-              "& .MuiInputBase-root": { minHeight: 56 },
-              "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
-            }}
-            helperText="Để trống nếu muốn xoá referee ở các trận đã chọn"
-          >
-            <MenuItem value="">
-              <em>— Bỏ gán (clear) —</em>
-            </MenuItem>
-            {referees.map((u) => (
-              <MenuItem key={u._id} value={u._id}>
-                {u.name} {u.nickname ? `(${u.nickname})` : ""}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            Chọn trọng tài (nhiều lựa chọn)
+          </Typography>
+          <FormGroup>
+            {referees.map((u) => {
+              const id = String(u._id);
+              const checked = bulkRefDlg?.referees?.includes(id);
+              return (
+                <FormControlLabel
+                  key={id}
+                  control={
+                    <Checkbox
+                      checked={checked}
+                      onChange={() =>
+                        setBulkRefDlg((s) => ({
+                          ...s,
+                          referees: checked
+                            ? s.referees.filter((x) => x !== id)
+                            : [...s.referees, id],
+                        }))
+                      }
+                    />
+                  }
+                  label={`${u.name}${u.nickname ? ` (${u.nickname})` : ""}`}
+                />
+              );
+            })}
+          </FormGroup>
+          <Typography variant="caption" color="text.secondary">
+            Bỏ chọn tất cả để **xoá** trọng tài khỏi các trận đã chọn.
+          </Typography>
         </DialogContent>
         <DialogActions>
           <Button

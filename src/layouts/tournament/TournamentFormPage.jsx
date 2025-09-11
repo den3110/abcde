@@ -1,7 +1,18 @@
 // src/pages/TournamentFormPage.jsx
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Button, Grid, TextField, Typography, Stack, MenuItem, Card } from "@mui/material";
+import {
+  Box,
+  Button,
+  Grid,
+  TextField,
+  Typography,
+  Stack,
+  MenuItem,
+  Card,
+  FormControlLabel,
+  Checkbox,
+} from "@mui/material";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import ReactQuill from "react-quill";
@@ -61,6 +72,7 @@ export default function TournamentFormPage() {
     contactHtml: "",
     contentHtml: "",
     maxPairs: 0,
+    noRankDelta: false, // ⭐ NEW: bật/tắt tính điểm trình cho toàn giải
   });
 
   // State hiển thị (frontend): giữ DD/MM/YYYY cho 4 field ngày
@@ -136,6 +148,7 @@ export default function TournamentFormPage() {
       location: tour.location || "",
       contactHtml: tour.contactHtml || "",
       contentHtml: tour.contentHtml || "",
+      noRankDelta: !!tour.noRankDelta, // ⭐ NEW
     };
     setForm(nextForm);
     setUiDates({
@@ -176,6 +189,7 @@ export default function TournamentFormPage() {
     contactHtml: form.contactHtml,
     contentHtml: form.contentHtml,
     maxPairs: Number(form.maxPairs) || 0,
+    noRankDelta: !!form.noRankDelta, // ⭐ NEW
   });
 
   const submit = async (e) => {
@@ -409,6 +423,21 @@ export default function TournamentFormPage() {
                   margin="normal"
                 />
               ))}
+            </Grid>
+            <Grid item xs={12} md={12}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={!!form.noRankDelta}
+                    onChange={(e) => setForm((p) => ({ ...p, noRankDelta: e.target.checked }))}
+                  />
+                }
+                label="Không áp dụng điểm trình (toàn giải)"
+              />
+              <Typography variant="caption" color="text.secondary">
+                Mặc định toàn bộ trận trong giải này không cộng/trừ Δ (rating delta). Ở trang
+                Bracket có thể bật/tắt riêng từng Bracket (Bracket sẽ ưu tiên hơn).
+              </Typography>
             </Grid>
 
             {/* ==== ReactQuill Editors ==== */}
