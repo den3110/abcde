@@ -624,6 +624,24 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       },
       keepUnusedDataFor: 30,
     }),
+    // slices/tournamentsApiSlice.js (thêm vào builder)
+    insertRegIntoGroupSlot: builder.mutation({
+      query: ({ bracketId, groupId, body }) => ({
+        url: `/admin/brackets/${bracketId}/groups/${groupId}/insert-slot`,
+        method: "POST",
+        body, // { registrationId, slotIndex(1-based), autoGrowExpectedSize?: boolean }
+      }),
+      invalidatesTags: ["Bracket", "Group", "Match"],
+    }),
+
+    generateGroupMatchesForTeam: builder.mutation({
+      query: ({ bracketId, groupId, body }) => ({
+        url: `/admin/brackets/${bracketId}/groups/${groupId}/generate-matches`,
+        method: "POST",
+        body, // { registrationId, doubleRound?: boolean }
+      }),
+      invalidatesTags: ["Match"],
+    }),
   }),
 });
 
@@ -688,4 +706,6 @@ export const {
   useGetRefereeBracketsQuery,
   useListRefereeMatchesByTournamentQuery,
   useRefereeNextGameMutation,
+  useInsertRegIntoGroupSlotMutation,
+  useGenerateGroupMatchesForTeamMutation,
 } = tournamentsApiSlice;

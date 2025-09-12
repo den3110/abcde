@@ -41,6 +41,7 @@ import RatingTesterPage from "layouts/tools/RatingTesterPage";
 import AdminEvaluatorManagement from "layouts/tournament/AdminEvaluatorManagement";
 import GroupPreassignBoard from "layouts/tournament/GroupPreassignBoard";
 import BroadcastPage from "layouts/Notifications/Broadcast";
+import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -374,6 +375,16 @@ const routes = [
     icon: <Icon fontSize="small">campaign</Icon>,
     route: "/admin/notifications/broadcast",
     component: <BroadcastPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Chèn đội & bù trận (Vòng bảng)",
+    key: "bracket-group-insert",
+    route: "/admin/brackets/:bracketId/groups/insert",
+    component: <AdminInsertIntoGroupPage />,
     private: true,
     roles: ["admin"],
   },

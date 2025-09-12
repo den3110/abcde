@@ -1646,15 +1646,38 @@ export default function AdminBracketsPage() {
                         >
                           Auto fill từ stage trước
                         </Button>
-                        <Button
-                          size="small"
-                          startIcon={<BoltIcon />}
-                          onClick={() =>
-                            navigate(`/admin/brackets/${br._id}/preassign?t=${br.tournament?._id}`)
-                          }
-                        >
-                          Cấu hình vòng bảng
-                        </Button>
+                        {br.type === "group" && (
+                          <Button
+                            size="small"
+                            startIcon={<BoltIcon />}
+                            onClick={() =>
+                              navigate(
+                                `/admin/brackets/${br._id}/preassign?t=${br.tournament?._id}`
+                              )
+                            }
+                          >
+                            Cấu hình vòng bảng
+                          </Button>
+                        )}
+                        {br.type === "group" && (
+                          <Button
+                            size="small"
+                            startIcon={<TableChartIcon />}
+                            onClick={stop(() =>
+                              navigate(
+                                `/admin/brackets/${br._id}/groups/insert?t=${br.tournament?._id}`,
+                                {
+                                  state: {
+                                    bracketName: br.name,
+                                    tournamentName: br.tournament?.name,
+                                  },
+                                }
+                              )
+                            )}
+                          >
+                            Chèn đội & bù trận
+                          </Button>
+                        )}
                         <Tooltip title="Sửa giai đoạn">
                           <span>
                             <IconButton
