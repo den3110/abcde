@@ -12,12 +12,14 @@ import {
   Card,
   FormControlLabel,
   Checkbox,
+  RadioGroup,
+  Radio,
 } from "@mui/material";
 
 // === MUI X Date Pickers v5 ===
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -33,13 +35,82 @@ import {
 import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+import Autocomplete from "@mui/material/Autocomplete";
+import Chip from "@mui/material/Chip";
 
 dayjs.extend(customParseFormat);
 
+/* ===== 63 tỉnh/thành Việt Nam ===== */
+const VN_PROVINCES = [
+  "Hà Nội",
+  "TP. Hồ Chí Minh",
+  "Hải Phòng",
+  "Đà Nẵng",
+  "Cần Thơ",
+  "An Giang",
+  "Bà Rịa - Vũng Tàu",
+  "Bắc Giang",
+  "Bắc Kạn",
+  "Bạc Liêu",
+  "Bắc Ninh",
+  "Bến Tre",
+  "Bình Dương",
+  "Bình Định",
+  "Bình Phước",
+  "Bình Thuận",
+  "Cà Mau",
+  "Cao Bằng",
+  "Đắk Lắk",
+  "Đắk Nông",
+  "Điện Biên",
+  "Đồng Nai",
+  "Đồng Tháp",
+  "Gia Lai",
+  "Hà Giang",
+  "Hà Nam",
+  "Hà Tĩnh",
+  "Hải Dương",
+  "Hậu Giang",
+  "Hòa Bình",
+  "Hưng Yên",
+  "Khánh Hòa",
+  "Kiên Giang",
+  "Kon Tum",
+  "Lai Châu",
+  "Lâm Đồng",
+  "Lạng Sơn",
+  "Lào Cai",
+  "Long An",
+  "Nam Định",
+  "Nghệ An",
+  "Ninh Bình",
+  "Ninh Thuận",
+  "Phú Thọ",
+  "Phú Yên",
+  "Quảng Bình",
+  "Quảng Nam",
+  "Quảng Ngãi",
+  "Quảng Ninh",
+  "Quảng Trị",
+  "Sóc Trăng",
+  "Sơn La",
+  "Tây Ninh",
+  "Thái Bình",
+  "Thái Nguyên",
+  "Thanh Hóa",
+  "Thừa Thiên Huế",
+  "Tiền Giang",
+  "Trà Vinh",
+  "Tuyên Quang",
+  "Vĩnh Long",
+  "Vĩnh Phúc",
+  "Yên Bái",
+];
+
 const MAX_IMG_SIZE = 10 * 1024 * 1024; // 10MB
-const YMD = "YYYY-MM-DD";
-const DMY = "DD/MM/YYYY";
-const isValidYmd = (s) => !!s && dayjs(s, YMD, true).isValid();
+const YMDHMS = "YYYY-MM-DDTHH:mm:ss";
+const DMYHMS = "DD/MM/YYYY HH:mm:ss";
+const isValidYmdHms = (s) => !!s && dayjs(s, YMDHMS, true).isValid();
 
 export default function TournamentFormPage() {
   const { id } = useParams(); // "new" | <id>
@@ -53,19 +124,20 @@ export default function TournamentFormPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
-  const todayYmd = dayjs().format(YMD);
+  const now = dayjs();
+  const nowStr = now.format(YMDHMS);
 
-  // ---- State submit (YYYY-MM-DD + HTML) ----
+  // ---- State submit ----
   const [form, setForm] = useState({
     name: "",
     image: "",
     sportType: 1,
     groupId: 0,
     eventType: "double",
-    regOpenDate: todayYmd,
-    registrationDeadline: todayYmd,
-    startDate: todayYmd,
-    endDate: todayYmd,
+    regOpenDT: nowStr,
+    registrationDeadlineDT: nowStr,
+    startDT: nowStr,
+    endDT: nowStr,
     scoreCap: 0,
     scoreGap: 0,
     singleCap: 0,
@@ -74,6 +146,10 @@ export default function TournamentFormPage() {
     contentHtml: "",
     maxPairs: 0,
     noRankDelta: false,
+
+    // NEW: Phạm vi chấm (đa tỉnh)
+    scoringScopeType: "national", // 'national' | 'provinces'
+    scoringProvinces: [], // string[]
   });
 
   const [uploading, setUploading] = useState(false);
@@ -108,7 +184,7 @@ export default function TournamentFormPage() {
     }
   };
 
-  // ====== Handler chèn ảnh cho Quill (tạo input file tạm thời) ======
+  // ====== Handler chèn ảnh cho Quill ======
   const insertImageViaUpload = (quillRef) => {
     const input = document.createElement("input");
     input.type = "file";
@@ -145,7 +221,6 @@ export default function TournamentFormPage() {
     clipboard: { matchVisual: false },
   });
 
-  // ✅ Memo hóa modules cho từng editor (bị thiếu ở bản bạn gửi)
   const contactModules = useMemo(() => makeQuillModules(contactQuillRef), []);
   const contentModules = useMemo(() => makeQuillModules(contentQuillRef), []);
 
@@ -173,20 +248,36 @@ export default function TournamentFormPage() {
   // Map dữ liệu server -> state
   useEffect(() => {
     if (!tour) return;
+
+    // Chuẩn hoá phạm vi chấm (hỗ trợ backward-compat)
+    let scopeType = "national";
+    let scopeProvinces = [];
+    if (tour.scoringScope?.type === "provinces" && Array.isArray(tour.scoringScope?.provinces)) {
+      scopeType = "provinces";
+      scopeProvinces = tour.scoringScope.provinces.filter(Boolean);
+    } else if (tour.scoringScope?.type === "province" && tour.scoringScope?.province) {
+      // convert cũ -> mới
+      scopeType = "provinces";
+      scopeProvinces = [tour.scoringScope.province];
+    }
+
     const nextForm = {
       name: tour.name || "",
       image: tour.image || "",
       sportType: 1,
       groupId: Number(tour.groupId ?? 0),
       eventType: tour.eventType || "double",
-      regOpenDate: dayjs(tour.regOpenDate).isValid()
-        ? dayjs(tour.regOpenDate).format(YMD)
-        : todayYmd,
-      registrationDeadline: dayjs(tour.registrationDeadline).isValid()
-        ? dayjs(tour.registrationDeadline).format(YMD)
-        : todayYmd,
-      startDate: dayjs(tour.startDate).isValid() ? dayjs(tour.startDate).format(YMD) : todayYmd,
-      endDate: dayjs(tour.endDate).isValid() ? dayjs(tour.endDate).format(YMD) : todayYmd,
+
+      // Datetime đầy đủ
+      regOpenDT: dayjs(tour.regOpenDate).isValid()
+        ? dayjs(tour.regOpenDate).format(YMDHMS)
+        : nowStr,
+      registrationDeadlineDT: dayjs(tour.registrationDeadline).isValid()
+        ? dayjs(tour.registrationDeadline).format(YMDHMS)
+        : nowStr,
+      startDT: dayjs(tour.startDate).isValid() ? dayjs(tour.startDate).format(YMDHMS) : nowStr,
+      endDT: dayjs(tour.endDate).isValid() ? dayjs(tour.endDate).format(YMDHMS) : nowStr,
+
       scoreCap: Number(tour.scoreCap ?? 0),
       scoreGap: Number(tour.scoreGap ?? 0),
       singleCap: Number(tour.singleCap ?? 0),
@@ -195,41 +286,84 @@ export default function TournamentFormPage() {
       contactHtml: tour.contactHtml || "",
       contentHtml: tour.contentHtml || "",
       noRankDelta: !!tour.noRankDelta,
+
+      scoringScopeType: scopeType, // 'national' | 'provinces'
+      scoringProvinces: scopeProvinces, // []
     };
     setForm(nextForm);
-  }, [tour]);
+  }, [tour]); // eslint-disable-line
 
   const onChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   // Helper build payload
-  const buildPayload = () => ({
-    name: (form.name || "").trim(),
-    image: form.image || "",
-    sportType: 1,
-    groupId: Number(form.groupId) || 0,
-    eventType: form.eventType,
-    regOpenDate: form.regOpenDate,
-    registrationDeadline: form.registrationDeadline,
-    startDate: form.startDate,
-    endDate: form.endDate,
-    scoreCap: Number(form.scoreCap) || 0,
-    scoreGap: Number(form.scoreGap) || 0,
-    singleCap: Number(form.singleCap) || 0,
-    location: form.location,
-    contactHtml: form.contactHtml,
-    contentHtml: form.contentHtml,
-    maxPairs: Number(form.maxPairs) || 0,
-    noRankDelta: !!form.noRankDelta,
-  });
+  const buildPayload = () => {
+    const {
+      scoringScopeType,
+      scoringProvinces,
+      regOpenDT,
+      registrationDeadlineDT,
+      startDT,
+      endDT,
+    } = form;
+
+    return {
+      name: (form.name || "").trim(),
+      image: form.image || "",
+      sportType: 1,
+      groupId: Number(form.groupId) || 0,
+      eventType: form.eventType,
+
+      // gửi dạng 'YYYY-MM-DDTHH:mm:ss'
+      regOpenDate: regOpenDT,
+      registrationDeadline: registrationDeadlineDT,
+      startDate: startDT,
+      endDate: endDT,
+
+      scoreCap: Number(form.scoreCap) || 0,
+      scoreGap: Number(form.scoreGap) || 0,
+      singleCap: Number(form.singleCap) || 0,
+      location: form.location,
+      contactHtml: form.contactHtml,
+      contentHtml: form.contentHtml,
+      maxPairs: Number(form.maxPairs) || 0,
+      noRankDelta: !!form.noRankDelta,
+
+      // NEW: phạm vi chấm đa tỉnh
+      scoringScope: {
+        type: scoringScopeType, // 'national' | 'provinces'
+        provinces: scoringScopeType === "provinces" ? scoringProvinces : [],
+      },
+    };
+  };
 
   const submit = async (e) => {
     e.preventDefault();
 
-    // Validate 4 ngày lần cuối
-    const dateFields = ["regOpenDate", "registrationDeadline", "startDate", "endDate"];
-    for (const f of dateFields) {
-      if (!isValidYmd(form[f])) {
-        toast.error(`Ngày không hợp lệ ở trường: ${f}`);
+    // Validate datetime
+    const fields = [
+      ["regOpenDT", "Ngày mở đăng ký"],
+      ["registrationDeadlineDT", "Hạn chót đăng ký"],
+      ["startDT", "Ngày thi đấu"],
+      ["endDT", "Ngày kết thúc"],
+    ];
+    for (const [key, label] of fields) {
+      if (!isValidYmdHms(form[key])) {
+        toast.error(`Thời gian không hợp lệ ở: ${label}`);
+        return;
+      }
+    }
+
+    // Validate phạm vi chấm
+    if (form.scoringScopeType === "provinces") {
+      const list = (form.scoringProvinces || []).filter(Boolean);
+      if (!list.length) {
+        toast.error("Vui lòng chọn ít nhất 1 tỉnh/thành.");
+        return;
+      }
+      // lọc lại cho chắc
+      const invalid = list.find((p) => !VN_PROVINCES.includes(p));
+      if (invalid) {
+        toast.error(`Tỉnh/thành không hợp lệ: ${invalid}`);
         return;
       }
     }
@@ -264,20 +398,23 @@ export default function TournamentFormPage() {
 
   const clearImage = () => setForm((prev) => ({ ...prev, image: "" }));
 
-  // --- DatePicker v5 renderer ---
-  const renderDatePicker = (name, label) => (
-    <DatePicker
-      label={`${label} (dd/mm/yyyy)`}
-      inputFormat={DMY}
-      mask="__/__/____"
-      value={isValidYmd(form[name]) ? dayjs(form[name], YMD, true) : null}
+  // --- DateTimePicker v5 renderer ---
+  const renderDateTime = (name, label) => (
+    <DateTimePicker
+      label={`${label} (dd/mm/yyyy hh:mm:ss)`}
+      inputFormat={DMYHMS}
+      mask="__/__/____ __:__:__"
+      ampm={false}
+      value={isValidYmdHms(form[name]) ? dayjs(form[name], YMDHMS, true) : null}
       onChange={(val) =>
         setForm((prev) => ({
           ...prev,
-          [name]: val && dayjs(val).isValid() ? dayjs(val).format(YMD) : "",
+          [name]: val && dayjs(val).isValid() ? dayjs(val).format(YMDHMS) : "",
         }))
       }
       renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
+      minutesStep={1}
+      secondsStep={1}
     />
   );
 
@@ -297,6 +434,7 @@ export default function TournamentFormPage() {
         >
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <Grid container spacing={3}>
+              {/* Col trái */}
               <Grid item xs={12} md={6}>
                 <TextField
                   name="name"
@@ -411,13 +549,69 @@ export default function TournamentFormPage() {
                   fullWidth
                   margin="normal"
                 />
+
+                {/* NEW: Phạm vi chấm (đa tỉnh) */}
+                <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Phạm vi chấm
+                  </Typography>
+                  <RadioGroup
+                    row
+                    value={form.scoringScopeType}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        scoringScopeType: e.target.value, // 'national' | 'provinces'
+                        scoringProvinces: e.target.value === "national" ? [] : p.scoringProvinces,
+                      }))
+                    }
+                  >
+                    <FormControlLabel value="national" control={<Radio />} label="Toàn quốc" />
+                    <FormControlLabel
+                      value="provinces"
+                      control={<Radio />}
+                      label="Giới hạn theo tỉnh (nhiều)"
+                    />
+                  </RadioGroup>
+
+                  {form.scoringScopeType === "provinces" && (
+                    <Autocomplete
+                      multiple
+                      options={VN_PROVINCES}
+                      value={form.scoringProvinces}
+                      onChange={(_, list) =>
+                        setForm((p) => ({ ...p, scoringProvinces: list || [] }))
+                      }
+                      renderTags={(value, getTagProps) =>
+                        value.map((option, index) => (
+                          <Chip
+                            variant="outlined"
+                            label={option}
+                            {...getTagProps({ index })}
+                            key={`${option}-${index}`}
+                          />
+                        ))
+                      }
+                      renderInput={(params) => (
+                        <TextField {...params} label="Chọn tỉnh/thành" margin="normal" fullWidth />
+                      )}
+                      disableCloseOnSelect
+                      limitTags={3}
+                    />
+                  )}
+                  <Typography variant="caption" color="text.secondary">
+                    Toàn quốc: không giới hạn tỉnh. Giới hạn theo tỉnh: chỉ cho phép VĐV thuộc các
+                    tỉnh đã chọn được tính điểm/đủ điều kiện (tuỳ logic BE).
+                  </Typography>
+                </Card>
               </Grid>
 
+              {/* Col phải */}
               <Grid item xs={12} md={6}>
-                {renderDatePicker("regOpenDate", "Ngày mở đăng ký")}
-                {renderDatePicker("registrationDeadline", "Hạn chót đăng ký")}
-                {renderDatePicker("startDate", "Ngày thi đấu")}
-                {renderDatePicker("endDate", "Ngày kết thúc")}
+                {renderDateTime("regOpenDT", "Ngày mở đăng ký")}
+                {renderDateTime("registrationDeadlineDT", "Hạn chót đăng ký")}
+                {renderDateTime("startDT", "Ngày thi đấu")}
+                {renderDateTime("endDT", "Ngày kết thúc")}
 
                 {[
                   { n: "scoreCap", l: "Tổng điểm tối đa (đôi)" },
@@ -438,7 +632,7 @@ export default function TournamentFormPage() {
                 ))}
               </Grid>
 
-              <Grid item xs={12} md={12}>
+              <Grid item xs={12}>
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -448,7 +642,7 @@ export default function TournamentFormPage() {
                   }
                   label="Không áp dụng điểm trình (toàn giải)"
                 />
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" display="block">
                   Mặc định toàn bộ trận trong giải này không cộng/trừ Δ (rating delta). Ở trang
                   Bracket có thể bật/tắt riêng từng Bracket (Bracket sẽ ưu tiên hơn).
                 </Typography>
@@ -474,7 +668,7 @@ export default function TournamentFormPage() {
                     theme="snow"
                     value={form.contactHtml}
                     onChange={(html) => setForm((p) => ({ ...p, contactHtml: html }))}
-                    modules={contactModules} // ✅ đã memoized
+                    modules={contactModules}
                     formats={quillFormats}
                     placeholder="Nhập thông tin liên hệ…"
                   />
@@ -500,7 +694,7 @@ export default function TournamentFormPage() {
                     theme="snow"
                     value={form.contentHtml}
                     onChange={(html) => setForm((p) => ({ ...p, contentHtml: html }))}
-                    modules={contentModules} // ✅ đã memoized
+                    modules={contentModules}
                     formats={quillFormats}
                     placeholder="Mô tả chi tiết thể lệ, cơ cấu giải thưởng, lưu ý…"
                   />

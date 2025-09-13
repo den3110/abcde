@@ -390,7 +390,7 @@ export default function AdminBracketCourtManagerPage() {
     const interval = setInterval(() => {
       reqState();
       refetchFinished?.();
-    }, 10000);
+    }, 60000);
 
     return () => {
       clearInterval(interval);
