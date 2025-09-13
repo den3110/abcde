@@ -13,6 +13,12 @@ import {
   FormControlLabel,
   Checkbox,
 } from "@mui/material";
+
+// === MUI X Date Pickers v5 ===
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import ReactQuill from "react-quill";
@@ -31,14 +37,9 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 dayjs.extend(customParseFormat);
 
 const MAX_IMG_SIZE = 10 * 1024 * 1024; // 10MB
-
-// ===== Helpers cho định dạng ngày =====
-const toDDMMYYYY = (ymd) => (ymd ? dayjs(ymd, "YYYY-MM-DD", true).format("DD/MM/YYYY") : "");
-const toYYYYMMDD = (dmy) => {
-  const d = dayjs(dmy, "DD/MM/YYYY", true);
-  return d.isValid() ? d.format("YYYY-MM-DD") : "";
-};
-const isFullValidDmy = (dmy) => dayjs(dmy, "DD/MM/YYYY", true).isValid();
+const YMD = "YYYY-MM-DD";
+const DMY = "DD/MM/YYYY";
+const isValidYmd = (s) => !!s && dayjs(s, YMD, true).isValid();
 
 export default function TournamentFormPage() {
   const { id } = useParams(); // "new" | <id>
@@ -52,9 +53,9 @@ export default function TournamentFormPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
-  const todayYmd = dayjs().format("YYYY-MM-DD");
+  const todayYmd = dayjs().format(YMD);
 
-  // State submit (backend): giữ YYYY-MM-DD + HTML cho 2 trường quill
+  // ---- State submit (YYYY-MM-DD + HTML) ----
   const [form, setForm] = useState({
     name: "",
     image: "",
@@ -72,35 +73,81 @@ export default function TournamentFormPage() {
     contactHtml: "",
     contentHtml: "",
     maxPairs: 0,
-    noRankDelta: false, // ⭐ NEW: bật/tắt tính điểm trình cho toàn giải
-  });
-
-  // State hiển thị (frontend): giữ DD/MM/YYYY cho 4 field ngày
-  const [uiDates, setUiDates] = useState({
-    regOpenDate: toDDMMYYYY(todayYmd),
-    registrationDeadline: toDDMMYYYY(todayYmd),
-    startDate: toDDMMYYYY(todayYmd),
-    endDate: toDDMMYYYY(todayYmd),
+    noRankDelta: false,
   });
 
   const [uploading, setUploading] = useState(false);
 
-  // Toolbar cho Quill
-  const quillModules = useMemo(
-    () => ({
-      toolbar: [
+  // ====== Quill refs để chèn ảnh đúng editor ======
+  const contactQuillRef = useRef(null);
+  const contentQuillRef = useRef(null);
+
+  // ====== Image uploader dùng slice upload avatar ======
+  const uploadImageAndGetUrl = async (file) => {
+    if (!file) return null;
+    if (!file.type?.startsWith("image/")) {
+      toast.error("Vui lòng chọn đúng file ảnh (PNG/JPG/WebP...)");
+      return null;
+    }
+    if (file.size > MAX_IMG_SIZE) {
+      toast.error("Ảnh vượt quá 10MB. Vui lòng chọn ảnh nhỏ hơn.");
+      return null;
+    }
+    try {
+      setUploading(true);
+      const res = await uploadAvatar(file).unwrap();
+      const url =
+        res?.url || res?.path || res?.secure_url || res?.data?.url || res?.data?.path || "";
+      if (!url) throw new Error("Không tìm thấy URL ảnh từ server");
+      return url;
+    } catch (err) {
+      toast.error(err?.data?.message || err?.message || "Upload ảnh thất bại");
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ====== Handler chèn ảnh cho Quill (tạo input file tạm thời) ======
+  const insertImageViaUpload = (quillRef) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      const url = await uploadImageAndGetUrl(file);
+      if (!url) return;
+
+      const quill = quillRef.current?.getEditor?.();
+      if (!quill) return;
+      const range = quill.getSelection(true) || { index: quill.getLength(), length: 0 };
+      quill.insertEmbed(range.index, "image", url, "user");
+      quill.setSelection(range.index + 1, 0);
+      toast.success("Chèn ảnh thành công");
+    };
+    input.click();
+  };
+
+  // ====== Quill toolbar cấu hình + handler image ======
+  const makeQuillModules = (targetRef) => ({
+    toolbar: {
+      container: [
         [{ header: [1, 2, 3, false] }],
         ["bold", "italic", "underline", "strike"],
         [{ color: [] }, { background: [] }],
         [{ list: "ordered" }, { list: "bullet" }],
         [{ align: [] }, { indent: "-1" }, { indent: "+1" }],
-        ["link", "blockquote", "code-block"],
+        ["link", "blockquote", "code-block", "image"],
         ["clean"],
       ],
-      clipboard: { matchVisual: false },
-    }),
-    []
-  );
+      handlers: { image: () => insertImageViaUpload(targetRef) },
+    },
+    clipboard: { matchVisual: false },
+  });
+
+  // ✅ Memo hóa modules cho từng editor (bị thiếu ở bản bạn gửi)
+  const contactModules = useMemo(() => makeQuillModules(contactQuillRef), []);
+  const contentModules = useMemo(() => makeQuillModules(contentQuillRef), []);
 
   const quillFormats = useMemo(
     () => [
@@ -118,6 +165,7 @@ export default function TournamentFormPage() {
       "align",
       "color",
       "background",
+      "image",
     ],
     []
   );
@@ -132,15 +180,13 @@ export default function TournamentFormPage() {
       groupId: Number(tour.groupId ?? 0),
       eventType: tour.eventType || "double",
       regOpenDate: dayjs(tour.regOpenDate).isValid()
-        ? dayjs(tour.regOpenDate).format("YYYY-MM-DD")
+        ? dayjs(tour.regOpenDate).format(YMD)
         : todayYmd,
       registrationDeadline: dayjs(tour.registrationDeadline).isValid()
-        ? dayjs(tour.registrationDeadline).format("YYYY-MM-DD")
+        ? dayjs(tour.registrationDeadline).format(YMD)
         : todayYmd,
-      startDate: dayjs(tour.startDate).isValid()
-        ? dayjs(tour.startDate).format("YYYY-MM-DD")
-        : todayYmd,
-      endDate: dayjs(tour.endDate).isValid() ? dayjs(tour.endDate).format("YYYY-MM-DD") : todayYmd,
+      startDate: dayjs(tour.startDate).isValid() ? dayjs(tour.startDate).format(YMD) : todayYmd,
+      endDate: dayjs(tour.endDate).isValid() ? dayjs(tour.endDate).format(YMD) : todayYmd,
       scoreCap: Number(tour.scoreCap ?? 0),
       scoreGap: Number(tour.scoreGap ?? 0),
       singleCap: Number(tour.singleCap ?? 0),
@@ -148,30 +194,14 @@ export default function TournamentFormPage() {
       location: tour.location || "",
       contactHtml: tour.contactHtml || "",
       contentHtml: tour.contentHtml || "",
-      noRankDelta: !!tour.noRankDelta, // ⭐ NEW
+      noRankDelta: !!tour.noRankDelta,
     };
     setForm(nextForm);
-    setUiDates({
-      regOpenDate: toDDMMYYYY(nextForm.regOpenDate),
-      registrationDeadline: toDDMMYYYY(nextForm.registrationDeadline),
-      startDate: toDDMMYYYY(nextForm.startDate),
-      endDate: toDDMMYYYY(nextForm.endDate),
-    });
   }, [tour]);
 
   const onChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
-  // Xử lý nhập ngày dạng dd/mm/yyyy, chỉ set vào form (yyyy-mm-dd) khi hợp lệ.
-  const onDateChange = (name) => (e) => {
-    const raw = e.target.value;
-    // giữ UI
-    setUiDates((prev) => ({ ...prev, [name]: raw }));
-    // nếu hợp lệ đầy đủ -> cập nhật form (yyyy-mm-dd)
-    if (isFullValidDmy(raw)) {
-      setForm((prev) => ({ ...prev, [name]: toYYYYMMDD(raw) }));
-    }
-  };
-
+  // Helper build payload
   const buildPayload = () => ({
     name: (form.name || "").trim(),
     image: form.image || "",
@@ -189,7 +219,7 @@ export default function TournamentFormPage() {
     contactHtml: form.contactHtml,
     contentHtml: form.contentHtml,
     maxPairs: Number(form.maxPairs) || 0,
-    noRankDelta: !!form.noRankDelta, // ⭐ NEW
+    noRankDelta: !!form.noRankDelta,
   });
 
   const submit = async (e) => {
@@ -198,7 +228,7 @@ export default function TournamentFormPage() {
     // Validate 4 ngày lần cuối
     const dateFields = ["regOpenDate", "registrationDeadline", "startDate", "endDate"];
     for (const f of dateFields) {
-      if (!form[f] || !dayjs(form[f], "YYYY-MM-DD", true).isValid()) {
+      if (!isValidYmd(form[f])) {
         toast.error(`Ngày không hợp lệ ở trường: ${f}`);
         return;
       }
@@ -224,36 +254,32 @@ export default function TournamentFormPage() {
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      toast.error("Vui lòng chọn đúng file ảnh (PNG/JPG/WebP...)");
-      e.target.value = "";
-      return;
-    }
-    if (file.size > MAX_IMG_SIZE) {
-      toast.error("Ảnh vượt quá 10MB. Vui lòng chọn ảnh nhỏ hơn.");
-      e.target.value = "";
-      return;
-    }
-
-    try {
-      setUploading(true);
-      const res = await uploadAvatar(file).unwrap();
-      const url =
-        res?.url || res?.path || res?.secure_url || res?.data?.url || res?.data?.path || "";
-      if (!url) throw new Error("Không tìm thấy URL ảnh từ server");
-
+    const url = await uploadImageAndGetUrl(file);
+    if (url) {
       setForm((prev) => ({ ...prev, image: url }));
       toast.success("Tải ảnh thành công");
-    } catch (err) {
-      toast.error(err?.data?.message || err?.message || "Upload ảnh thất bại");
-    } finally {
-      setUploading(false);
-      e.target.value = "";
     }
+    e.target.value = "";
   };
 
   const clearImage = () => setForm((prev) => ({ ...prev, image: "" }));
+
+  // --- DatePicker v5 renderer ---
+  const renderDatePicker = (name, label) => (
+    <DatePicker
+      label={`${label} (dd/mm/yyyy)`}
+      inputFormat={DMY}
+      mask="__/__/____"
+      value={isValidYmd(form[name]) ? dayjs(form[name], YMD, true) : null}
+      onChange={(val) =>
+        setForm((prev) => ({
+          ...prev,
+          [name]: val && dayjs(val).isValid() ? dayjs(val).format(YMD) : "",
+        }))
+      }
+      renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
+    />
+  );
 
   return (
     <DashboardLayout>
@@ -269,228 +295,219 @@ export default function TournamentFormPage() {
           onSubmit={submit}
           sx={{ "& .MuiInputBase-root": { minHeight: 50, alignItems: "center" } }}
         >
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                name="name"
-                label="Tên giải"
-                value={form.name}
-                onChange={onChange}
-                fullWidth
-                required
-                margin="normal"
-              />
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  name="name"
+                  label="Tên giải"
+                  value={form.name}
+                  onChange={onChange}
+                  fullWidth
+                  required
+                  margin="normal"
+                />
 
-              {/* Upload ảnh từ máy + preview */}
-              <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Ảnh đại diện giải
-                </Typography>
+                {/* Upload ảnh từ máy + preview */}
+                <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Ảnh đại diện giải
+                  </Typography>
 
-                {form.image ? (
-                  <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
-                    <img
-                      src={form.image}
-                      referrerPolicy="no-referrer"
-                      alt="preview"
-                      style={{
-                        width: 160,
-                        height: 90,
-                        objectFit: "cover",
-                        borderRadius: 8,
-                        border: "1px solid rgba(0,0,0,0.12)",
-                      }}
-                    />
-                    <Stack direction="row" spacing={1}>
+                  {form.image ? (
+                    <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
+                      <img
+                        src={form.image}
+                        referrerPolicy="no-referrer"
+                        alt="preview"
+                        style={{
+                          width: 160,
+                          height: 90,
+                          objectFit: "cover",
+                          borderRadius: 8,
+                          border: "1px solid rgba(0,0,0,0.12)",
+                        }}
+                      />
+                      <Stack direction="row" spacing={1}>
+                        <Button variant="outlined" onClick={pickFile} disabled={uploading}>
+                          {uploading ? "Đang tải..." : "Thay ảnh"}
+                        </Button>
+                        <Button
+                          variant="text"
+                          color="error"
+                          onClick={clearImage}
+                          disabled={uploading}
+                        >
+                          Xoá ảnh
+                        </Button>
+                      </Stack>
+                    </Box>
+                  ) : (
+                    <Stack direction="row" spacing={1} alignItems="center">
                       <Button variant="outlined" onClick={pickFile} disabled={uploading}>
-                        {uploading ? "Đang tải..." : "Thay ảnh"}
+                        {uploading ? "Đang tải..." : "Chọn ảnh từ máy"}
                       </Button>
-                      <Button
-                        variant="text"
-                        color="error"
-                        onClick={clearImage}
-                        disabled={uploading}
-                      >
-                        Xoá ảnh
-                      </Button>
+                      <Typography variant="body2" color="text.secondary">
+                        PNG/JPG/WebP • ≤ 10MB. Sau khi chọn sẽ tự upload.
+                      </Typography>
                     </Stack>
-                  </Box>
-                ) : (
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Button variant="outlined" onClick={pickFile} disabled={uploading}>
-                      {uploading ? "Đang tải..." : "Chọn ảnh từ máy"}
-                    </Button>
-                    <Typography variant="body2" color="text.secondary">
-                      PNG/JPG/WebP • ≤ 10MB. Sau khi chọn sẽ tự upload.
-                    </Typography>
-                  </Stack>
-                )}
+                  )}
 
-                {/* file input ẩn */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  style={{ display: "none" }}
-                />
-
-                {/* Nhập URL thủ công nếu muốn */}
-                <TextField
-                  name="image"
-                  label="Ảnh (URL)"
-                  value={form.image}
-                  onChange={onChange}
-                  fullWidth
-                  margin="normal"
-                  helperText="Có thể dán URL ảnh trực tiếp nếu đã có."
-                />
-              </Card>
-
-              <TextField
-                name="sportType"
-                label="Môn thi"
-                value="Pickleball"
-                fullWidth
-                margin="normal"
-                InputProps={{ readOnly: true }}
-              />
-              <TextField
-                name="groupId"
-                label="Group ID"
-                type="number"
-                value={form.groupId}
-                onChange={onChange}
-                fullWidth
-                margin="normal"
-              />
-              <TextField
-                name="eventType"
-                label="Loại giải"
-                select
-                value={form.eventType}
-                onChange={onChange}
-                fullWidth
-                margin="normal"
-              >
-                <MenuItem value="single">Đơn</MenuItem>
-                <MenuItem value="double">Đôi</MenuItem>
-              </TextField>
-              <TextField
-                name="location"
-                label="Địa điểm"
-                value={form.location}
-                onChange={onChange}
-                fullWidth
-                margin="normal"
-              />
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              {[
-                { n: "regOpenDate", l: "Ngày mở đăng ký" },
-                { n: "registrationDeadline", l: "Hạn chót đăng ký" },
-                { n: "startDate", l: "Ngày thi đấu" },
-                { n: "endDate", l: "Ngày kết thúc" },
-              ].map((d) => (
-                <TextField
-                  key={d.n}
-                  name={d.n}
-                  label={`${d.l} (dd/mm/yyyy)`}
-                  placeholder="dd/mm/yyyy"
-                  value={uiDates[d.n]}
-                  onChange={onDateChange(d.n)}
-                  fullWidth
-                  margin="normal"
-                  inputProps={{ inputMode: "numeric" }}
-                />
-              ))}
-
-              {[
-                { n: "scoreCap", l: "Tổng điểm tối đa (đôi)" },
-                { n: "scoreGap", l: "Chênh lệch tối đa" },
-                { n: "singleCap", l: "Điểm tối đa 1 VĐV" },
-                { n: "maxPairs", l: "Số cặp/đội tối đa" },
-              ].map((s) => (
-                <TextField
-                  key={s.n}
-                  name={s.n}
-                  label={s.l}
-                  type="number"
-                  value={form[s.n]}
-                  onChange={onChange}
-                  fullWidth
-                  margin="normal"
-                />
-              ))}
-            </Grid>
-            <Grid item xs={12} md={12}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={!!form.noRankDelta}
-                    onChange={(e) => setForm((p) => ({ ...p, noRankDelta: e.target.checked }))}
+                  {/* file input ẩn */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    style={{ display: "none" }}
                   />
-                }
-                label="Không áp dụng điểm trình (toàn giải)"
-              />
-              <Typography variant="caption" color="text.secondary">
-                Mặc định toàn bộ trận trong giải này không cộng/trừ Δ (rating delta). Ở trang
-                Bracket có thể bật/tắt riêng từng Bracket (Bracket sẽ ưu tiên hơn).
-              </Typography>
-            </Grid>
 
-            {/* ==== ReactQuill Editors ==== */}
-            <Grid item xs={12}>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Thông tin liên hệ
-              </Typography>
-              <Box
-                sx={{
-                  border: "1px solid",
-                  borderColor: "divider",
-                  borderRadius: 1,
-                  "& .ql-container": { border: "none" },
-                  "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
-                  "& .ql-editor": { minHeight: 150 },
-                }}
-              >
-                <ReactQuill
-                  theme="snow"
-                  value={form.contactHtml}
-                  onChange={(html) => setForm((p) => ({ ...p, contactHtml: html }))}
-                  modules={quillModules}
-                  formats={quillFormats}
-                  placeholder="Nhập thông tin liên hệ…"
-                />
-              </Box>
-            </Grid>
+                  {/* Nhập URL thủ công nếu muốn */}
+                  <TextField
+                    name="image"
+                    label="Ảnh (URL)"
+                    value={form.image}
+                    onChange={onChange}
+                    fullWidth
+                    margin="normal"
+                    helperText="Có thể dán URL ảnh trực tiếp nếu đã có."
+                  />
+                </Card>
 
-            <Grid item xs={12}>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Nội dung giải
-              </Typography>
-              <Box
-                sx={{
-                  border: "1px solid",
-                  borderColor: "divider",
-                  borderRadius: 1,
-                  "& .ql-container": { border: "none" },
-                  "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
-                  "& .ql-editor": { minHeight: 200 },
-                }}
-              >
-                <ReactQuill
-                  theme="snow"
-                  value={form.contentHtml}
-                  onChange={(html) => setForm((p) => ({ ...p, contentHtml: html }))}
-                  modules={quillModules}
-                  formats={quillFormats}
-                  placeholder="Mô tả chi tiết thể lệ, cơ cấu giải thưởng, lưu ý…"
+                <TextField
+                  name="sportType"
+                  label="Môn thi"
+                  value="Pickleball"
+                  fullWidth
+                  margin="normal"
+                  InputProps={{ readOnly: true }}
                 />
-              </Box>
+                <TextField
+                  name="groupId"
+                  label="Group ID"
+                  type="number"
+                  value={form.groupId}
+                  onChange={onChange}
+                  fullWidth
+                  margin="normal"
+                />
+                <TextField
+                  name="eventType"
+                  label="Loại giải"
+                  select
+                  value={form.eventType}
+                  onChange={onChange}
+                  fullWidth
+                  margin="normal"
+                >
+                  <MenuItem value="single">Đơn</MenuItem>
+                  <MenuItem value="double">Đôi</MenuItem>
+                </TextField>
+                <TextField
+                  name="location"
+                  label="Địa điểm"
+                  value={form.location}
+                  onChange={onChange}
+                  fullWidth
+                  margin="normal"
+                />
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                {renderDatePicker("regOpenDate", "Ngày mở đăng ký")}
+                {renderDatePicker("registrationDeadline", "Hạn chót đăng ký")}
+                {renderDatePicker("startDate", "Ngày thi đấu")}
+                {renderDatePicker("endDate", "Ngày kết thúc")}
+
+                {[
+                  { n: "scoreCap", l: "Tổng điểm tối đa (đôi)" },
+                  { n: "scoreGap", l: "Chênh lệch tối đa" },
+                  { n: "singleCap", l: "Điểm tối đa 1 VĐV" },
+                  { n: "maxPairs", l: "Số cặp/đội tối đa" },
+                ].map((s) => (
+                  <TextField
+                    key={s.n}
+                    name={s.n}
+                    label={s.l}
+                    type="number"
+                    value={form[s.n]}
+                    onChange={onChange}
+                    fullWidth
+                    margin="normal"
+                  />
+                ))}
+              </Grid>
+
+              <Grid item xs={12} md={12}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={!!form.noRankDelta}
+                      onChange={(e) => setForm((p) => ({ ...p, noRankDelta: e.target.checked }))}
+                    />
+                  }
+                  label="Không áp dụng điểm trình (toàn giải)"
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Mặc định toàn bộ trận trong giải này không cộng/trừ Δ (rating delta). Ở trang
+                  Bracket có thể bật/tắt riêng từng Bracket (Bracket sẽ ưu tiên hơn).
+                </Typography>
+              </Grid>
+
+              {/* ==== ReactQuill Editors (có nút chèn ảnh) ==== */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Thông tin liên hệ
+                </Typography>
+                <Box
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 1,
+                    "& .ql-container": { border: "none" },
+                    "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
+                    "& .ql-editor": { minHeight: 150 },
+                  }}
+                >
+                  <ReactQuill
+                    ref={contactQuillRef}
+                    theme="snow"
+                    value={form.contactHtml}
+                    onChange={(html) => setForm((p) => ({ ...p, contactHtml: html }))}
+                    modules={contactModules} // ✅ đã memoized
+                    formats={quillFormats}
+                    placeholder="Nhập thông tin liên hệ…"
+                  />
+                </Box>
+              </Grid>
+
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Nội dung giải
+                </Typography>
+                <Box
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 1,
+                    "& .ql-container": { border: "none" },
+                    "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
+                    "& .ql-editor": { minHeight: 200 },
+                  }}
+                >
+                  <ReactQuill
+                    ref={contentQuillRef}
+                    theme="snow"
+                    value={form.contentHtml}
+                    onChange={(html) => setForm((p) => ({ ...p, contentHtml: html }))}
+                    modules={contentModules} // ✅ đã memoized
+                    formats={quillFormats}
+                    placeholder="Mô tả chi tiết thể lệ, cơ cấu giải thưởng, lưu ý…"
+                  />
+                </Box>
+              </Grid>
             </Grid>
-          </Grid>
+          </LocalizationProvider>
 
           <Stack direction="row" spacing={2} mt={3}>
             <Button

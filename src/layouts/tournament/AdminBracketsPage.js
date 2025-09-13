@@ -1689,18 +1689,6 @@ export default function AdminBracketsPage() {
                             </IconButton>
                           </span>
                         </Tooltip>
-
-                        <Tooltip title="Xoá tất cả trận trong bracket này (không xoá bracket)">
-                          <span>
-                            <IconButton
-                              size="small"
-                              onClick={stop(() => doClearAllMatches(br))}
-                              disabled={clearingAll}
-                            >
-                              <DeleteSweepIcon />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
                         <FormControlLabel
                           control={
                             <Checkbox
@@ -1728,6 +1716,18 @@ export default function AdminBracketsPage() {
                           }
                           label="Không áp dụng tính điểm delta"
                         />
+                        <Tooltip title="Xoá tất cả trận trong bracket này (không xoá bracket)">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={stop(() => doClearAllMatches(br))}
+                              disabled={clearingAll}
+                            >
+                              <DeleteSweepIcon />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+
                         <Tooltip title="Xoá giai đoạn giải đấu này">
                           <span>
                             <IconButton

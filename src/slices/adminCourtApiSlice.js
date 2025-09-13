@@ -161,6 +161,33 @@ export const adminCourtApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: [{ type: "Scheduler", id: "STATE" }],
     }),
+    // ⭐ NEW: Lấy matchesLite cho dialog gán trận
+    getSchedulerMatchesLite: builder.query({
+      // args: { tournamentId, bracket?, cluster?, includeCurrent?, statuses? }
+      query: ({
+        tournamentId,
+        bracket,
+        cluster = "Main",
+        includeCurrent = true,
+        statuses = ["scheduled", "queued", "assigned"],
+      }) => {
+        const params = {
+          tournamentId: asId(tournamentId),
+          ...(bracket ? { bracket: asId(bracket) } : { cluster }),
+          includeCurrent: includeCurrent ? "1" : "0",
+          statuses: Array.isArray(statuses) ? statuses.join(",") : String(statuses || ""),
+        };
+        return {
+          url: `/admin/courts/matches`,
+          method: "GET",
+          params,
+        };
+      },
+      transformResponse: (res) => res?.matches ?? [],
+      // Mình để cache tối thiểu, mở dropdown là gọi lại
+      keepUnusedDataFor: 0,
+      providesTags: [{ type: "Scheduler", id: "STATE" }],
+    }),
   }),
 
   // nếu file này được inject nhiều lần ở môi trường hot-reload:
@@ -176,4 +203,5 @@ export const {
   useListMatchesQuery,
   useAssignSpecificHttpMutation,
   useResetCourtsHttpMutation,
+  useLazyGetSchedulerMatchesLiteQuery,
 } = adminCourtApiSlice;

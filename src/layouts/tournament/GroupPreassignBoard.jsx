@@ -38,7 +38,7 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 
 // ✅ Bracket APIs
 import {
-  useGetOnlyBracketQuery, // dùng hook mới theo yêu cầu
+  useGetOnlyBracketQuery,
   useBulkAssignSlotPlanMutation,
   useStartGroupDrawMutation,
 } from "slices/bracketsApiSlice";
@@ -50,24 +50,26 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 const keyOf = (poolKey, slotIndex) => `${poolKey}:${slotIndex}`;
 
-// ==== Helpers hiển thị tên/điểm/ảnh cho Single/Doubles ====
+/* =========================
+ *  NICKNAME-ONLY HELPERS
+ * ========================= */
 const safe = (s) => (s && String(s).trim()) || "";
-const pName = (p) => safe(p?.fullName) || safe(p?.nickName) || safe(p?.phone) || "";
 const pNick = (p) => safe(p?.nickName);
-const pPhone = (p) => safe(p?.phone);
 const pScore = (p) => (typeof p?.score === "number" ? p.score : null);
 const pAvatar = (p) => safe(p?.avatar);
 
+// Build view-model từ 1 registration: label = nickname ONLY
 function makeRegView(reg) {
   const p1 = reg?.player1 || null;
   const p2 = reg?.player2 || null;
   const isDouble = !!p2;
 
-  const name1 = pName(p1);
-  const name2 = p2 ? pName(p2) : "";
-  const label = isDouble ? `${name1}${name2 ? " & " + name2 : ""}` : name1 || reg?._id;
+  const nick1 = pNick(p1);
+  const nick2 = p2 ? pNick(p2) : "";
 
-  // điểm: đơn lấy p1.score; đôi lấy trung bình nếu có
+  const label = isDouble ? [nick1 || "?", nick2 || "?"].join(" & ") : nick1 || "(chưa có nickname)";
+
+  // rating: đơn = p1.score, đôi = average nếu có
   const s1 = pScore(p1);
   const s2 = pScore(p2);
   let rating = null;
@@ -77,27 +79,11 @@ function makeRegView(reg) {
     rating = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
   }
 
-  // subtext gợi ý: nicknames/phones
-  const subs = [];
-  if (!isDouble) {
-    if (pNick(p1)) subs.push(`@${pNick(p1)}`);
-    if (pPhone(p1)) subs.push(pPhone(p1));
-  } else {
-    const sNick = [pNick(p1), pNick(p2)]
-      .filter(Boolean)
-      .map((n) => `@${n}`)
-      .join(" • ");
-    const sPhone = [pPhone(p1), pPhone(p2)].filter(Boolean).join(" • ");
-    if (sNick) subs.push(sNick);
-    if (sPhone) subs.push(sPhone);
-  }
-  const subtitle = subs.join(" • ");
-
   return {
     id: String(reg?._id),
     type: isDouble ? "double" : "single",
-    label,
-    subtitle,
+    label, // <- CHỈ nickname
+    subtitle: "", // <- bỏ subtext để gọn
     rating,
     avatars: isDouble ? [pAvatar(p1) || null, pAvatar(p2) || null] : [pAvatar(p1) || null],
   };
@@ -147,7 +133,7 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
 
   const groups = useMemo(() => bracket?.groups || [], [bracket]);
 
-  // Chuẩn hoá options từ payload thực tế (đơn/đôi)
+  // Chuẩn hoá options từ payload thực tế (đơn/đôi) -> nickname-only
   const regOptions = useMemo(() => registrations.map(makeRegView), [registrations]);
 
   // tiện ích lấy option theo id
@@ -274,7 +260,7 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
     }
   };
 
-  // Render
+  // Render guards
   if (!bid) {
     return (
       <DashboardLayout>
@@ -346,7 +332,7 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
             flexWrap="wrap"
             gap={2}
           >
-            <Typography variant="h6">
+            <Typography variant="h6" sx={{ minWidth: 0 }}>
               {bracket?.name ? `Cơ cấu vòng bảng • ${bracket.name}` : "Cơ cấu vòng bảng"} •{" "}
               {totalGroups} bảng • {totalSlots} slot
             </Typography>
@@ -388,7 +374,6 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
                           const cur = getSlot(poolKey, idx);
                           const opt = cur ? optById.get(String(cur.regId)) : null;
                           const label = opt ? opt.label : "— trống —";
-                          const sub = opt?.subtitle;
                           const type = opt?.type;
 
                           return (
@@ -403,24 +388,35 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
                                 borderColor: cur ? "divider" : "transparent",
                                 borderRadius: 1,
                                 p: 1,
+                                overflow: "hidden", // chống tràn khối ngoài
                                 "&:hover": { backgroundColor: "action.hover" },
                               }}
                             >
-                              <Chip label={`#${idx}`} size="small" />
+                              <Chip label={`#${idx}`} size="small" sx={{ mr: 0.5 }} />
+
                               <Button
                                 variant={cur ? "contained" : "outlined"}
                                 onClick={() => openAssign(poolKey, idx)}
-                                sx={{ justifySelf: "stretch", textTransform: "none" }}
+                                sx={{
+                                  justifySelf: "stretch",
+                                  textTransform: "none",
+                                  width: "100%",
+                                  overflow: "hidden", // chống tràn trong button
+                                }}
                               >
                                 <Stack
                                   direction="row"
                                   spacing={1}
                                   alignItems="center"
-                                  sx={{ width: "100%", justifyContent: "flex-start" }}
+                                  sx={{
+                                    width: "100%",
+                                    justifyContent: "flex-start",
+                                    minWidth: 0, // rất quan trọng cho ellipsis
+                                  }}
                                 >
                                   {opt ? (
                                     type === "double" ? (
-                                      <Stack direction="row" spacing={-0.5}>
+                                      <Stack direction="row" spacing={-0.5} sx={{ flexShrink: 0 }}>
                                         <Avatar
                                           alt=""
                                           src={opt.avatars?.[0] || undefined}
@@ -441,24 +437,29 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
                                       <Avatar
                                         alt=""
                                         src={opt.avatars?.[0] || undefined}
-                                        sx={{ width: 24, height: 24 }}
+                                        sx={{ width: 24, height: 24, flexShrink: 0 }}
                                       />
                                     )
                                   ) : null}
-                                  <Stack direction="column" sx={{ textAlign: "left" }}>
+
+                                  <Stack
+                                    direction="column"
+                                    sx={{
+                                      textAlign: "left",
+                                      flex: 1,
+                                      minWidth: 0,
+                                      overflow: "hidden",
+                                    }}
+                                  >
                                     <Typography variant="body2" fontWeight={600} noWrap>
                                       {label}
                                     </Typography>
-                                    {sub ? (
-                                      <Typography variant="caption" color="text.secondary" noWrap>
-                                        {sub}
-                                      </Typography>
-                                    ) : null}
                                   </Stack>
+
                                   {opt?.rating != null ? (
                                     <Chip
                                       size="small"
-                                      sx={{ ml: "auto" }}
+                                      sx={{ ml: 1, flexShrink: 0 }}
                                       label={`⭐ ${Number(opt.rating).toFixed(1)}`}
                                     />
                                   ) : null}
@@ -526,7 +527,8 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
                   options={regOptions}
                   value={pick}
                   onChange={(e, v) => setPick(v)}
-                  getOptionLabel={(o) => o.label}
+                  getOptionLabel={(o) => o.label} // nickname-only
+                  isOptionEqualToValue={(o, v) => o?.id === v?.id}
                   renderInput={(p) => <TextField {...p} label="Chọn đội để gán" autoFocus />}
                   renderOption={(props, option) => {
                     const { key, ...rest } = props;
@@ -559,25 +561,38 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
                             />
                           )}
                         </ListItemAvatar>
+
                         <ListItemText
                           primary={
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Typography variant="body2" fontWeight={600} noWrap>
+                            <Stack
+                              direction="row"
+                              spacing={1}
+                              alignItems="center"
+                              sx={{ minWidth: 0, overflow: "hidden" }}
+                            >
+                              <Typography
+                                variant="body2"
+                                fontWeight={600}
+                                noWrap
+                                sx={{ minWidth: 0, flex: 1 }}
+                              >
                                 {option.label}
                               </Typography>
-                              <Chip size="small" label={option.type === "double" ? "Đôi" : "Đơn"} />
+                              <Chip
+                                size="small"
+                                label={option.type === "double" ? "Đôi" : "Đơn"}
+                                sx={{ flexShrink: 0 }}
+                              />
                               {option.rating != null ? (
-                                <Chip size="small" label={`⭐ ${option.rating.toFixed(1)}`} />
+                                <Chip
+                                  size="small"
+                                  label={`⭐ ${option.rating.toFixed(1)}`}
+                                  sx={{ flexShrink: 0 }}
+                                />
                               ) : null}
                             </Stack>
                           }
-                          secondary={
-                            option.subtitle ? (
-                              <Typography variant="caption" color="text.secondary" noWrap>
-                                {option.subtitle}
-                              </Typography>
-                            ) : null
-                          }
+                          secondary={null}
                         />
                       </ListItem>
                     );

@@ -184,19 +184,52 @@ const buildMatchCode = (m) => {
   return `${r}${ord}`;
 };
 
-const personName = (p) =>
-  !p || typeof p !== "object"
-    ? ""
-    : p.fullName || p.nickName || p.displayName || p.name || p.email || p.phone || "";
+/* ================= Helpers (labels, formatters) ================= */
+const personName = (p) => {
+  if (!p || typeof p !== "object") return "";
+  // Ưu tiên nickname ở mọi nơi có thể (user, profile…)
+  const cands = [
+    p.nickname,
+    p.nickName,
+    p.user?.nickname,
+    p.user?.nickName,
+    p.profile?.nickname,
+    p.profile?.nickName,
+    // fallback nếu không có nickname
+    p.displayName,
+    p.fullName,
+    p.name,
+    p.email,
+    p.phone,
+  ];
+  for (const v of cands) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
+};
 
 const pairName = (pair) => {
   if (!pair) return "";
-  if (pair.displayName || pair.name) return pair.displayName || pair.name;
+  // Với đôi, vẫn ưu tiên nickname người chơi hơn là displayName/name ghép sẵn
   const names = [];
   if (pair.player1) names.push(personName(pair.player1));
   if (pair.player2) names.push(personName(pair.player2));
+
   if (!names.length && Array.isArray(pair.participants)) {
     for (const it of pair.participants) names.push(personName(it?.user || it));
+  }
+
+  // Nếu không lấy được từ thành viên, mới fallback sang nhãn của pair
+  if (!names.filter(Boolean).length) {
+    const label =
+      pair.nickname ||
+      pair.nickName ||
+      pair.shortName ||
+      pair.code ||
+      pair.displayName ||
+      pair.name ||
+      "";
+    return String(label || "").trim();
   }
   return names.filter(Boolean).join(" & ");
 };
@@ -299,8 +332,9 @@ export default function AdminBracketCourtManagerPage() {
   const matchListLabel = (m) => {
     if (!m) return "";
     const code = buildMatchCode(m);
-    const A = m.pairAName || (m.pairA ? pairName(m.pairA) : "Đội A");
-    const B = m.pairBName || (m.pairB ? pairName(m.pairB) : "Đội B");
+    // Ưu tiên tên đôi từ người chơi (nickname) -> rồi mới tới pairAName/pairBName
+    const A = (m.pairA ? pairName(m.pairA) : "") || m.pairAName || "Đội A";
+    const B = (m.pairB ? pairName(m.pairB) : "") || m.pairBName || "Đội B";
     const st = viMatchStatus(m.status);
     return `${code} · ${A} vs ${B} · ${st}`;
   };
@@ -356,7 +390,7 @@ export default function AdminBracketCourtManagerPage() {
     const interval = setInterval(() => {
       reqState();
       refetchFinished?.();
-    }, 8000);
+    }, 10000);
 
     return () => {
       clearInterval(interval);
@@ -483,6 +517,14 @@ export default function AdminBracketCourtManagerPage() {
     return null;
   };
 
+  const courtDerivedStatus = (c) => {
+    const m = getMatchForCourt(c); // đã có helper
+    if (c?.status) return c.status; // ưu tiên status từ BE nếu có
+    if (!m) return "idle"; // không có trận -> idle
+    if (m.status === "live") return "live";
+    return "assigned";
+  };
+
   const getMatchCodeForCourt = (c) => {
     const m = getMatchForCourt(c);
     if (!m) return "";
@@ -492,9 +534,8 @@ export default function AdminBracketCourtManagerPage() {
   const getTeamsForCourt = (c) => {
     const m = getMatchForCourt(c);
     if (!m) return { A: "", B: "" };
-    if (m.pairAName || m.pairBName) return { A: m.pairAName || "", B: m.pairBName || "" };
-    const A = m.pairA ? pairName(m.pairA) : "";
-    const B = m.pairB ? pairName(m.pairB) : "";
+    const A = (m.pairA ? pairName(m.pairA) : "") || m.pairAName || "";
+    const B = (m.pairB ? pairName(m.pairB) : "") || m.pairBName || "";
     return { A, B };
   };
 
@@ -572,14 +613,15 @@ export default function AdminBracketCourtManagerPage() {
         headerName: "Đội A",
         flex: 1,
         minWidth: 140,
-        valueGetter: (p) => p.row?.pairAName || (p.row?.pairA ? pairName(p.row.pairA) : ""),
+        // Ưu tiên lấy từ pair (nickname), rồi mới fallback pairAName
+        valueGetter: (p) => (p.row?.pairA ? pairName(p.row.pairA) : "") || p.row?.pairAName || "",
       },
       {
         field: "pairBName",
         headerName: "Đội B",
         flex: 1,
         minWidth: 140,
-        valueGetter: (p) => p.row?.pairBName || (p.row?.pairB ? pairName(p.row.pairB) : ""),
+        valueGetter: (p) => (p.row?.pairB ? pairName(p.row.pairB) : "") || p.row?.pairBName || "",
       },
       {
         field: "status",
@@ -615,14 +657,14 @@ export default function AdminBracketCourtManagerPage() {
         headerName: "Đội A",
         flex: 1,
         minWidth: 160,
-        valueGetter: (p) => p.row?.pairAName || (p.row?.pairA ? pairName(p.row.pairA) : ""),
+        valueGetter: (p) => (p.row?.pairA ? pairName(p.row.pairA) : "") || p.row?.pairAName || "",
       },
       {
         field: "pairBName",
         headerName: "Đội B",
         flex: 1,
         minWidth: 160,
-        valueGetter: (p) => p.row?.pairBName || (p.row?.pairB ? pairName(p.row.pairB) : ""),
+        valueGetter: (p) => (p.row?.pairB ? pairName(p.row.pairB) : "") || p.row?.pairBName || "",
       },
       { field: "court", headerName: "Sân", width: 140, valueGetter: (p) => courtLabelOf(p.row) },
       { field: "round", headerName: "Vòng", width: 100, valueGetter: (p) => roundTag(p.row) },
@@ -863,10 +905,10 @@ export default function AdminBracketCourtManagerPage() {
                 {courts.map((c) => {
                   const m = getMatchForCourt(c);
                   const hasMatch = Boolean(m);
-                  const statusLabel = viCourtStatus(c.status);
+                  const statusLabel = viCourtStatus(courtDerivedStatus(c));
                   const code = getMatchCodeForCourt(c);
                   const teams = getTeamsForCourt(c);
-
+                  const cs = courtDerivedStatus(c);
                   return (
                     <Paper
                       key={c._id}
@@ -881,11 +923,11 @@ export default function AdminBracketCourtManagerPage() {
                         <Chip
                           label={c.name}
                           color={
-                            c.status === "idle"
+                            cs === "idle"
                               ? "default"
-                              : c.status === "live"
+                              : cs === "live"
                               ? "success"
-                              : c.status === "maintenance"
+                              : cs === "maintenance"
                               ? "warning"
                               : "info"
                           }
@@ -939,7 +981,7 @@ export default function AdminBracketCourtManagerPage() {
                           size="small"
                           variant="outlined"
                           startIcon={<AutorenewIcon />}
-                          disabled={c.status !== "idle"}
+                          disabled={courtDerivedStatus(c) !== "idle"}
                           onClick={() => handleAssignNext(c._id)}
                         >
                           Gán trận kế tiếp
