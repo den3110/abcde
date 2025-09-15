@@ -27,6 +27,7 @@ import {
   InputAdornment,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import VerifiedIcon from "@mui/icons-material/HowToReg";
@@ -51,6 +52,8 @@ import {
   useChangeUserPasswordMutation,
   usePromoteToEvaluatorMutation,
   useDemoteEvaluatorMutation,
+  // ✅ thêm lại API xoá
+  useDeleteUserMutation,
 } from "slices/adminApiSlice";
 import { setPage, setKeyword, setRole } from "slices/adminUiSlice";
 
@@ -174,6 +177,8 @@ export default function UserManagement() {
   const [changePasswordMut, { isLoading: changingPass }] = useChangeUserPasswordMutation();
   const [promoteEvaluatorMut] = usePromoteToEvaluatorMutation();
   const [demoteEvaluatorMut] = useDemoteEvaluatorMutation();
+  const [deleteUserMut] = useDeleteUserMutation(); // ✅ xoá user
+
   const [score, setScore] = useState(null);
 
   const { data, isFetching, refetch } = useGetUsersQuery(
@@ -185,6 +190,7 @@ export default function UserManagement() {
   const [edit, setEdit] = useState(null);
   const [kyc, setKyc] = useState(null);
   const [zoom, setZoom] = useState(null);
+  const [del, setDel] = useState(null); // ✅ dialog xoá
 
   // Snackbar
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
@@ -207,13 +213,16 @@ export default function UserManagement() {
     }
   }, [data?.users]);
 
+  // ✅ helper chuẩn: trả về promise để .then() được
   const handle = async (promise, successMsg) => {
     try {
-      await promise;
+      const res = await promise;
       showSnack("success", successMsg);
-      refetch();
+      await refetch();
+      return res;
     } catch (err) {
       showSnack("error", err?.data?.message || err.error || "Đã xảy ra lỗi");
+      throw err;
     }
   };
 
@@ -231,10 +240,10 @@ export default function UserManagement() {
         }).unwrap();
         showSnack("success", "Đã bật Admin chấm trình (FULL tỉnh)");
       } else {
-        // ✅ TẮT = DEMOTE (chuẩn tham số: { id, body })
+        // ✅ TẮT = DEMOTE
         await demoteEvaluatorMut({
           id: userId,
-          body: { toRole: "user" }, // hoặc "referee" tuỳ bạn
+          body: { toRole: "user" },
         }).unwrap();
         showSnack("success", "Đã tắt Admin chấm trình");
       }
@@ -245,8 +254,6 @@ export default function UserManagement() {
       showSnack("error", err?.data?.message || err.error || "Đã xảy ra lỗi");
     }
   };
-  // chỉ thêm " (admin chấm trình)" nếu FULL tỉnh
-  const renderEvalSuffix = (u) => (fullMap[u._id] ? " (admin chấm trình)" : "");
 
   /* ================== Table ================== */
   const columns = [
@@ -257,7 +264,7 @@ export default function UserManagement() {
     { Header: "Điểm đôi", accessor: "double", align: "center" },
     { Header: "Role", accessor: "role", align: "center" },
     { Header: "CCCD", accessor: "cccd", align: "center" },
-    { Header: "Thao tác", accessor: "act", align: "center", width: "14%" },
+    { Header: "Thao tác", accessor: "act", align: "center", width: "17%" },
   ];
 
   const rows =
@@ -334,7 +341,12 @@ export default function UserManagement() {
                 <EditIcon fontSize="inherit" />
               </IconButton>
             </Tooltip>
-            {/* (đã bỏ nút xoá theo yêu cầu) */}
+            {/* ✅ THÊM LẠI: Xoá user */}
+            <Tooltip title="Xoá">
+              <IconButton size="small" color="error" onClick={() => setDel(u)}>
+                <DeleteIcon fontSize="inherit" />
+              </IconButton>
+            </Tooltip>
           </Stack>
         ),
       };
@@ -826,6 +838,25 @@ export default function UserManagement() {
             </DialogActions>
           </>
         )}
+      </Dialog>
+
+      {/* ✅ Delete dialog */}
+      <Dialog open={!!del} onClose={() => setDel(null)}>
+        <DialogTitle>Xoá người dùng?</DialogTitle>
+        <DialogContent>
+          Bạn chắc chắn xoá <b>{del?.name}</b> ({del?.email})?
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDel(null)}>Huỷ</Button>
+          <Button
+            color="error"
+            onClick={() =>
+              handle(deleteUserMut(del._id).unwrap(), "Đã xoá người dùng").then(() => setDel(null))
+            }
+          >
+            Xoá
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* Cập nhật điểm */}
