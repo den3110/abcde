@@ -14,6 +14,7 @@ import {
   Checkbox,
   RadioGroup,
   Radio,
+  Skeleton,
 } from "@mui/material";
 
 // === MUI X Date Pickers v5 ===
@@ -25,7 +26,7 @@ import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
-
+import PropTypes from "prop-types";
 import {
   useCreateTournamentMutation,
   useGetTournamentQuery,
@@ -112,10 +113,115 @@ const YMDHMS = "YYYY-MM-DDTHH:mm:ss";
 const DMYHMS = "DD/MM/YYYY HH:mm:ss";
 const isValidYmdHms = (s) => !!s && dayjs(s, YMDHMS, true).isValid();
 
+/* ---------- Skeleton block cho UI khi đang load ---------- */
+function FormSkeleton() {
+  const Line = ({ w = "100%", h = 56, sx }) => (
+    <Skeleton variant="rounded" width={w} height={h} sx={{ borderRadius: 1, ...sx }} />
+  );
+  Line.propTypes = {
+    w: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+    h: PropTypes.number,
+    sx: PropTypes.any, // sx của MUI có thể là object/array/function
+  };
+  Line.defaultProps = {
+    w: "100%",
+    h: 56,
+    sx: undefined,
+  };
+
+  const Text = ({ w = 200, h = 36, sx }) => (
+    <Skeleton variant="text" width={w} height={h} sx={sx} />
+  );
+  Text.propTypes = {
+    w: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+    h: PropTypes.number,
+    sx: PropTypes.any,
+  };
+  Text.defaultProps = {
+    w: 200,
+    h: 36,
+    sx: undefined,
+  };
+
+  return (
+    <Box p={3} sx={{ backgroundColor: "#fff", borderRadius: 1 }}>
+      <Text w={260} h={44} sx={{ mb: 2 }} />
+
+      <Grid container spacing={3}>
+        {/* Col trái */}
+        <Grid item xs={12} md={6}>
+          <Line />
+          <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
+            <Text w={160} />
+            <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
+              <Skeleton variant="rounded" width={160} height={90} sx={{ borderRadius: 1 }} />
+              <Stack direction="row" spacing={1}>
+                <Line w={120} h={40} />
+                <Line w={100} h={40} />
+              </Stack>
+            </Box>
+            <Line />
+          </Card>
+
+          <Line sx={{ mt: 2 }} />
+          <Line sx={{ mt: 2 }} />
+          <Line sx={{ mt: 2 }} />
+
+          <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
+            <Text w={140} />
+            <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
+              <Line w={180} h={32} />
+              <Line w={260} h={32} />
+            </Stack>
+            <Line sx={{ mt: 2 }} />
+            <Text w={260} sx={{ mt: 1 }} />
+          </Card>
+        </Grid>
+
+        {/* Col phải */}
+        <Grid item xs={12} md={6}>
+          <Line />
+          <Line sx={{ mt: 2 }} />
+          <Line sx={{ mt: 2 }} />
+          <Line sx={{ mt: 2 }} />
+
+          <Line sx={{ mt: 2 }} />
+          <Line sx={{ mt: 2 }} />
+          <Line sx={{ mt: 2 }} />
+          <Line sx={{ mt: 2 }} />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Skeleton variant="circular" width={22} height={22} />
+            <Text w={340} />
+          </Stack>
+          <Text w={420} />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Text w={160} />
+          <Skeleton variant="rounded" height={190} sx={{ borderRadius: 1 }} />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Text w={160} />
+          <Skeleton variant="rounded" height={240} sx={{ borderRadius: 1 }} />
+        </Grid>
+      </Grid>
+
+      <Stack direction="row" spacing={2} mt={3}>
+        <Line w={140} h={40} />
+        <Line w={100} h={40} />
+      </Stack>
+    </Box>
+  );
+}
+
 export default function TournamentFormPage() {
   const { id } = useParams(); // "new" | <id>
   const isEdit = !!id && id !== "new";
-  const { data: tour } = useGetTournamentQuery(id, { skip: !isEdit });
+  const { data: tour, isLoading, isFetching } = useGetTournamentQuery(id, { skip: !isEdit });
 
   const [createTour] = useCreateTournamentMutation();
   const [updateTour] = useUpdateTournamentMutation();
@@ -126,6 +232,7 @@ export default function TournamentFormPage() {
 
   const now = dayjs();
   const nowStr = now.format(YMDHMS);
+  const loading = isEdit && (!tour || isLoading || isFetching);
 
   // ---- State submit ----
   const [form, setForm] = useState({
@@ -422,306 +529,317 @@ export default function TournamentFormPage() {
     <DashboardLayout>
       <DashboardNavbar />
 
-      <Box p={3} sx={{ backgroundColor: "#fff", borderRadius: 1 }}>
-        <Typography variant="h4" mb={3}>
-          {isEdit ? "Sửa Giải đấu" : "Tạo Giải đấu"}
-        </Typography>
+      {/* Khi sửa & chưa có dữ liệu → hiển thị skeleton */}
+      {loading ? (
+        <FormSkeleton />
+      ) : (
+        <Box p={3} sx={{ backgroundColor: "#fff", borderRadius: 1 }}>
+          <Typography variant="h4" mb={3}>
+            {isEdit ? "Sửa Giải đấu" : "Tạo Giải đấu"}
+          </Typography>
 
-        <Box
-          component="form"
-          onSubmit={submit}
-          sx={{ "& .MuiInputBase-root": { minHeight: 50, alignItems: "center" } }}
-        >
-          <LocalizationProvider dateAdapter={AdapterDayjs}>
-            <Grid container spacing={3}>
-              {/* Col trái */}
-              <Grid item xs={12} md={6}>
-                <TextField
-                  name="name"
-                  label="Tên giải"
-                  value={form.name}
-                  onChange={onChange}
-                  fullWidth
-                  required
-                  margin="normal"
-                />
+          <Box
+            component="form"
+            onSubmit={submit}
+            aria-busy={uploading ? "true" : "false"}
+            sx={{ "& .MuiInputBase-root": { minHeight: 50, alignItems: "center" } }}
+          >
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <Grid container spacing={3}>
+                {/* Col trái */}
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    name="name"
+                    label="Tên giải"
+                    value={form.name}
+                    onChange={onChange}
+                    fullWidth
+                    required
+                    margin="normal"
+                  />
 
-                {/* Upload ảnh từ máy + preview */}
-                <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Ảnh đại diện giải
-                  </Typography>
+                  {/* Upload ảnh từ máy + preview */}
+                  <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Ảnh đại diện giải
+                    </Typography>
 
-                  {form.image ? (
-                    <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
-                      <img
-                        src={form.image}
-                        referrerPolicy="no-referrer"
-                        alt="preview"
-                        style={{
-                          width: 160,
-                          height: 90,
-                          objectFit: "cover",
-                          borderRadius: 8,
-                          border: "1px solid rgba(0,0,0,0.12)",
-                        }}
-                      />
-                      <Stack direction="row" spacing={1}>
+                    {form.image ? (
+                      <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
+                        <img
+                          src={form.image}
+                          referrerPolicy="no-referrer"
+                          alt="preview"
+                          style={{
+                            width: 160,
+                            height: 90,
+                            objectFit: "cover",
+                            borderRadius: 8,
+                            border: "1px solid rgba(0,0,0,0.12)",
+                          }}
+                        />
+                        <Stack direction="row" spacing={1}>
+                          <Button variant="outlined" onClick={pickFile} disabled={uploading}>
+                            {uploading ? "Đang tải..." : "Thay ảnh"}
+                          </Button>
+                          <Button
+                            variant="text"
+                            color="error"
+                            onClick={clearImage}
+                            disabled={uploading}
+                          >
+                            Xoá ảnh
+                          </Button>
+                        </Stack>
+                      </Box>
+                    ) : (
+                      <Stack direction="row" spacing={1} alignItems="center">
                         <Button variant="outlined" onClick={pickFile} disabled={uploading}>
-                          {uploading ? "Đang tải..." : "Thay ảnh"}
+                          {uploading ? "Đang tải..." : "Chọn ảnh từ máy"}
                         </Button>
-                        <Button
-                          variant="text"
-                          color="error"
-                          onClick={clearImage}
-                          disabled={uploading}
-                        >
-                          Xoá ảnh
-                        </Button>
+                        <Typography variant="body2" color="text.secondary">
+                          PNG/JPG/WebP • ≤ 10MB. Sau khi chọn sẽ tự upload.
+                        </Typography>
                       </Stack>
-                    </Box>
-                  ) : (
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Button variant="outlined" onClick={pickFile} disabled={uploading}>
-                        {uploading ? "Đang tải..." : "Chọn ảnh từ máy"}
-                      </Button>
-                      <Typography variant="body2" color="text.secondary">
-                        PNG/JPG/WebP • ≤ 10MB. Sau khi chọn sẽ tự upload.
-                      </Typography>
-                    </Stack>
-                  )}
+                    )}
 
-                  {/* file input ẩn */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    style={{ display: "none" }}
-                  />
+                    {/* file input ẩn */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      style={{ display: "none" }}
+                    />
 
-                  {/* Nhập URL thủ công nếu muốn */}
+                    {/* Nhập URL thủ công nếu muốn */}
+                    <TextField
+                      name="image"
+                      label="Ảnh (URL)"
+                      value={form.image}
+                      onChange={onChange}
+                      fullWidth
+                      margin="normal"
+                      helperText="Có thể dán URL ảnh trực tiếp nếu đã có."
+                    />
+                  </Card>
+
                   <TextField
-                    name="image"
-                    label="Ảnh (URL)"
-                    value={form.image}
-                    onChange={onChange}
+                    name="sportType"
+                    label="Môn thi"
+                    value="Pickleball"
                     fullWidth
                     margin="normal"
-                    helperText="Có thể dán URL ảnh trực tiếp nếu đã có."
+                    InputProps={{ readOnly: true }}
                   />
-                </Card>
-
-                <TextField
-                  name="sportType"
-                  label="Môn thi"
-                  value="Pickleball"
-                  fullWidth
-                  margin="normal"
-                  InputProps={{ readOnly: true }}
-                />
-                <TextField
-                  name="groupId"
-                  label="Group ID"
-                  type="number"
-                  value={form.groupId}
-                  onChange={onChange}
-                  fullWidth
-                  margin="normal"
-                />
-                <TextField
-                  name="eventType"
-                  label="Loại giải"
-                  select
-                  value={form.eventType}
-                  onChange={onChange}
-                  fullWidth
-                  margin="normal"
-                >
-                  <MenuItem value="single">Đơn</MenuItem>
-                  <MenuItem value="double">Đôi</MenuItem>
-                </TextField>
-                <TextField
-                  name="location"
-                  label="Địa điểm"
-                  value={form.location}
-                  onChange={onChange}
-                  fullWidth
-                  margin="normal"
-                />
-
-                {/* NEW: Phạm vi chấm (đa tỉnh) */}
-                <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Phạm vi chấm
-                  </Typography>
-                  <RadioGroup
-                    row
-                    value={form.scoringScopeType}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        scoringScopeType: e.target.value, // 'national' | 'provinces'
-                        scoringProvinces: e.target.value === "national" ? [] : p.scoringProvinces,
-                      }))
-                    }
-                  >
-                    <FormControlLabel value="national" control={<Radio />} label="Toàn quốc" />
-                    <FormControlLabel
-                      value="provinces"
-                      control={<Radio />}
-                      label="Giới hạn theo tỉnh (nhiều)"
-                    />
-                  </RadioGroup>
-
-                  {form.scoringScopeType === "provinces" && (
-                    <Autocomplete
-                      multiple
-                      options={VN_PROVINCES}
-                      value={form.scoringProvinces}
-                      onChange={(_, list) =>
-                        setForm((p) => ({ ...p, scoringProvinces: list || [] }))
-                      }
-                      renderTags={(value, getTagProps) =>
-                        value.map((option, index) => (
-                          <Chip
-                            variant="outlined"
-                            label={option}
-                            {...getTagProps({ index })}
-                            key={`${option}-${index}`}
-                          />
-                        ))
-                      }
-                      renderInput={(params) => (
-                        <TextField {...params} label="Chọn tỉnh/thành" margin="normal" fullWidth />
-                      )}
-                      disableCloseOnSelect
-                      limitTags={3}
-                    />
-                  )}
-                  <Typography variant="caption" color="text.secondary">
-                    Toàn quốc: không giới hạn tỉnh. Giới hạn theo tỉnh: chỉ cho phép VĐV thuộc các
-                    tỉnh đã chọn được tính điểm/đủ điều kiện (tuỳ logic BE).
-                  </Typography>
-                </Card>
-              </Grid>
-
-              {/* Col phải */}
-              <Grid item xs={12} md={6}>
-                {renderDateTime("regOpenDT", "Ngày mở đăng ký")}
-                {renderDateTime("registrationDeadlineDT", "Hạn chót đăng ký")}
-                {renderDateTime("startDT", "Ngày thi đấu")}
-                {renderDateTime("endDT", "Ngày kết thúc")}
-
-                {[
-                  { n: "scoreCap", l: "Tổng điểm tối đa (đôi)" },
-                  { n: "scoreGap", l: "Chênh lệch tối đa" },
-                  { n: "singleCap", l: "Điểm tối đa 1 VĐV" },
-                  { n: "maxPairs", l: "Số cặp/đội tối đa" },
-                ].map((s) => (
                   <TextField
-                    key={s.n}
-                    name={s.n}
-                    label={s.l}
+                    name="groupId"
+                    label="Group ID"
                     type="number"
-                    value={form[s.n]}
+                    value={form.groupId}
                     onChange={onChange}
                     fullWidth
                     margin="normal"
                   />
-                ))}
-              </Grid>
+                  <TextField
+                    name="eventType"
+                    label="Loại giải"
+                    select
+                    value={form.eventType}
+                    onChange={onChange}
+                    fullWidth
+                    margin="normal"
+                  >
+                    <MenuItem value="single">Đơn</MenuItem>
+                    <MenuItem value="double">Đôi</MenuItem>
+                  </TextField>
+                  <TextField
+                    name="location"
+                    label="Địa điểm"
+                    value={form.location}
+                    onChange={onChange}
+                    fullWidth
+                    margin="normal"
+                  />
 
-              <Grid item xs={12}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={!!form.noRankDelta}
-                      onChange={(e) => setForm((p) => ({ ...p, noRankDelta: e.target.checked }))}
+                  {/* NEW: Phạm vi chấm (đa tỉnh) */}
+                  <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Phạm vi giải đấu
+                    </Typography>
+                    <RadioGroup
+                      row
+                      value={form.scoringScopeType}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          scoringScopeType: e.target.value, // 'national' | 'provinces'
+                          scoringProvinces: e.target.value === "national" ? [] : p.scoringProvinces,
+                        }))
+                      }
+                    >
+                      <FormControlLabel value="national" control={<Radio />} label="Toàn quốc" />
+                      <FormControlLabel
+                        value="provinces"
+                        control={<Radio />}
+                        label="Giới hạn theo tỉnh (nhiều)"
+                      />
+                    </RadioGroup>
+
+                    {form.scoringScopeType === "provinces" && (
+                      <Autocomplete
+                        multiple
+                        options={VN_PROVINCES}
+                        value={form.scoringProvinces}
+                        onChange={(_, list) =>
+                          setForm((p) => ({ ...p, scoringProvinces: list || [] }))
+                        }
+                        renderTags={(value, getTagProps) =>
+                          value.map((option, index) => (
+                            <Chip
+                              variant="outlined"
+                              label={option}
+                              {...getTagProps({ index })}
+                              key={`${option}-${index}`}
+                            />
+                          ))
+                        }
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Chọn tỉnh/thành"
+                            margin="normal"
+                            fullWidth
+                          />
+                        )}
+                        disableCloseOnSelect
+                        limitTags={3}
+                      />
+                    )}
+                    <Typography variant="caption" color="text.secondary">
+                      Toàn quốc: không giới hạn tỉnh. Giới hạn theo tỉnh: chỉ cho phép VĐV thuộc các
+                      tỉnh đã chọn được tính điểm/đủ điều kiện .
+                    </Typography>
+                  </Card>
+                </Grid>
+
+                {/* Col phải */}
+                <Grid item xs={12} md={6}>
+                  {renderDateTime("regOpenDT", "Ngày mở đăng ký")}
+                  {renderDateTime("registrationDeadlineDT", "Hạn chót đăng ký")}
+                  {renderDateTime("startDT", "Ngày thi đấu")}
+                  {renderDateTime("endDT", "Ngày kết thúc")}
+
+                  {[
+                    { n: "scoreCap", l: "Tổng điểm tối đa (đôi)" },
+                    { n: "scoreGap", l: "Chênh lệch tối đa" },
+                    { n: "singleCap", l: "Điểm tối đa 1 VĐV" },
+                    { n: "maxPairs", l: "Số cặp/đội tối đa" },
+                  ].map((s) => (
+                    <TextField
+                      key={s.n}
+                      name={s.n}
+                      label={s.l}
+                      type="number"
+                      value={form[s.n]}
+                      onChange={onChange}
+                      fullWidth
+                      margin="normal"
                     />
-                  }
-                  label="Không áp dụng điểm trình (toàn giải)"
-                />
-                <Typography variant="caption" color="text.secondary" display="block">
-                  Mặc định toàn bộ trận trong giải này không cộng/trừ Δ (rating delta). Ở trang
-                  Bracket có thể bật/tắt riêng từng Bracket (Bracket sẽ ưu tiên hơn).
-                </Typography>
-              </Grid>
+                  ))}
+                </Grid>
 
-              {/* ==== ReactQuill Editors (có nút chèn ảnh) ==== */}
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Thông tin liên hệ
-                </Typography>
-                <Box
-                  sx={{
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 1,
-                    "& .ql-container": { border: "none" },
-                    "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
-                    "& .ql-editor": { minHeight: 150 },
-                  }}
-                >
-                  <ReactQuill
-                    ref={contactQuillRef}
-                    theme="snow"
-                    value={form.contactHtml}
-                    onChange={(html) => setForm((p) => ({ ...p, contactHtml: html }))}
-                    modules={contactModules}
-                    formats={quillFormats}
-                    placeholder="Nhập thông tin liên hệ…"
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={!!form.noRankDelta}
+                        onChange={(e) => setForm((p) => ({ ...p, noRankDelta: e.target.checked }))}
+                      />
+                    }
+                    label="Không áp dụng điểm trình (toàn giải)"
                   />
-                </Box>
-              </Grid>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Mặc định toàn bộ trận trong giải này không cộng/trừ Δ (rating delta). Ở trang
+                    Bracket có thể bật/tắt riêng từng Bracket (Bracket sẽ ưu tiên hơn).
+                  </Typography>
+                </Grid>
 
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Nội dung giải
-                </Typography>
-                <Box
-                  sx={{
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 1,
-                    "& .ql-container": { border: "none" },
-                    "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
-                    "& .ql-editor": { minHeight: 200 },
-                  }}
-                >
-                  <ReactQuill
-                    ref={contentQuillRef}
-                    theme="snow"
-                    value={form.contentHtml}
-                    onChange={(html) => setForm((p) => ({ ...p, contentHtml: html }))}
-                    modules={contentModules}
-                    formats={quillFormats}
-                    placeholder="Mô tả chi tiết thể lệ, cơ cấu giải thưởng, lưu ý…"
-                  />
-                </Box>
-              </Grid>
-            </Grid>
-          </LocalizationProvider>
+                {/* ==== ReactQuill Editors (có nút chèn ảnh) ==== */}
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Thông tin liên hệ
+                  </Typography>
+                  <Box
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 1,
+                      "& .ql-container": { border: "none" },
+                      "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
+                      "& .ql-editor": { minHeight: 150 },
+                    }}
+                  >
+                    <ReactQuill
+                      ref={contactQuillRef}
+                      theme="snow"
+                      value={form.contactHtml}
+                      onChange={(html) => setForm((p) => ({ ...p, contactHtml: html }))}
+                      modules={contactModules}
+                      formats={quillFormats}
+                      placeholder="Nhập thông tin liên hệ…"
+                    />
+                  </Box>
+                </Grid>
 
-          <Stack direction="row" spacing={2} mt={3}>
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={uploading}
-              sx={{
-                backgroundColor: "#1976d2",
-                color: "#fff",
-                "&:hover": { backgroundColor: "#1565c0" },
-              }}
-            >
-              {isEdit ? "Cập nhật" : "Tạo mới"}
-            </Button>
-            <Button variant="outlined" onClick={() => navigate(-1)} disabled={uploading}>
-              Huỷ
-            </Button>
-          </Stack>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Nội dung giải
+                  </Typography>
+                  <Box
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 1,
+                      "& .ql-container": { border: "none" },
+                      "& .ql-toolbar": { border: "none", borderBottom: "1px solid #eee" },
+                      "& .ql-editor": { minHeight: 200 },
+                    }}
+                  >
+                    <ReactQuill
+                      ref={contentQuillRef}
+                      theme="snow"
+                      value={form.contentHtml}
+                      onChange={(html) => setForm((p) => ({ ...p, contentHtml: html }))}
+                      modules={contentModules}
+                      formats={quillFormats}
+                      placeholder="Mô tả chi tiết thể lệ, cơ cấu giải thưởng, lưu ý…"
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
+            </LocalizationProvider>
+
+            <Stack direction="row" spacing={2} mt={3}>
+              <Button
+                type="submit"
+                variant="contained"
+                disabled={uploading}
+                sx={{
+                  backgroundColor: "#1976d2",
+                  color: "#fff",
+                  "&:hover": { backgroundColor: "#1565c0" },
+                }}
+              >
+                {isEdit ? "Cập nhật" : "Tạo mới"}
+              </Button>
+              <Button variant="outlined" onClick={() => navigate(-1)} disabled={uploading}>
+                Huỷ
+              </Button>
+            </Stack>
+          </Box>
         </Box>
-      </Box>
+      )}
     </DashboardLayout>
   );
 }

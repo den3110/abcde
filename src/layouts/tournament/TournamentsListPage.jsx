@@ -3,9 +3,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Avatar,
   Box,
-  Button,
   Chip,
-  CircularProgress,
   IconButton,
   Stack,
   Typography,
@@ -18,6 +16,9 @@ import {
   TextField,
   Select,
   MenuItem,
+  Skeleton,
+  LinearProgress,
+  Card as MuiCard,
 } from "@mui/material";
 import { AccountTree as AccountTreeIcon } from "@mui/icons-material";
 import {
@@ -51,6 +52,16 @@ const STATUS_LABEL = {
 };
 const STATUS_COLOR = { upcoming: "info", ongoing: "success", finished: "default" };
 
+// clamp đa dòng + giới hạn độ rộng tên giải để không cần scroll ngang
+const NAME_SX = {
+  maxWidth: { xs: "100%", sm: 260, md: 360, lg: 420 }, // bạn có thể chỉnh con số này
+  display: "-webkit-box",
+  WebkitLineClamp: 2, // cho 2 dòng (đổi 3 nếu muốn)
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+  wordBreak: "break-word",
+};
+
 export default function TournamentsListPage() {
   const dispatch = useDispatch();
   const { page, limit, keyword, status } = useSelector((s) => s.adminTournamentUi);
@@ -68,20 +79,21 @@ export default function TournamentsListPage() {
       }
     }, 300);
     return () => clearTimeout(id);
-    // cố ý KHÔNG đưa `dispatch`/`keyword` vào deps để tránh lặp do store thay đổi liên tục.
     // eslint-disable-next-line
   }, [input]);
 
   const {
     data: { list: tournaments = [], total = 0 } = {},
     isLoading,
+    isFetching, // khi chuyển trang với keepPreviousData
     error,
   } = useListTournamentsQuery(
     { page: page + 1, limit, keyword, status },
     { keepPreviousData: true }
   );
 
-  const totalPages = Math.ceil((total || 0) / (limit || 1));
+  const totalPages = Math.ceil((total || 0) / Math.max(limit || 1, 1));
+  const loading = isLoading || (isFetching && (tournaments?.length ?? 0) === 0);
 
   /* ---------------- Handlers ổn định ---------------- */
   const [del] = useDeleteTournamentMutation();
@@ -111,6 +123,7 @@ export default function TournamentsListPage() {
   const goMatches = useCallback((id) => navigate(`/admin/tournaments/${id}/matches`), [navigate]);
   const goEdit = useCallback((id) => navigate(`/admin/tournaments/${id}/edit`), [navigate]);
   const goCourts = useCallback((id) => navigate(`/admin/tournaments/${id}/courts`), [navigate]);
+
   /* ---------------- Memo hóa columns / rows / tableData ---------------- */
   const columns = useMemo(
     () => [
@@ -130,11 +143,13 @@ export default function TournamentsListPage() {
       tournaments.map((t, i) => ({
         idx: <MDTypography variant="caption">{page * limit + i + 1}</MDTypography>,
         name: (
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Avatar src={t.image} variant="rounded" sx={{ width: 32, height: 32 }} />
-            <MDTypography variant="button" fontWeight="medium">
-              {t.name}
-            </MDTypography>
+          <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ minWidth: 0 }}>
+            <Avatar src={t.image} variant="rounded" sx={{ width: 32, height: 32, mt: 0.25 }} />
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <MDTypography variant="button" fontWeight="medium" sx={NAME_SX}>
+                {t.name}
+              </MDTypography>
+            </Box>
           </Stack>
         ),
         time: (
@@ -162,7 +177,7 @@ export default function TournamentsListPage() {
           </MDTypography>
         ),
         actions: (
-          <Stack direction="row" spacing={1} justifyContent="center">
+          <Stack direction="row" spacing={1} justifyContent="center" flexWrap="wrap">
             <Tooltip title="Tạo sơ đồ">
               <IconButton size="small" color="warning" onClick={() => goBlueprint(t._id)}>
                 <AccountTreeIcon fontSize="small" />
@@ -215,8 +230,76 @@ export default function TournamentsListPage() {
     ]
   );
 
-  // Memo hóa object table để tránh identity mới mỗi render
   const tableData = useMemo(() => ({ columns, rows }), [columns, rows]);
+
+  /* ---------------- Skeleton render helpers ---------------- */
+  const renderMobileSkeleton = (n = 5) => (
+    <Stack spacing={2}>
+      {Array.from({ length: n }).map((_, idx) => (
+        <Paper key={idx} sx={{ p: 2 }}>
+          <Grid container spacing={2}>
+            <Grid item xs={3}>
+              <Skeleton variant="rounded" width="100%" height={72} />
+            </Grid>
+            <Grid item xs={9}>
+              <Skeleton width="80%" height={22} />
+              <Skeleton width="60%" height={18} />
+              <Stack direction="row" spacing={1} mt={1}>
+                <Skeleton variant="rounded" width={64} height={24} />
+                <Skeleton variant="rounded" width={48} height={24} />
+              </Stack>
+              <Stack direction="row" spacing={1} mt={2} flexWrap="wrap">
+                {Array.from({ length: 4 }).map((__, i2) => (
+                  <Skeleton key={i2} variant="rounded" width={72} height={30} />
+                ))}
+              </Stack>
+            </Grid>
+          </Grid>
+        </Paper>
+      ))}
+    </Stack>
+  );
+
+  const renderDesktopSkeleton = (rowsCount = 8) => (
+    <Card>
+      <MDBox px={2} pt={2}>
+        <Skeleton width="30%" height={24} />
+      </MDBox>
+      <MDBox px={2} py={1}>
+        {/* <LinearProgress /> */}
+      </MDBox>
+      <MDBox px={2} py={1}>
+        {Array.from({ length: rowsCount }).map((_, i) => (
+          <Stack
+            key={i}
+            direction="row"
+            spacing={2}
+            alignItems="center"
+            sx={{ py: 1.25, borderBottom: "1px solid", borderColor: "divider" }}
+          >
+            <Skeleton width={24} height={20} />
+            {/* name cell with avatar + text */}
+            <Stack direction="row" spacing={1} sx={{ width: "26%" }}>
+              <Skeleton variant="rounded" width={32} height={32} />
+              <Skeleton width="80%" height={20} />
+            </Stack>
+            <Skeleton width="18%" height={18} />
+            <Skeleton width={64} height={24} />
+            <Skeleton width={96} height={24} />
+            <Skeleton width={48} height={18} />
+            <Stack direction="row" spacing={1} sx={{ width: "18%", justifyContent: "center" }}>
+              {Array.from({ length: 6 }).map((__, k) => (
+                <Skeleton key={k} variant="circular" width={28} height={28} />
+              ))}
+            </Stack>
+          </Stack>
+        ))}
+      </MDBox>
+      <MDBox py={2} display="flex" justifyContent="center">
+        <Skeleton variant="rounded" width={240} height={32} />
+      </MDBox>
+    </Card>
+  );
 
   return (
     <DashboardLayout>
@@ -257,81 +340,90 @@ export default function TournamentsListPage() {
 
       {/* Content */}
       <MDBox pt={3} pb={3}>
-        {isLoading ? (
-          <MDBox py={6} textAlign="center">
-            <CircularProgress />
-          </MDBox>
-        ) : error ? (
+        {error ? (
           <MDTypography color="error">{error?.data?.message || error.error}</MDTypography>
         ) : isMobile ? (
-          // Mobile cards
-          <Stack spacing={2}>
-            {tournaments.map((t) => (
-              <Paper key={t._id} sx={{ p: 2 }}>
-                <Grid container spacing={2}>
-                  <Grid item xs={3}>
-                    <Avatar src={t.image} variant="rounded" sx={{ width: "100%", height: 72 }} />
+          loading ? (
+            renderMobileSkeleton()
+          ) : (
+            // Mobile cards
+            <Stack spacing={2}>
+              {tournaments.map((t) => (
+                <Paper key={t._id} sx={{ p: 2 }}>
+                  <Grid container spacing={2}>
+                    <Grid item xs={3}>
+                      <Avatar src={t.image} variant="rounded" sx={{ width: "100%", height: 72 }} />
+                    </Grid>
+                    <Grid item xs={9} sx={{ minWidth: 0 }}>
+                      <MDTypography fontWeight="bold" sx={NAME_SX}>
+                        {t.name}
+                      </MDTypography>
+                      <MDTypography variant="caption" color="text">
+                        {new Date(t.startDate).toLocaleDateString()} –{" "}
+                        {new Date(t.endDate).toLocaleDateString()}
+                      </MDTypography>
+                      <Stack direction="row" spacing={1} mt={1}>
+                        <Chip label={STATUS_LABEL[t.status]} size="small" />
+                        <Chip label={t.eventType === "double" ? "Đôi" : "Đơn"} size="small" />
+                      </Stack>
+                      <Stack direction="row" spacing={1} mt={2} flexWrap="wrap">
+                        <MDButton
+                          size="small"
+                          variant="outlined"
+                          color="info"
+                          onClick={() => goRegs(t._id)}
+                        >
+                          Đăng ký
+                        </MDButton>
+                        <MDButton
+                          size="small"
+                          variant="outlined"
+                          color="primary"
+                          onClick={() => goBrackets(t._id)}
+                        >
+                          Brackets
+                        </MDButton>
+                        <MDButton
+                          size="small"
+                          variant="outlined"
+                          color="success"
+                          onClick={() => goCourts(t._id)}
+                        >
+                          Sân
+                        </MDButton>
+                        <MDButton
+                          size="small"
+                          variant="outlined"
+                          color="secondary"
+                          onClick={() => goMatches(t._id)}
+                        >
+                          Matches
+                        </MDButton>
+                        <MDButton
+                          size="small"
+                          variant="outlined"
+                          color="success"
+                          onClick={() => goEdit(t._id)}
+                        >
+                          Sửa
+                        </MDButton>
+                      </Stack>
+                    </Grid>
                   </Grid>
-                  <Grid item xs={9}>
-                    <MDTypography fontWeight="bold">{t.name}</MDTypography>
-                    <MDTypography variant="caption" color="text">
-                      {new Date(t.startDate).toLocaleDateString()} –{" "}
-                      {new Date(t.endDate).toLocaleDateString()}
-                    </MDTypography>
-                    <Stack direction="row" spacing={1} mt={1}>
-                      <Chip label={STATUS_LABEL[t.status]} size="small" />
-                      <Chip label={t.eventType === "double" ? "Đôi" : "Đơn"} size="small" />
-                    </Stack>
-                    <Stack direction="row" spacing={1} mt={2}>
-                      <MDButton
-                        size="small"
-                        variant="outlined"
-                        color="info"
-                        onClick={() => goRegs(t._id)}
-                      >
-                        Đăng ký
-                      </MDButton>
-                      <MDButton
-                        size="small"
-                        variant="outlined"
-                        color="primary"
-                        onClick={() => goBrackets(t._id)}
-                      >
-                        Brackets
-                      </MDButton>
-                      <MDButton
-                        size="small"
-                        variant="outlined"
-                        color="success"
-                        onClick={() => goCourts(t._id)}
-                      >
-                        Sân
-                      </MDButton>
-                      <MDButton
-                        size="small"
-                        variant="outlined"
-                        color="secondary"
-                        onClick={() => goMatches(t._id)}
-                      >
-                        Matches
-                      </MDButton>
-                      <MDButton
-                        size="small"
-                        variant="outlined"
-                        color="success"
-                        onClick={() => goEdit(t._id)}
-                      >
-                        Sửa
-                      </MDButton>
-                    </Stack>
-                  </Grid>
-                </Grid>
-              </Paper>
-            ))}
-          </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          )
+        ) : loading ? (
+          renderDesktopSkeleton()
         ) : (
           // Desktop table
-          <Card>
+          <MuiCard>
+            {isFetching && (
+              <Box sx={{ px: 2, pt: 1 }}>
+                <LinearProgress />
+              </Box>
+            )}
             <DataTable
               table={tableData}
               isSorted={false}
@@ -348,7 +440,7 @@ export default function TournamentsListPage() {
                 onChange={(_, v) => dispatch(setTPage(v - 1))}
               />
             </MDBox>
-          </Card>
+          </MuiCard>
         )}
       </MDBox>
 

@@ -42,6 +42,7 @@ import AdminEvaluatorManagement from "layouts/tournament/AdminEvaluatorManagemen
 import GroupPreassignBoard from "layouts/tournament/GroupPreassignBoard";
 import BroadcastPage from "layouts/Notifications/Broadcast";
 import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
+import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -187,6 +188,17 @@ const routes = [
     key: "admin-match-detail",
     route: "/admin/matches/:id",
     component: <AdminMatchDetailPage />,
+    private: true,
+    roles: ["admin"],
+  },
+
+  {
+    type: "collapse",
+    name: "Cấu hình phiên bản app",
+    key: "admin-app-version",
+    icon: <Icon fontSize="small">system_update</Icon>,
+    route: "/admin/app-version",
+    component: <AdminAppVersionPage />,
     private: true,
     roles: ["admin"],
   },
