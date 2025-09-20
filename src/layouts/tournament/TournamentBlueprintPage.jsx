@@ -102,7 +102,7 @@ const DEFAULT_RULES = {
   bestOf: 3,
   pointsToWin: 11,
   winByTwo: true,
-  cap: { mode: "none", points: null }, // ⭐ NEW
+  cap: { mode: "none", points: null },
 };
 
 const normalizeRulesForState = (r = {}) => ({
@@ -177,7 +177,7 @@ function RulesEditor({ label = "Luật trận", value, onChange }) {
         label="Thắng cách 2 điểm"
       />
 
-      {/* ⭐ CAP mode */}
+      {/* CAP */}
       <TextField
         select
         size="small"
@@ -308,7 +308,7 @@ function buildPoRoundsFromPlan(planPO, stageIndex = 1) {
       ],
     };
   });
-  rounds.push({ title: `PO • Vòng 1 (${r1Pairs} trận)`, seeds: r1Seeds });
+  rounds.push({ title: `PO • Vòng 1 (${r1Seeds.length} trận)`, seeds: r1Seeds });
 
   // V>=2: losers cascade
   let losersPool = Math.floor(N / 2);
@@ -351,72 +351,81 @@ function computePoQualifiers(planPO, poStageIndex /* 0-based in stages */) {
   return list;
 }
 
-/* ===== Compute GROUP qualifiers list (Top N per group) ===== */
-function computeGroupQualifiers(groupStage, groupStageIndex /* 0-based*/, topN = 1) {
+/* ===== Group → qualifiers matrix ===== */
+function buildGroupQualMatrix(groupStage, groupStageIndex, topN) {
   const stNum = groupStageIndex + 1;
-  const groups = groupStage?.config?.groups || [];
-  const sizes = groupStage?.config?.groupSizes || [];
-  const minSize =
-    sizes.length > 0
-      ? Math.max(0, Math.min(...sizes.map((v) => Number(v) || 0)))
-      : groupStage?.config?.groupSize || 0;
-  const N = Math.max(1, Math.min(Number(topN) || 1, minSize || 1));
+  const groups = (groupStage?.config?.groups || []).map(String);
+  const N = Math.max(1, Number(topN) || 1);
 
-  // Order: B1#1, B2#1, ..., Bk#1, then B1#2, B2#2, ...
-  const list = [];
-  for (let rank = 1; rank <= N; rank++) {
-    for (const g of groups) {
-      list.push({
-        type: "groupRank",
-        ref: { stage: stNum, groupCode: String(g), rank },
-        label: `V${stNum}-B${g}-#${rank}`,
-      });
-    }
-  }
-  return list;
+  const ranks = Array.from({ length: N }, (_, r) =>
+    groups.map((g) => ({
+      type: "groupRank",
+      ref: { stage: stNum, groupCode: g, rank: r + 1 },
+      label: `V${stNum}-B${g}-#${r + 1}`,
+      __group: g,
+      __rank: r + 1,
+    }))
+  );
+  return { groups, ranks };
 }
 
-const normalizeSeedsKO = (plan) => {
-  const size = Math.max(2, nextPow2(Number(plan?.drawSize || 2)));
-  const firstPairs = size / 2;
-  const map = new Map((plan?.seeds || []).map((s) => [Number(s.pair), s]));
-  const placeholder = () => ({ type: "registration", ref: {}, label: "" });
-  const seeds = Array.from({ length: firstPairs }, (_, i) => {
-    const pair = i + 1;
-    const cur = map.get(pair) || { pair, A: null, B: null };
-    return {
-      pair,
-      A: cur.A && cur.A.type ? cur.A : placeholder(),
-      B: cur.B && cur.B.type ? cur.B : placeholder(),
-    };
-  });
-  return { drawSize: size, seeds };
-};
+// Random có seed
+function seededShuffle(arr, seedStr = "42") {
+  let seed = 0;
+  for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+  function rand() {
+    seed = (1664525 * seed + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  }
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
-const normalizeSeedsPO = (plan) => {
-  const N = Math.max(0, Number(plan?.drawSize || 0));
-  const firstPairs = Math.max(1, Math.ceil(N / 2));
-  const map = new Map((plan?.seeds || []).map((s) => [Number(s.pair), s]));
-  const seeds = Array.from({ length: firstPairs }, (_, i) => {
-    const pair = i + 1;
-    const idxA = i * 2 + 1;
-    const idxB = i * 2 + 2;
-    const cur = map.get(pair) || { pair, A: null, B: null };
-    const A = cur.A && cur.A.type ? cur.A : { type: "registration", ref: {}, label: `Đội ${idxA}` };
-    const B =
-      cur.B && cur.B.type
-        ? cur.B
-        : idxB <= N
-        ? { type: "registration", ref: {}, label: `Đội ${idxB}` }
-        : { type: "bye", ref: null, label: "BYE" };
-    return { pair, A, B };
-  });
-  return {
-    drawSize: N,
-    maxRounds: Math.max(1, Math.min(maxPoRoundsFor(N), Number(plan?.maxRounds || 1))),
-    seeds,
-  };
-};
+/* ===== Sắp xếp linear vào KO theo nhiều kiểu ===== */
+const BYE = { type: "bye", ref: null, label: "BYE" };
+
+function arrangeLinearIntoKO(linearSeeds, firstPairs, method = "default", seedKey = "ko") {
+  const capacity = firstPairs * 2;
+  const pool = linearSeeds.slice(0, capacity);
+  while (pool.length < capacity) pool.push(BYE);
+
+  const pairs = [];
+
+  if (method === "cross") {
+    // Chia nửa: nửa đầu vs nửa sau
+    const half = capacity / 2;
+    const left = pool.slice(0, half);
+    const right = pool.slice(half);
+    for (let i = 0; i < firstPairs; i++) {
+      pairs.push({ pair: i + 1, A: left[i] || BYE, B: right[i] || BYE });
+    }
+  } else if (method === "shift") {
+    // Chẵn làm A; lẻ làm B rồi xoay B nửa vòng
+    const left = pool.filter((_, idx) => idx % 2 === 0);
+    let right = pool.filter((_, idx) => idx % 2 === 1);
+    const s = Math.max(1, Math.floor(firstPairs / 2));
+    if (right.length) right = right.slice(s).concat(right.slice(0, s));
+    for (let i = 0; i < firstPairs; i++) {
+      pairs.push({ pair: i + 1, A: left[i] || BYE, B: right[i] || BYE });
+    }
+  } else if (method === "random") {
+    const shuffled = seededShuffle(pool, seedKey + "_rand");
+    for (let i = 0; i < firstPairs; i++) {
+      pairs.push({ pair: i + 1, A: shuffled[2 * i] || BYE, B: shuffled[2 * i + 1] || BYE });
+    }
+  } else {
+    // default: (1 vs 2), (3 vs 4), ...
+    for (let i = 0; i < firstPairs; i++) {
+      pairs.push({ pair: i + 1, A: pool[2 * i] || BYE, B: pool[2 * i + 1] || BYE });
+    }
+  }
+
+  return pairs;
+}
 
 /* ========================= Seed Picker ========================= */
 function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) {
@@ -462,7 +471,7 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
 
   const handlePick = () => {
     if (!canPick()) return;
-    if (mode === "bye") return onPick({ type: "bye", ref: null, label: "BYE" });
+    if (mode === "bye") return onPick(BYE);
     if (mode === "registration") return onPick({ type: "registration", ref: {}, label: "" });
 
     if (mode === "groupRank") {
@@ -666,12 +675,12 @@ export default function TournamentBlueprintPage() {
   // KO defaults
   const [koPlan, setKoPlan] = useState({ drawSize: 16, seeds: [] });
 
-  // ===== Rules per stage (⭐ có CAP) =====
+  // ===== Rules per stage (có CAP) =====
   const [groupRules, setGroupRules] = useState(DEFAULT_RULES);
   const [poRules, setPoRules] = useState(DEFAULT_RULES);
   const [koRules, setKoRules] = useState(DEFAULT_RULES);
 
-  // KO Final override (⭐ có CAP)
+  // KO Final override
   const [koFinalOverride, setKoFinalOverride] = useState(false);
   const [koFinalRules, setKoFinalRules] = useState({
     bestOf: 5,
@@ -683,6 +692,10 @@ export default function TournamentBlueprintPage() {
   // Prefill flags
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const prefillOnceRef = useRef(false);
+
+  // Chọn kiểu đổ KO theo nguồn
+  const [group2KOMethod, setGroup2KOMethod] = useState("cross"); // default | cross | shift | random
+  const [po2KOMethod, setPo2KOMethod] = useState("default"); // default | cross | shift | random
 
   // Tính groupSizes hiển thị (ưu tiên total)
   const groupSizes = useMemo(() => {
@@ -912,53 +925,207 @@ export default function TournamentBlueprintPage() {
     }
   };
 
-  // Prefill KO R1 seeds from PO winners of V1..Vmax
-  const prefillKOfromPO = () => {
+  /* ===== Đổ KO từ PO (nhiều kiểu) ===== */
+  /* ===== Đổ KO từ PO (nhiều kiểu) ===== */
+  const prefillKOfromPO = (method = "default") => {
     const poIdx = stages.findIndex((s) => s.type === "po");
     if (poIdx < 0) return toast.info("Chưa bật PO để đổ seed sang KO");
-    const qualifiers = computePoQualifiers(poPlan, poIdx);
-    setKoPlan((prev) => {
-      const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
-      const firstPairs = size / 2;
-      const pairs = Array.from({ length: firstPairs }, (_, i) => {
-        const A = qualifiers[2 * i] || { type: "bye", ref: null, label: "BYE" };
-        const B = qualifiers[2 * i + 1] || { type: "bye", ref: null, label: "BYE" };
-        return { pair: i + 1, A, B };
-      });
-      toast.success(`Đã đổ ${Math.min(qualifiers.length, firstPairs * 2)} seed từ PO sang KO`);
-      return { drawSize: size, seeds: pairs };
-    });
-  };
 
-  // Prefill KO R1 seeds from GROUPS (Top-N per group)
-  const prefillKOfromGroups = () => {
-    const gIdx = stages.findIndex((s) => s.type === "group");
-    if (gIdx < 0) return toast.info("Chưa bật vòng bảng để đổ seed sang KO");
+    const seedKey = String(tournamentId || "pt");
+    const qualifiers = computePoQualifiers(poPlan, poIdx); // linear: W-Vr-Ti (r↑, i↑)
 
-    const N = Math.max(1, Math.min(Number(groupTopN) || 1, minGroupSize || 1));
-    const qualifiers = computeGroupQualifiers(stages[gIdx], gIdx, N);
+    // Nhóm theo round để phục vụ các kiểu sắp thứ tự
+    const byRound = new Map();
+    for (const q of qualifiers) {
+      const r = q?.ref?.round || 1;
+      if (!byRound.has(r)) byRound.set(r, []);
+      byRound.get(r).push(q);
+    }
+    const roundsAsc = [...byRound.keys()].sort((a, b) => a - b);
+    const roundsDesc = [...roundsAsc].reverse();
+
+    // 1) Xác định "thứ tự" linear trước khi pair
+    let linear = qualifiers.slice();
+    switch (method) {
+      case "lateFirst": {
+        // Ưu tiên winners ở vòng cao (Vmax → … → V1)
+        linear = [];
+        for (const r of roundsDesc) linear.push(...(byRound.get(r) || []));
+        break;
+      }
+      case "interleave": {
+        // Đan xen theo cột T: V1T1, V2T1, ..., rồi V1T2, V2T2, ...
+        linear = [];
+        const maxLen = Math.max(...roundsAsc.map((r) => (byRound.get(r) || []).length));
+        for (let c = 0; c < maxLen; c++) {
+          for (const r of roundsAsc) {
+            const arr = byRound.get(r) || [];
+            if (arr[c]) linear.push(arr[c]);
+          }
+        }
+        break;
+      }
+      case "pairSplit": {
+        // Tách lẻ/chẵn trên list hiện tại
+        const base = qualifiers.slice();
+        const odds = base.filter((_, i) => i % 2 === 0);
+        const evens = base.filter((_, i) => i % 2 === 1);
+        linear = [...odds, ...evens];
+        break;
+      }
+      case "snake": {
+        // Serpentine theo block (mặc định block 8 cho đa dạng)
+        const base = qualifiers.slice();
+        linear = [];
+        const step = 8;
+        for (let i = 0; i < base.length; i += step) {
+          const chunk = base.slice(i, i + step);
+          if ((i / step) % 2 === 1) chunk.reverse();
+          linear.push(...chunk);
+        }
+        break;
+      }
+      // Các method cũ (default|cross|shift|random) sẽ xử lý ở bước "pair"
+      default:
+        break;
+    }
+
+    // 2) Pair vào KO theo "pairing method" (giữ nguyên các method cũ)
+    const pairingMethod = ["default", "cross", "shift", "random"].includes(method)
+      ? method
+      : "default";
 
     setKoPlan((prev) => {
       const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
       const firstPairs = size / 2;
       const capacity = firstPairs * 2;
 
-      const used = Math.min(capacity, qualifiers.length);
-      const seedsLinear = qualifiers.slice(0, capacity);
-      while (seedsLinear.length < capacity) {
-        seedsLinear.push({ type: "bye", ref: null, label: "BYE" });
+      const used = Math.min(capacity, linear.length);
+      const pairs = arrangeLinearIntoKO(linear, firstPairs, pairingMethod, seedKey);
+
+      toast.success(`Đã đổ ${used}/${capacity} seed từ PO sang KO • Kiểu: ${method.toUpperCase()}`);
+      return { drawSize: size, seeds: pairs };
+    });
+  };
+
+  /* ===== Đổ KO từ Vòng bảng (nhiều kiểu) ===== */
+  /* ===== Đổ KO từ Vòng bảng (nhiều kiểu) ===== */
+  const prefillKOfromGroups = (method = "default") => {
+    const gIdx = stages.findIndex((s) => s.type === "group");
+    if (gIdx < 0) return toast.info("Chưa bật vòng bảng để đổ seed sang KO");
+
+    const seedKey = String(tournamentId || "pt");
+    const groupStage = stages[gIdx];
+    const N = Math.max(1, Math.min(Number(groupTopN) || 1, minGroupSize || 1)); // topN/bảng
+    const { groups, ranks } = buildGroupQualMatrix(groupStage, gIdx, N);
+
+    setKoPlan((prev) => {
+      const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
+      const firstPairs = size / 2;
+      const capacity = firstPairs * 2;
+
+      const winners = ranks[0] || [];
+      const runners = ranks[1] || [];
+      const othersFlat = ranks.slice(2).flat() || [];
+
+      let linear = []; // sẽ đưa vào arrangeLinearIntoKO
+
+      if (method === "cross" && winners.length >= 1) {
+        // Cặp bảng: (G1,G2),(G3,G4)... => A1–B2, B1–A2
+        for (let i = 0; i < groups.length; i += 2) {
+          const gA = groups[i];
+          const gB = groups[i + 1];
+          const A1 = winners.find((x) => x.__group === gA);
+          const B1 = gB ? winners.find((x) => x.__group === gB) : null;
+          const A2 = runners.find((x) => x.__group === gA);
+          const B2 = gB ? runners.find((x) => x.__group === gB) : null;
+
+          if (gB) {
+            if (A1) linear.push(A1);
+            if (B2) linear.push(B2);
+            if (B1) linear.push(B1);
+            if (A2) linear.push(A2);
+          } else {
+            if (A1) linear.push(A1);
+            if (A2) linear.push(A2);
+          }
+        }
+        linear.push(...othersFlat);
+      } else if (method === "shift" && winners.length && runners.length) {
+        // #2 xoay nửa vòng, tránh gặp cùng bảng khi có thể
+        const shift = Math.ceil(groups.length / 2);
+        for (let i = 0; i < groups.length; i++) {
+          const g = groups[i];
+          const a = winners.find((x) => x.__group === g);
+          if (a) linear.push(a);
+          let b = runners.find((x) => x.__group === groups[(i + shift) % groups.length]);
+          if (b?.__group === g) {
+            b = runners.find((x) => x.__group === groups[(i + shift + 1) % groups.length]);
+          }
+          if (b) linear.push(b);
+        }
+        linear.push(...othersFlat);
+      } else if (method === "random") {
+        // Ngẫu nhiên (ưu tiên tránh cùng bảng ở vị trí kề)
+        const pool = seededShuffle(ranks.flat(), seedKey + "_g");
+        linear = pool;
+      } else if (method === "snake") {
+        // Serpentine theo block hạng: rank1 G1→G2→...; rank2 đảo chiều; rank3 lại thuận;...
+        const rows = ranks.map((row, idx) => (idx % 2 === 0 ? row : row.slice().reverse()));
+        linear = rows.flat();
+      } else if (method === "pot") {
+        // Pot1 = winners, Pot2 = runners; bắt cặp cố tránh cùng bảng
+        const W = seededShuffle(winners, seedKey + "_potW");
+        const R = seededShuffle(runners, seedKey + "_potR");
+        const usedR = new Set();
+        for (const a of W) {
+          let pick = -1;
+          for (let j = 0; j < R.length; j++) {
+            if (!usedR.has(j) && R[j].__group !== a.__group) {
+              pick = j;
+              break;
+            }
+          }
+          if (pick === -1)
+            for (let j = 0; j < R.length; j++)
+              if (!usedR.has(j)) {
+                pick = j;
+                break;
+              }
+          linear.push(a);
+          if (pick !== -1) {
+            linear.push(R[pick]);
+            usedR.add(pick);
+          }
+        }
+        for (let j = 0; j < R.length; j++) if (!usedR.has(j)) linear.push(R[j]);
+        linear.push(...othersFlat);
+      } else if (method === "antiSameGroup") {
+        // Greedy để tránh cùng bảng tối đa: ưu tiên W vs R khác bảng
+        const remW = [...winners];
+        const remR = [...runners];
+        while (remW.length) {
+          const a = remW.shift();
+          let idx = remR.findIndex((x) => x.__group !== a.__group);
+          if (idx === -1) idx = remR.length ? 0 : -1;
+          linear.push(a);
+          if (idx !== -1) linear.push(remR.splice(idx, 1)[0]);
+        }
+        linear.push(...remR);
+        linear.push(...othersFlat);
+      } else {
+        // default – theo khối hạng: #1 toàn bộ bảng, rồi #2, #3…
+        linear = ranks.flat();
       }
 
-      const pairs = Array.from({ length: firstPairs }, (_, i) => {
-        const A = seedsLinear[2 * i];
-        const B = seedsLinear[2 * i + 1];
-        return { pair: i + 1, A, B };
-      });
+      // Pair và đệm BYE theo sức chứa KO
+      const pairs = arrangeLinearIntoKO(linear, firstPairs, "default", seedKey);
+      const used = Math.min(capacity, linear.length);
 
       toast.success(
-        `Đã đổ ${used}/${qualifiers.length} seed từ Vòng bảng sang KO (Top ${N}/bảng)${
-          qualifiers.length > capacity ? " • KO hiện không đủ chỗ, hãy tăng drawSize nếu cần" : ""
-        }`
+        `Đã đổ ${used}/${
+          groups.length * N
+        } seed từ Vòng bảng sang KO • Kiểu: ${method.toUpperCase()}`
       );
       return { drawSize: size, seeds: pairs };
     });
@@ -1223,16 +1390,40 @@ export default function TournamentBlueprintPage() {
                       size="small"
                       label={`Min size bảng hiện tại: ${Math.max(0, minGroupSize || 0)}`}
                     />
-                    <Button variant="outlined" onClick={prefillKOfromGroups}>
-                      Đổ seed KO từ Vòng bảng
-                    </Button>
+
+                    {/* Cách đổ KO từ Group */}
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+                      <TextField
+                        select
+                        size="small"
+                        label="Cách đổ KO (nguồn: Vòng bảng)"
+                        value={group2KOMethod}
+                        onChange={(e) => setGroup2KOMethod(e.target.value)}
+                        sx={{ minWidth: 240 }}
+                      >
+                        <MenuItem value="default">Mặc định (theo thứ hạng)</MenuItem>
+                        <MenuItem value="cross">So le (A1–B2, B1–A2)</MenuItem>
+                        <MenuItem value="shift">Xoay lệch (#2 xoay nửa vòng)</MenuItem>
+                        <MenuItem value="random">Ngẫu nhiên (khác bảng)</MenuItem>
+                        {/* --- mới thêm --- */}
+                        <MenuItem value="snake">Serpentine (rank1 →, rank2 ← ...)</MenuItem>
+                        <MenuItem value="pot">Rút “pot” (1 vs 2, tránh cùng bảng)</MenuItem>
+                        <MenuItem value="antiSameGroup">Tránh cùng bảng tối đa</MenuItem>
+                      </TextField>
+
+                      <Button
+                        variant="outlined"
+                        onClick={() => prefillKOfromGroups(group2KOMethod)}
+                      >
+                        Đổ seed KO từ Vòng bảng
+                      </Button>
+                    </Stack>
                   </Stack>
                 )}
               </Stack>
 
               {includeGroup && (
                 <Box sx={{ mt: 1 }}>
-                  {/* Rules cho Group (⭐ có CAP) */}
                   <RulesEditor
                     label="Luật (Vòng bảng)"
                     value={groupRules}
@@ -1302,7 +1493,26 @@ export default function TournamentBlueprintPage() {
                       )} trận • V tối đa: ${maxPoRoundsFor(poPlan.drawSize)}`}
                     />
 
-                    <Button variant="outlined" onClick={prefillKOfromPO}>
+                    {/* Cách đổ KO từ PO */}
+                    <TextField
+                      select
+                      size="small"
+                      label="Cách đổ KO (nguồn: PO)"
+                      value={po2KOMethod}
+                      onChange={(e) => setPo2KOMethod(e.target.value)}
+                      sx={{ minWidth: 240 }}
+                    >
+                      <MenuItem value="default">Mặc định (1–2, 3–4,…)</MenuItem>
+                      <MenuItem value="cross">So le nửa nhánh</MenuItem>
+                      <MenuItem value="shift">Xoay lệch</MenuItem>
+                      <MenuItem value="random">Ngẫu nhiên</MenuItem>
+                      <MenuItem value="lateFirst">Ưu tiên vòng cao (Vmax→…→V1)</MenuItem>
+                      <MenuItem value="interleave">Đan xen theo vòng</MenuItem>
+                      <MenuItem value="pairSplit">Tách lẻ/chẵn</MenuItem>
+                      <MenuItem value="snake">Serpentine</MenuItem>
+                    </TextField>
+
+                    <Button variant="outlined" onClick={() => prefillKOfromPO(po2KOMethod)}>
                       Đổ seed KO từ PO
                     </Button>
                   </Stack>
@@ -1311,7 +1521,6 @@ export default function TournamentBlueprintPage() {
 
               {includePO && (
                 <Box sx={{ mt: 1 }}>
-                  {/* Rules cho PO (⭐ có CAP) */}
                   <RulesEditor label="Luật (PO)" value={poRules} onChange={setPoRules} />
                 </Box>
               )}
@@ -1334,7 +1543,6 @@ export default function TournamentBlueprintPage() {
               </Stack>
 
               <Box sx={{ mt: 1 }}>
-                {/* Rules cho KO (⭐ có CAP) + override Chung kết */}
                 <RulesEditor label="Luật (KO)" value={koRules} onChange={setKoRules} />
 
                 <Stack
@@ -1379,7 +1587,7 @@ export default function TournamentBlueprintPage() {
                     </Typography>
                     <Chip size="small" label={stage.type.toUpperCase()} />
 
-                    {/* Rule summary chips (⭐ có CAP) */}
+                    {/* Rule summary chips */}
                     <Stack direction="row" spacing={1} sx={{ ml: 1, flexWrap: "wrap" }}>
                       {stage.type === "group" && (
                         <Chip
@@ -1432,9 +1640,7 @@ export default function TournamentBlueprintPage() {
                         {stage.config.groups.map((g, gi) => {
                           const sizes = stage.config.groupSizes || [];
                           const sizeThis = sizes[gi] ?? stage.config.groupSize ?? 0;
-
                           const start = sizes.slice(0, gi).reduce((a, b) => a + (b || 0), 0) + 1;
-
                           const names = Array.from(
                             { length: sizeThis },
                             (_, j) => `Đội ${start + j}`
@@ -1444,9 +1650,9 @@ export default function TournamentBlueprintPage() {
                             <Paper key={g} variant="outlined" sx={{ p: 1.5 }}>
                               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
                                 <Chip size="small" color="secondary" label={`B${g}`} />
-                                <Typography variant="subtitle2">
-                                  {`Dự kiến ${sizeThis} đội • ${RR_MATCHES(sizeThis)} trận`}
-                                </Typography>
+                                <Typography variant="subtitle2">{`Dự kiến ${sizeThis} đội • ${RR_MATCHES(
+                                  sizeThis
+                                )} trận`}</Typography>
                               </Stack>
                               <Stack direction="row" gap={1} flexWrap="wrap">
                                 {names.map((n) => (
@@ -1508,4 +1714,47 @@ export default function TournamentBlueprintPage() {
       </Box>
     </DashboardLayout>
   );
+}
+
+/* ===== Normalizers for payload ===== */
+function normalizeSeedsKO(plan) {
+  const size = Math.max(2, nextPow2(Number(plan?.drawSize || 2)));
+  const firstPairs = size / 2;
+  const map = new Map((plan?.seeds || []).map((s) => [Number(s.pair), s]));
+  const placeholder = () => ({ type: "registration", ref: {}, label: "" });
+  const seeds = Array.from({ length: firstPairs }, (_, i) => {
+    const pair = i + 1;
+    const cur = map.get(pair) || { pair, A: null, B: null };
+    return {
+      pair,
+      A: cur.A && cur.A.type ? cur.A : placeholder(),
+      B: cur.B && cur.B.type ? cur.B : placeholder(),
+    };
+  });
+  return { drawSize: size, seeds };
+}
+
+function normalizeSeedsPO(plan) {
+  const N = Math.max(0, Number(plan?.drawSize || 0));
+  const firstPairs = Math.max(1, Math.ceil(N / 2));
+  const map = new Map((plan?.seeds || []).map((s) => [Number(s.pair), s]));
+  const seeds = Array.from({ length: firstPairs }, (_, i) => {
+    const pair = i + 1;
+    const idxA = i * 2 + 1;
+    const idxB = i * 2 + 2;
+    const cur = map.get(pair) || { pair, A: null, B: null };
+    const A = cur.A && cur.A.type ? cur.A : { type: "registration", ref: {}, label: `Đội ${idxA}` };
+    const B =
+      cur.B && cur.B.type
+        ? cur.B
+        : idxB <= N
+        ? { type: "registration", ref: {}, label: `Đội ${idxB}` }
+        : { type: "bye", ref: null, label: "BYE" };
+    return { pair, A, B };
+  });
+  return {
+    drawSize: N,
+    maxRounds: Math.max(1, Math.min(maxPoRoundsFor(N), Number(plan?.maxRounds || 1))),
+    seeds,
+  };
 }
