@@ -226,17 +226,21 @@ RulesEditor.propTypes = {
   onChange: PropTypes.func.isRequired,
 };
 
-/** Build KO rounds (R1 editable; R>=2 winners auto) */
-function buildRoundsFromPlan(planKO, stageIndex = 1) {
+/** Build KO rounds (R editable; R>=2 winners auto) với baseRound
+ *  — nay dùng mã winner theo V hiển thị (đã offset) */
+function buildRoundsFromPlan(planKO, stageIndex = 1, baseRound = 1) {
   const drawSize = Math.max(2, nextPow2(planKO?.drawSize || 2));
   const firstPairs = drawSize / 2;
+
+  // Vòng hiển thị đầu
+  const r1Display = baseRound;
 
   const r1 = Array.from({ length: firstPairs }, (_, i) => {
     const found = (planKO?.seeds || []).find((s) => Number(s.pair) === i + 1);
     const A = found?.A || { type: "registration", label: "—" };
     const B = found?.B || { type: "registration", label: "—" };
     return {
-      id: `R1-${i + 1}`,
+      id: `R${r1Display}-${i + 1}`,
       pairIndex: i + 1,
       teams: [
         { name: seedLabel(A), __seed: A, __pair: i + 1, __slot: "A" },
@@ -247,26 +251,29 @@ function buildRoundsFromPlan(planKO, stageIndex = 1) {
 
   const rounds = [{ title: roundTitleByPairs(firstPairs), seeds: r1 }];
 
-  const winnerLabel = (prevRoundNumber, prevPairIdx) => `W-V${prevRoundNumber}-T${prevPairIdx}`;
-
   let prevPairs = firstPairs;
   let prevRound = r1;
-  let roundNum = 2;
+  let roundNum = 2; // round nội bộ của KO (1 đã vẽ ở trên)
 
   while (prevPairs > 1) {
     const pairs = Math.ceil(prevPairs / 2);
-    const prevRoundNumber = roundNum - 1;
+
+    // Vòng hiển thị của vòng hiện tại & vòng trước nó
+    const displayRound = baseRound + (roundNum - 1);
+    const prevDisplayRound = baseRound + (roundNum - 2);
 
     const thisSeeds = Array.from({ length: pairs }, (_, i) => {
       const prevA = prevRound[i * 2];
       const prevB = prevRound[i * 2 + 1];
       const tLeft = prevA?.pairIndex || i * 2 + 1;
       const tRight = prevB?.pairIndex || i * 2 + 2;
+
+      // DÙNG V hiển thị cho mã winner: W-V{prevDisplayRound}-T{...}
       return {
-        id: `R${roundNum}-${i + 1}`,
+        id: `R${displayRound}-${i + 1}`,
         teams: [
-          { name: winnerLabel(prevRoundNumber, tLeft) },
-          { name: winnerLabel(prevRoundNumber, tRight) },
+          { name: `W-V${prevDisplayRound}-T${tLeft}` },
+          { name: `W-V${prevDisplayRound}-T${tRight}` },
         ],
       };
     });
@@ -280,13 +287,16 @@ function buildRoundsFromPlan(planKO, stageIndex = 1) {
   return rounds;
 }
 
-/* ========================= PO (losers-cascade) builder (non-2^n) ========================= */
-function buildPoRoundsFromPlan(planPO, stageIndex = 1) {
+/* ========================= PO (losers-cascade) builder (non-2^n) với baseRound ========================= */
+function buildPoRoundsFromPlan(planPO, stageIndex = 1, baseRound = 1) {
   const N = Math.max(0, Number(planPO?.drawSize || 0));
   const maxR = Math.max(1, Math.min(maxPoRoundsFor(N), Number(planPO?.maxRounds || 1)));
   const rounds = [];
 
-  // V1 (editable)
+  // Vòng hiển thị đầu tiên
+  const r1Display = baseRound;
+
+  // V1 (editable) nhưng id hiển thị là R{baseRound}
   const r1Pairs = Math.max(1, Math.ceil(N / 2));
   const r1Seeds = Array.from({ length: r1Pairs }, (_, i) => {
     const found = (planPO?.seeds || []).find((s) => Number(s.pair) === i + 1) || {};
@@ -300,7 +310,7 @@ function buildPoRoundsFromPlan(planPO, stageIndex = 1) {
     const A = found.A && found.A.type ? found.A : defA;
     const B = found.B && found.B.type ? found.B : defB;
     return {
-      id: `R1-${i + 1}`,
+      id: `R${r1Display}-${i + 1}`, // <-- đổi id theo baseRound
       pairIndex: i + 1,
       teams: [
         { name: seedLabel(A), __seed: A, __pair: i + 1, __slot: "A" },
@@ -308,7 +318,7 @@ function buildPoRoundsFromPlan(planPO, stageIndex = 1) {
       ],
     };
   });
-  rounds.push({ title: `PO • Vòng 1 (${r1Seeds.length} trận)`, seeds: r1Seeds });
+  rounds.push({ title: `PO • Vòng ${r1Display} (${r1Seeds.length} trận)`, seeds: r1Seeds });
 
   // V>=2: losers cascade
   let losersPool = Math.floor(N / 2);
@@ -316,16 +326,18 @@ function buildPoRoundsFromPlan(planPO, stageIndex = 1) {
 
   while (roundNum <= maxR && losersPool > 0) {
     const pairs = Math.max(1, Math.ceil(losersPool / 2));
+    const displayRound = baseRound + (roundNum - 1); // <-- số vòng hiển thị
+
     const seeds = Array.from({ length: pairs }, (_, i) => {
       const leftIdx = 2 * i + 1;
       const rightIdx = 2 * i + 2;
-      const left = { name: `L-V${roundNum - 1}-T${leftIdx}` };
+      const left = { name: `L-V${roundNum - 1}-T${leftIdx}` }; // giữ V nội bộ
       const right =
         rightIdx <= losersPool ? { name: `L-V${roundNum - 1}-T${rightIdx}` } : { name: "BYE" };
-      return { id: `R${roundNum}-${i + 1}`, teams: [left, right] };
+      return { id: `R${displayRound}-${i + 1}`, teams: [left, right] };
     });
 
-    rounds.push({ title: `PO • Vòng ${roundNum} (${pairs} trận)`, seeds });
+    rounds.push({ title: `PO • Vòng ${displayRound} (${pairs} trận)`, seeds });
     losersPool = Math.floor(losersPool / 2);
     roundNum += 1;
   }
@@ -790,15 +802,37 @@ export default function TournamentBlueprintPage() {
 
   const renderEditableBracket = (stageIdx) => {
     const stage = stages[stageIdx];
+
+    // Đếm số "vòng hiển thị" trước stage hiện tại
+    const roundsBefore = (() => {
+      let count = 0;
+      // Nếu có vòng bảng trước -> +1
+      const hasGroupBefore = stages.slice(0, stageIdx).some((s) => s.type === "group");
+      if (hasGroupBefore) count += 1;
+
+      // Nếu có PO trước -> +maxRounds của PO (nếu có nhiều PO, cộng tất)
+      stages.slice(0, stageIdx).forEach((s) => {
+        if (s.type === "po") {
+          const N = Number(s.config?.drawSize || 0);
+          const maxR = Math.max(1, Math.min(maxPoRoundsFor(N), Number(s.config?.maxRounds || 1)));
+          count += maxR;
+        }
+      });
+
+      return count;
+    })();
+
+    const baseRound = 1 + roundsBefore; // vòng hiển thị đầu tiên của stage này
+
     if (stage.type === "po") {
-      const rounds = buildPoRoundsFromPlan(poPlan, stageIdx + 1);
+      const rounds = buildPoRoundsFromPlan(poPlan, stageIdx + 1, baseRound);
       return (
         <Bracket
           rounds={rounds}
           renderSeedComponent={({ seed }) => {
             const A = seed?.teams?.[0];
             const B = seed?.teams?.[1];
-            const pair = A?.__pair || B?.__pair; // chỉ có ở R1
+            const pair = A?.__pair || B?.__pair; // chỉ có ở R đầu của stage
             if (!pair) {
               return (
                 <Seed>
@@ -842,15 +876,16 @@ export default function TournamentBlueprintPage() {
         />
       );
     }
+
     // KO
-    const rounds = buildRoundsFromPlan(koPlan, stageIdx + 1);
+    const rounds = buildRoundsFromPlan(koPlan, stageIdx + 1, baseRound);
     return (
       <Bracket
         rounds={rounds}
         renderSeedComponent={({ seed }) => {
           const A = seed?.teams?.[0];
           const B = seed?.teams?.[1];
-          const pair = A?.__pair || B?.__pair; // chỉ có ở R1
+          const pair = A?.__pair || B?.__pair; // chỉ có ở R đầu của stage
           if (!pair) {
             return (
               <Seed>
