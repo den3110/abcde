@@ -15,6 +15,7 @@ import {
   RadioGroup,
   Radio,
   Skeleton,
+  InputAdornment, // NEW
 } from "@mui/material";
 
 // === MUI X Date Pickers v5 ===
@@ -107,6 +108,178 @@ const VN_PROVINCES = [
   "Vĩnh Phúc",
   "Yên Bái",
 ];
+
+export const SEPAY_BANKS = [
+  { value: "Vietcombank", label: "Vietcombank - Ngân hàng TMCP Ngoại Thương Việt Nam" },
+  { value: "VietinBank", label: "VietinBank - Ngân hàng TMCP Công thương Việt Nam" },
+  { value: "MBBank", label: "MBBank - Ngân hàng TMCP Quân đội" },
+  { value: "ACB", label: "ACB - Ngân hàng TMCP Á Châu" },
+  { value: "VPBank", label: "VPBank - Ngân hàng TMCP Việt Nam Thịnh Vượng" },
+  { value: "TPBank", label: "TPBank - Ngân hàng TMCP Tiên Phong" },
+  { value: "MSB", label: "MSB - Ngân hàng TMCP Hàng Hải" },
+  { value: "NamABank", label: "NamABank - Ngân hàng TMCP Nam Á" },
+  { value: "LienVietPostBank", label: "LienVietPostBank - Ngân hàng TMCP Bưu Điện Liên Việt" },
+  { value: "VietCapitalBank", label: "VietCapitalBank - Ngân hàng TMCP Bản Việt" },
+  { value: "BIDV", label: "BIDV - Ngân hàng TMCP Đầu tư và Phát triển Việt Nam" },
+  { value: "Sacombank", label: "Sacombank - Ngân hàng TMCP Sài Gòn Thương Tín" },
+  { value: "VIB", label: "VIB - Ngân hàng TMCP Quốc tế Việt Nam" },
+  { value: "HDBank", label: "HDBank - Ngân hàng TMCP Phát triển Thành phố Hồ Chí Minh" },
+  { value: "SeABank", label: "SeABank - Ngân hàng TMCP Đông Nam Á" },
+  { value: "GPBank", label: "GPBank - Ngân hàng TM TNHH MTV Dầu Khí Toàn Cầu" },
+  { value: "PVcomBank", label: "PVcomBank - Ngân hàng TMCP Đại Chúng Việt Nam" },
+  { value: "NCB", label: "NCB - Ngân hàng TMCP Quốc Dân" },
+  { value: "ShinhanBank", label: "ShinhanBank - Ngân hàng TNHH MTV Shinhan Việt Nam" },
+  { value: "SCB", label: "SCB - Ngân hàng TMCP Sài Gòn" },
+  { value: "PGBank", label: "PGBank - Ngân hàng TMCP Xăng dầu Petrolimex" },
+  { value: "Agribank", label: "Agribank - Ngân hàng Nông nghiệp và PTNT Việt Nam" },
+  { value: "Techcombank", label: "Techcombank - Ngân hàng TMCP Kỹ thương Việt Nam" },
+  { value: "SaigonBank", label: "SaigonBank - Ngân hàng TMCP Sài Gòn Công Thương" },
+  { value: "DongABank", label: "DongABank - Ngân hàng TMCP Đông Á" },
+  { value: "BacABank", label: "BacABank - Ngân hàng TMCP Bắc Á" },
+  {
+    value: "StandardChartered",
+    label: "StandardChartered - NH TNHH MTV Standard Chartered Bank Việt Nam",
+  },
+  { value: "Oceanbank", label: "Oceanbank - Ngân hàng TM TNHH MTV Đại Dương" },
+  { value: "VRB", label: "VRB - Ngân hàng Liên doanh Việt - Nga" },
+  { value: "ABBANK", label: "ABBANK - Ngân hàng TMCP An Bình" },
+  { value: "VietABank", label: "VietABank - Ngân hàng TMCP Việt Á" },
+  { value: "Eximbank", label: "Eximbank - Ngân hàng TMCP Xuất Nhập khẩu Việt Nam" },
+  { value: "VietBank", label: "VietBank - Ngân hàng TMCP Việt Nam Thương Tín" },
+  { value: "IndovinaBank", label: "IndovinaBank - Ngân hàng TNHH Indovina" },
+  { value: "BaoVietBank", label: "BaoVietBank - Ngân hàng TMCP Bảo Việt" },
+  { value: "PublicBank", label: "PublicBank - Ngân hàng TNHH MTV Public Việt Nam" },
+  { value: "SHB", label: "SHB - Ngân hàng TMCP Sài Gòn - Hà Nội" },
+  { value: "CBBank", label: "CBBank - Ngân hàng TM TNHH MTV Xây dựng Việt Nam" },
+  { value: "OCB", label: "OCB - Ngân hàng TMCP Phương Đông" },
+  { value: "KienLongBank", label: "KienLongBank - Ngân hàng TMCP Kiên Long" },
+  { value: "CIMB", label: "CIMB - Ngân hàng TNHH MTV CIMB Việt Nam" },
+  { value: "HSBC", label: "HSBC - Ngân hàng TNHH MTV HSBC (Việt Nam)" },
+  { value: "DBSBank", label: "DBSBank - DBS Bank Ltd - Chi nhánh TP.HCM" },
+  { value: "Nonghyup", label: "Nonghyup - Ngân hàng Nonghyup - Chi nhánh Hà Nội" },
+  { value: "HongLeong", label: "HongLeong - Ngân hàng TNHH MTV Hong Leong Việt Nam" },
+  { value: "Woori", label: "Woori - Ngân hàng TNHH MTV Woori Việt Nam" },
+  {
+    value: "UnitedOverseas",
+    label: "UnitedOverseas - Ngân hàng United Overseas - Chi nhánh TP.HCM",
+  },
+  { value: "KookminHN", label: "KookminHN - Ngân hàng Kookmin - Chi nhánh Hà Nội" },
+  { value: "KookminHCM", label: "KookminHCM - Ngân hàng Kookmin - Chi nhánh TP.HCM" },
+  { value: "COOPBANK", label: "COOPBANK - Ngân hàng Hợp tác xã Việt Nam" },
+];
+
+/* ===== Danh sách ngân hàng theo SePay VietQR =====
+ * value = shortName dùng cho param `bank=` của SePay
+ * label = tên hiển thị đầy đủ
+ */
+// NEW: alias viết tắt phổ biến để tìm nhanh
+const BANK_ALIASES = {
+  Vietcombank: ["VCB", "ngoai thuong"],
+  VietinBank: ["CTG", "cong thuong"],
+  BIDV: ["BIDV", "dau tu phat trien"],
+  Agribank: ["AGR", "nong nghiep"],
+  Techcombank: ["TCB", "ky thuong"],
+  MBBank: ["MBB", "MB", "quan doi"],
+  ACB: ["ACB", "a chau"],
+  VPBank: ["VPB", "viet nam thinh vuong", "vp bank"],
+  Sacombank: ["STB", "sai gon thuong tin", "sacom"],
+  TPBank: ["TPB", "tien phong"],
+  VIB: ["VIB", "quoc te"],
+  HDBank: ["HDB", "phat trien tphcm", "hd bank"],
+  SHB: ["SHB", "sai gon ha noi"],
+  Eximbank: ["EIB", "xuat nhap khau"],
+  OCB: ["OCB", "phuong dong"],
+  MSB: ["MSB", "hang hai"],
+  SeABank: ["SSB", "dong nam a"],
+  LienVietPostBank: ["LPB", "buu dien lien viet", "lienviet"],
+  SCB: ["SCB", "sai gon"],
+  PGBank: ["PGB", "xang dau petrolimex"],
+  VietBank: ["viet bank", "vb"],
+  BacABank: ["bac a", "bab"],
+  GPBank: ["dau khi toan cau"],
+  PVcomBank: ["pvcom", "dai chung"],
+  VietCapitalBank: ["ban viet", "vccb", "viet capital"],
+  SaigonBank: ["sai gon cong thuong"],
+  DongABank: ["dong a"],
+  BaoVietBank: ["baoviet"],
+  PublicBank: ["public viet nam"],
+  NCB: ["quoc dan"],
+  ShinhanBank: ["shinhan"],
+  StandardChartered: ["standard chartered", "sc"],
+  Oceanbank: ["ocean"],
+  VRB: ["viet nga", "vrb"],
+  IndovinaBank: ["indovina", "ivb"],
+  CBBank: ["xay dung"],
+  KienLongBank: ["kien long", "klb"],
+  CIMB: ["cimb"],
+  HSBC: ["hsbc"],
+  DBSBank: ["dbs"],
+  Woori: ["woori"],
+  HongLeong: ["hong leong"],
+  UnitedOverseas: ["uob", "united overseas"],
+  KookminHN: ["kookmin ha noi", "kb hn"],
+  KookminHCM: ["kookmin hcm", "kb hcm"],
+  COOPBANK: ["coopbank", "ngan hang hop tac"],
+};
+
+// NEW: format "1234567" -> "1,234,567"
+const formatMoney = (s = "") => (s || "").replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+// NEW: chỉ lấy digits từ input (giữ rỗng khi xoá hết)
+const onlyDigits = (s = "") => (s || "").replace(/\D/g, "");
+
+// NEW: bỏ dấu + chuẩn hoá để so khớp
+const normalizeVi = (s = "") =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // bỏ dấu tiếng Việt
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+// NEW: build index tìm kiếm (gộp label + value + alias)
+const BANKS_INDEX = SEPAY_BANKS.map((b) => {
+  const aliases = BANK_ALIASES[b.value] || [];
+  const hay = normalizeVi([b.value, b.label, ...aliases].join(" "));
+  return { ...b, _hay: hay, _aliases: aliases.map(normalizeVi) };
+});
+
+// NEW: thuật toán lọc & xếp hạng
+const filterBankOptions = (options, { inputValue }) => {
+  const q = normalizeVi(inputValue);
+  if (!q) return options.slice(0, 50);
+  const parts = q.split(/\s+/).filter(Boolean);
+
+  return options
+    .map((opt) => {
+      const hay = opt._hay;
+      let score = 0;
+
+      // 1) Ưu tiên khớp theo shortName (value)
+      const val = normalizeVi(opt.value);
+      if (val === q) score += 120; // trùng tuyệt đối
+      if (val.startsWith(q)) score += 90;
+
+      // 2) Alias viết tắt (VCB, CTG, TCB…)
+      if (opt._aliases.includes(q)) score += 100;
+
+      // 3) Khớp đủ các từ trong label/aliases
+      const allParts = parts.every((p) => hay.includes(p));
+      if (allParts) score += 70;
+
+      // 4) Prefix trên chuỗi tổng hợp
+      if (hay.startsWith(q)) score += 60;
+
+      // 5) Substring bình thường
+      if (hay.includes(q)) score += 40;
+
+      return { opt, score };
+    })
+    .filter((r) => r.score > 0 || q.length <= 1)
+    .sort((a, b) => b.score - a.score)
+    .map((r) => r.opt)
+    .slice(0, 30);
+};
 
 const MAX_IMG_SIZE = 10 * 1024 * 1024; // 10MB
 const YMDHMS = "YYYY-MM-DDTHH:mm:ss";
@@ -257,6 +430,11 @@ export default function TournamentFormPage() {
     // NEW: Phạm vi chấm (đa tỉnh)
     scoringScopeType: "national", // 'national' | 'provinces'
     scoringProvinces: [], // string[]
+    // NEW: ngân hàng
+    bankShortName: "", // ví dụ "Vietcombank" (giá trị chuẩn SePay)
+    bankAccountNumber: "", // chỉ chữ & số, không dấu
+    bankAccountName: "",
+    registrationFee: "", // lưu "500000" để dễ format
   });
 
   const [uploading, setUploading] = useState(false);
@@ -396,6 +574,19 @@ export default function TournamentFormPage() {
 
       scoringScopeType: scopeType, // 'national' | 'provinces'
       scoringProvinces: scopeProvinces, // []
+      // NEW: cố gắng đọc nhiều key cho tương thích ngược
+      bankShortName: tour.bankShortName || tour.bankName || tour.paymentBank || "",
+      bankAccountNumber: tour.bankAccountNumber || tour.accountNumber || tour.paymentAccount || "",
+      registrationFee:
+        tour.registrationFee != null && tour.registrationFee !== ""
+          ? String(Number(tour.registrationFee))
+          : "",
+      bankAccountName:
+        tour.bankAccountName ||
+        tour.accountName ||
+        tour.paymentAccountName ||
+        tour.beneficiaryName ||
+        "",
     };
     setForm(nextForm);
   }, [tour]); // eslint-disable-line
@@ -440,7 +631,24 @@ export default function TournamentFormPage() {
         type: scoringScopeType, // 'national' | 'provinces'
         provinces: scoringScopeType === "provinces" ? scoringProvinces : [],
       },
+      // NEW: ngân hàng theo SePay
+      bankShortName: form.bankShortName || "",
+      bankAccountNumber: (form.bankAccountNumber || "").trim(),
+      bankAccountName: (form.bankAccountName || "").trim(), // NEW
+      registrationFee: Number(form.registrationFee) || 0, // NEW
     };
+  };
+
+  // REPLACE old handler
+  const onChangeBankAccountNumber = (e) => {
+    const digitsOnly = (e.target.value || "").replace(/\D/g, "");
+    setForm((prev) => ({ ...prev, bankAccountNumber: digitsOnly }));
+  };
+
+  // NEW: handler cho phí → luôn lưu digits, UI hiển thị có dấu phẩy
+  const onChangeRegistrationFee = (e) => {
+    const digits = onlyDigits(e.target.value);
+    setForm((prev) => ({ ...prev, registrationFee: digits }));
   };
 
   const submit = async (e) => {
@@ -460,6 +668,23 @@ export default function TournamentFormPage() {
       }
     }
 
+    // bank bắt buộc là 1 trong danh sách
+    if (!SEPAY_BANKS.some((b) => b.value === form.bankShortName)) {
+      toast.error("Vui lòng chọn ngân hàng hợp lệ.");
+      return;
+    }
+    if (form.bankAccountNumber && !/^[A-Za-z0-9]{4,32}$/.test(form.bankAccountNumber)) {
+      toast.error("Số tài khoản không hợp lệ (4–32 ký tự chữ/số).");
+      return;
+    }
+    // không âm
+    if (
+      form.registrationFee !== "" &&
+      (Number.isNaN(Number(form.registrationFee)) || Number(form.registrationFee) < 0)
+    ) {
+      toast.error("Phí đăng ký không hợp lệ (không được âm).");
+      return;
+    }
     // Validate phạm vi chấm
     if (form.scoringScopeType === "provinces") {
       const list = (form.scoringProvinces || []).filter(Boolean);
@@ -473,6 +698,18 @@ export default function TournamentFormPage() {
         toast.error(`Tỉnh/thành không hợp lệ: ${invalid}`);
         return;
       }
+    }
+
+    // STK chỉ chứa số
+    if (!/^\d+$/.test(form.bankAccountNumber)) {
+      toast.error("Số tài khoản chỉ được chứa số (0–9).");
+      return;
+    }
+
+    // NEW: tên chủ tài khoản bắt buộc nếu đã chọn ngân hàng & có STK
+    if ((form.bankShortName || form.bankAccountNumber) && !form.bankAccountName.trim()) {
+      toast.error("Vui lòng nhập Tên chủ tài khoản.");
+      return;
     }
 
     const body = buildPayload();
@@ -541,6 +778,7 @@ export default function TournamentFormPage() {
           <Box
             component="form"
             onSubmit={submit}
+            noValidate
             aria-busy={uploading ? "true" : "false"}
             sx={{ "& .MuiInputBase-root": { minHeight: 50, alignItems: "center" } }}
           >
@@ -661,6 +899,76 @@ export default function TournamentFormPage() {
                     fullWidth
                     margin="normal"
                   />
+                  {/* NEW: Autocomplete ngân hàng (có thuật toán tìm kiếm) */}
+                  <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Thông tin chuyển khoản (SePay VietQR)
+                    </Typography>
+                    <Autocomplete
+                      options={BANKS_INDEX}
+                      value={BANKS_INDEX.find((o) => o.value === form.bankShortName) || null}
+                      onChange={(_, val) =>
+                        setForm((p) => ({ ...p, bankShortName: val?.value || "" }))
+                      }
+                      getOptionLabel={(o) => o?.label || o?.value || ""}
+                      filterOptions={filterBankOptions}
+                      isOptionEqualToValue={(o, v) => o.value === v.value}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Tên ngân hàng"
+                          margin="normal"
+                          fullWidth
+                          helperText="Gõ 'VCB', 'CTG', 'TCB'… hoặc tên không dấu để tìm nhanh"
+                          required
+                        />
+                      )}
+                    />
+                    <TextField
+                      name="bankAccountNumber"
+                      label="Số tài khoản"
+                      fullWidth
+                      margin="normal"
+                      value={form.bankAccountNumber}
+                      onChange={onChangeBankAccountNumber}
+                      type="text" // giữ 0 ở đầu, tránh spinner của <input type="number">
+                      inputProps={{ inputMode: "numeric", pattern: "[0-9]*", maxLength: 32 }}
+                      helperText="Chỉ nhập số (0–9)."
+                      required
+                    />
+                    <TextField
+                      name="bankAccountName"
+                      label="Tên chủ tài khoản"
+                      fullWidth
+                      margin="normal"
+                      value={form.bankAccountName}
+                      onChange={onChange}
+                      onBlur={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          bankAccountName: (e.target.value || "").replace(/\s+/g, " ").trim(),
+                        }))
+                      } // gọn tên (trim, gộp khoảng trắng)
+                      inputProps={{ maxLength: 64 }}
+                      helperText="Tên người/đơn vị nhận tiền (có dấu hoặc không dấu đều được)"
+                      required
+                    />
+
+                    <TextField
+                      name="registrationFee"
+                      label="Phí đăng ký (VND)"
+                      fullWidth
+                      margin="normal"
+                      value={formatMoney(form.registrationFee)} // <-- hiển thị có dấu phẩy
+                      onChange={onChangeRegistrationFee} // <-- luôn lưu digits
+                      type="text" // giữ caret & tránh spinner
+                      inputProps={{ inputMode: "numeric" }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">VND</InputAdornment>,
+                      }}
+                      helperText="Nhập số tiền, tự động thêm dấu phẩy ngăn cách"
+                    />
+                  </Card>
 
                   {/* NEW: Phạm vi chấm (đa tỉnh) */}
                   <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
