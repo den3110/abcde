@@ -41,14 +41,14 @@ const ceilPow2 = (n) => (n <= 1 ? 1 : 1 << Math.ceil(Math.log2(n)));
 const nextPow2 = ceilPow2;
 const RR_MATCHES = (size) => (size >= 2 ? (size * (size - 1)) / 2 : 0);
 const makeStageId = (idx) => `V${idx + 1}`; // V1, V2,...
+const BYE = { type: "bye", ref: null, label: "BYE" };
 
-// ===== PO (non-2^n) helpers =====
+/* ===== PO (non-2^n) helpers ===== */
 const maxPoRoundsFor = (n) => {
   const N = Math.max(0, Number(n) || 0);
   const losers1 = Math.floor(N / 2);
   return Math.max(1, 1 + (losers1 > 0 ? Math.floor(Math.log2(losers1)) : 0));
 };
-
 const poMatchesForRound = (n, round) => {
   const N = Math.max(0, Number(n) || 0);
   const r = Math.max(1, Number(round) || 1);
@@ -57,7 +57,6 @@ const poMatchesForRound = (n, round) => {
   for (let k = 2; k < r; k++) losersPool = Math.floor(losersPool / 2);
   return Math.max(1, Math.ceil(losersPool / 2)); // lẻ thì trận cuối BYE
 };
-
 const roundTitleByPairs = (pairs) => {
   if (pairs === 1) return "Chung kết";
   if (pairs === 2) return "Bán kết";
@@ -65,6 +64,46 @@ const roundTitleByPairs = (pairs) => {
   if (pairs === 8) return "Vòng 1/8";
   return `Vòng (${pairs} trận)`;
 };
+
+/* ===== PO rematch helpers for ladder (ước lượng theo losers-cascade) ===== */
+function _extractRoundOrder1(seed) {
+  // order trả về 1-based
+  const r = Number(seed?.ref?.round || 0);
+  const t1 = Number((seed?.ref?.order ?? -1) + 1);
+  return { r, t1 };
+}
+/** Trong PO losers-cascade:
+ *  Winner ở Vr, thứ tự t1 => đến từ block losers V1 có kích thước 2^(r-1), bắt đầu tại (t1-1)*block+1
+ *  n1 = số trận V1 (ceil(drawSize/2))
+ */
+function _v1BlockRangeFor(weakRound, t1, n1) {
+  const bs = Math.max(1, 1 << Math.max(0, weakRound - 1)); // 2^(r-1)
+  const start = (t1 - 1) * bs + 1;
+  const end = Math.min(n1, start + bs - 1);
+  return [start, end];
+}
+/** Ước lượng: a và b đã gặp nhau ở PO chưa?
+ *  - Nếu một là W-V1-Tx và cái kia là W-Vr-Ty (r>=2), kiểm tra Tx có nằm trong block V1 losers của Ty không.
+ *  - Trường hợp cả hai đều r>=2: bỏ qua (không chắc chắn), coi như không đánh dấu "đã gặp".
+ */
+function _hasRematchPO(a, b, poDrawSize) {
+  if (!a || !b) return false;
+  if (a.type !== "stageMatchWinner" || b.type !== "stageMatchWinner") return false;
+
+  const n1 = poMatchesForRound(poDrawSize, 1); // số trận V1
+  const { r: ra, t1: ta } = _extractRoundOrder1(a);
+  const { r: rb, t1: tb } = _extractRoundOrder1(b);
+
+  if (ra === 1 && rb >= 2) {
+    const [lo, hi] = _v1BlockRangeFor(rb, tb, n1);
+    return ta >= lo && ta <= hi;
+  }
+  if (rb === 1 && ra >= 2) {
+    const [lo, hi] = _v1BlockRangeFor(ra, ta, n1);
+    return tb >= lo && tb <= hi;
+  }
+  return false; // cả hai r>=2: không khẳng định -> không tính là tái đấu
+}
 
 const seedLabel = (seed) => {
   if (!seed || !seed.type) return "—";
@@ -104,7 +143,6 @@ const DEFAULT_RULES = {
   winByTwo: true,
   cap: { mode: "none", points: null },
 };
-
 const normalizeRulesForState = (r = {}) => ({
   bestOf: Number(r.bestOf ?? DEFAULT_RULES.bestOf),
   pointsToWin: Number(r.pointsToWin ?? DEFAULT_RULES.pointsToWin),
@@ -114,7 +152,6 @@ const normalizeRulesForState = (r = {}) => ({
     points: r?.cap?.points === null || r?.cap?.points === undefined ? null : Number(r.cap.points),
   },
 });
-
 const ruleSummary = (r) => {
   const base = `BO${r.bestOf} • ${r.pointsToWin} điểm • ${r.winByTwo ? "Win by 2" : "No win-by-2"}`;
   const cap =
@@ -211,7 +248,6 @@ function RulesEditor({ label = "Luật trận", value, onChange }) {
     </Stack>
   );
 }
-
 RulesEditor.propTypes = {
   label: PropTypes.string,
   value: PropTypes.shape({
@@ -227,7 +263,7 @@ RulesEditor.propTypes = {
 };
 
 /** Build KO rounds (R editable; R>=2 winners auto) với baseRound
- *  — nay dùng mã winner theo V hiển thị (đã offset) */
+ *  — dùng mã winner theo V hiển thị (đã offset) */
 function buildRoundsFromPlan(planKO, stageIndex = 1, baseRound = 1) {
   const drawSize = Math.max(2, nextPow2(planKO?.drawSize || 2));
   const firstPairs = drawSize / 2;
@@ -390,20 +426,16 @@ function seededShuffle(arr, seedStr = "42") {
     return seed / 0xffffffff;
   }
   const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
+  for (let i = a.length - 1; i > 0; i++) {
     const j = Math.floor(rand() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
 
-/* ===== Sắp xếp linear vào KO theo nhiều kiểu ===== */
-const BYE = { type: "bye", ref: null, label: "BYE" };
-// ===== BYE helpers & fixers =====
+/* ===== BYE helpers & fixers ===== */
 const isBye = (s) => s?.type === "bye" || s?.label === "BYE" || s?.name === "BYE";
-
-/** Sửa cặp BYE–BYE bằng cách mượn 1 đội từ cặp phía sau.
- *  Nếu tổng số đội < số cặp, không thể tránh toàn bộ BYE–BYE: sẽ dàn đều một đội/ cặp trước tiên. */
+/** Sửa cặp BYE–BYE bằng cách mượn 1 đội từ cặp phía sau */
 function fixDoubleByes(pairs) {
   const totalPairs = pairs.length;
   const nonByeCount = pairs.reduce(
@@ -412,7 +444,7 @@ function fixDoubleByes(pairs) {
   );
   if (nonByeCount === 0) return pairs;
 
-  // Không đủ 1 đội cho mỗi cặp: dàn đều 1 đội vào các cặp BYE–BYE trước
+  // Không đủ 1 đội/ cặp: dàn đều 1 đội vào các cặp BYE–BYE trước
   if (nonByeCount < totalPairs) {
     const pool = [];
     for (const p of pairs) {
@@ -474,7 +506,6 @@ function seedPositionsPow2(n) {
   };
   return build(n); // array length n, giá trị 1..n
 }
-
 function makePairsFromSlots(slots) {
   const pairs = [];
   for (let i = 0; i < slots.length; i += 2) {
@@ -522,6 +553,45 @@ function arrangeLinearIntoKO(linearSeeds, firstPairs, method = "default", seedKe
   return fixDoubleByes(pairs);
 }
 
+/* ----- Rematch-avoid helper dùng _hasRematchPO ----- */
+// Ghép "đầu–cuối": lấy mạnh từ đầu, yếu từ cuối; nếu conflict thì dịch dần để tránh.
+// Hết yếu -> BYE. Dư yếu -> tự ghép với nhau. Luôn chạy fixDoubleByes ở cuối.
+function buildPairsStrongWeakNoRematch(strongArr, weakArr, firstPairs, poDrawSize) {
+  const S = strongArr.slice(); // W-V1-T1.. (tăng)
+  const W = weakArr.slice(); // W-V2/V3/... (tăng)
+  const pairs = [];
+
+  for (let i = 0; i < firstPairs; i++) {
+    if (S.length) {
+      const s = S.shift();
+      if (W.length) {
+        // ưu tiên yếu nhất còn lại (cuối mảng); nếu conflict thì tìm ứng viên khác
+        let pick = -1;
+        for (let idx = W.length - 1; idx >= 0; idx--) {
+          if (!_hasRematchPO(s, W[idx], poDrawSize)) {
+            pick = idx;
+            break;
+          }
+        }
+        if (pick === -1) pick = W.length - 1; // không tránh được thì chấp nhận
+        const w = W.splice(pick, 1)[0];
+        pairs.push({ pair: i + 1, A: s, B: w });
+      } else {
+        pairs.push({ pair: i + 1, A: s, B: BYE });
+      }
+    } else if (W.length >= 2) {
+      const b = W.pop();
+      const a = W.pop() || BYE;
+      pairs.push({ pair: i + 1, A: a, B: b });
+    } else if (W.length === 1) {
+      pairs.push({ pair: i + 1, A: W.pop(), B: BYE });
+    } else {
+      pairs.push({ pair: i + 1, A: BYE, B: BYE });
+    }
+  }
+  return fixDoubleByes(pairs);
+}
+
 /* ========================= Seed Picker ========================= */
 function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) {
   const [mode, setMode] = useState("groupRank");
@@ -557,6 +627,12 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
     return Math.max(1, Math.ceil(fp / Math.pow(2, Math.max(0, mRound - 1))));
   }, [stages, mStageIdx, mRound]);
 
+  const sSel = stages[mStageIdx];
+  const rMax =
+    sSel?.type === "po"
+      ? Math.max(1, Number(sSel?.config?.maxRounds || 1))
+      : Math.max(1, Math.round(Math.log2(nextPow2(sSel?.config?.drawSize || 2))));
+
   const canPick = () => {
     if (mode === "groupRank" && !groupStages.length) return false;
     if ((mode === "stageMatchWinner" || mode === "stageMatchLoser") && !poKoStages.length)
@@ -583,11 +659,11 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
     if (mode === "stageMatchWinner" || mode === "stageMatchLoser") {
       const st = (mStageIdx ?? 0) + 1;
       const s = stages[mStageIdx];
-      const rMax =
+      const rMaxLocal =
         s?.type === "po"
           ? Math.max(1, Number(s.config?.maxRounds || 1))
           : Math.max(1, Math.round(Math.log2(nextPow2(s?.config?.drawSize || 2))));
-      const r = Math.min(Math.max(1, Number(mRound || 1)), rMax);
+      const r = Math.min(Math.max(1, Number(mRound || 1)), rMaxLocal);
       const order = Math.max(0, Math.min(mPairsForRound || 1, Number(mTIndex || 1)) - 1);
       const label = mode === "stageMatchWinner" ? `W-V${r}-T${order + 1}` : `L-V${r}-T${order + 1}`;
       return onPick({ type: mode, ref: { stageIndex: st, round: r, order }, label });
@@ -679,22 +755,15 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
                   onChange={(e) => {
                     const v = Math.max(1, parseInt(e.target.value || "1", 10));
                     const s = stages[mStageIdx];
-                    const rMax =
+                    const rMaxLocal =
                       s?.type === "po"
                         ? Math.max(1, Number(s.config?.maxRounds || 1))
                         : Math.max(1, Math.round(Math.log2(nextPow2(s?.config?.drawSize || 2))));
-                    setMRound(Math.min(v, rMax));
+                    setMRound(Math.min(v, rMaxLocal));
                     setMTIndex(1);
                   }}
                   sx={{ width: 140 }}
-                  helperText={() => {
-                    const s = stages[mStageIdx];
-                    const rMax =
-                      s?.type === "po"
-                        ? Math.max(1, Number(s.config?.maxRounds || 1))
-                        : Math.max(1, Math.round(Math.log2(nextPow2(s?.config?.drawSize || 2))));
-                    return `Tối đa V${rMax}`;
-                  }}
+                  helperText={`Tối đa V${rMax}`}
                 />
                 <TextField
                   size="small"
@@ -729,7 +798,6 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
     </Dialog>
   );
 }
-
 SeedPickerDialog.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
@@ -839,8 +907,6 @@ export default function TournamentBlueprintPage() {
     arr.push({ id: makeStageId(arr.length), type: "ko", title: "Knockout", config: { ...koPlan } });
     return arr;
   }, [includeGroup, includePO, groupCount, groupSize, groupSizes, poPlan, koPlan]);
-
-  const stageIdxOf = (stageId) => stages.findIndex((s) => s.id === stageId);
 
   // seed picker state
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1044,12 +1110,10 @@ export default function TournamentBlueprintPage() {
   };
 
   /* ===== Đổ KO từ PO (nhiều kiểu) ===== */
-  /* ===== Đổ KO từ PO (nhiều kiểu) ===== */
   const prefillKOfromPO = (method = "default") => {
     const poIdx = stages.findIndex((s) => s.type === "po");
     if (poIdx < 0) return toast.info("Chưa bật PO để đổ seed sang KO");
 
-    const seedKey = String(tournamentId || "pt");
     const qualifiers = computePoQualifiers(poPlan, poIdx); // linear W-Vr-Ti (r↑, i↑)
 
     // Nhóm theo round
@@ -1065,63 +1129,257 @@ export default function TournamentBlueprintPage() {
       const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
       const firstPairs = size / 2;
       const capacity = firstPairs * 2;
+      const poN = Number(poPlan?.drawSize || 0);
 
-      // ====== Option: V1 vs V2 (hết V2 -> BYE) ======
+      // ====== Option: V1 vs V2+ (đầu–cuối, tránh tái đấu) ======
       if (method === "v1v2") {
-        const strong = (byRound.get(1) || []).slice(); // V1 winners (mạnh)
+        // mạnh: chỉ V1
+        const strong = (byRound.get(1) || []).slice().sort((a, b) => a.ref.order - b.ref.order);
+        // yếu: gộp toàn bộ V2, V3, V4...
         const weak = [];
-        for (const r of roundsAsc) if (r >= 2) weak.push(...(byRound.get(r) || [])); // V2+ (yếu hơn)
+        for (const r of roundsAsc)
+          if (r >= 2) {
+            const arr = (byRound.get(r) || []).slice().sort((a, b) => a.ref.order - b.ref.order);
+            weak.push(...arr);
+          }
 
-        const pairs = [];
-        const S = strong.slice(0); // copy
-        const W = weak.slice(0);
-        for (let i = 0; i < firstPairs; i++) {
-          const A = S.length ? S.shift() : W.length ? W.shift() : BYE;
-          const B = W.length ? W.shift() : BYE;
-          pairs.push({ pair: i + 1, A: A || BYE, B: B || BYE });
-        }
-
-        const finalPairs = fixDoubleByes(pairs);
+        const pairs = buildPairsStrongWeakNoRematch(strong, weak, firstPairs, poN);
         const nonByeCount = strong.length + weak.length;
-        if (nonByeCount < firstPairs) {
-          toast.warning(
-            `Không đủ đội để tránh BYE–BYE ở mọi cặp (đội=${nonByeCount}, cặp=${firstPairs}). Hệ thống đã dàn đều BYE.`
-          );
+        // if (nonByeCount < firstPairs) {
+        //   toast.warning("Không đủ đội -> đã chèn BYE & dàn đều để tránh BYE–BYE.");
+        // }
+        toast.success("Đã đổ seed: V1 vs V2+ (đầu–cuối, tránh tái đấu)");
+        return { drawSize: size, seeds: pairs };
+      }
+
+      // ====== Option: Ladder (giữ dáng + tránh tái đấu) ======
+      if (method === "ladder") {
+        // 1) Gom qualifiers: mạnh = toàn bộ W-V1 (sắp theo T1..), yếu = gộp W-V2, V3, ...
+        const strong = (byRound.get(1) || [])
+          .slice()
+          .sort((a, b) => (a.ref.order || 0) - (b.ref.order || 0));
+        const weak = [];
+        for (const r of roundsAsc)
+          if (r >= 2) {
+            const arr = (byRound.get(r) || [])
+              .slice()
+              .sort((a, b) => (a.ref.order || 0) - (b.ref.order || 0));
+            weak.push(...arr);
+          }
+
+        // Nếu KO nhỏ hơn số V1 thì phần "mạnh" dư sẽ tràn sang pool yếu
+        const S = Math.min(firstPairs, strong.length);
+        const remainingStrong = strong.slice(S);
+
+        // Pool ứng viên cho bên "yếu" (đối thủ của mạnh) + mọi phần dư
+        const weakPool = [...weak, ...remainingStrong];
+
+        // 2) Dáng ladder: seed #rank -> cặp theo vị trí chuẩn
+        const positions = seedPositionsPow2(size); // mảng 1..size
+        const pairIndexForRank = (rank) => Math.ceil(positions[rank - 1] / 2); // 1-based
+
+        // Khởi tạo cặp kết quả
+        const resultPairs = Array.from({ length: firstPairs }, (_, i) => ({
+          pair: i + 1,
+          A: BYE,
+          B: BYE,
+        }));
+
+        // 3) Đặt S seed mạnh vào đúng cặp "chuẩn ladder"
+        for (let rank = 1; rank <= S; rank++) {
+          const pIdx = pairIndexForRank(rank) - 1; // 0-based
+          resultPairs[pIdx].A = strong[rank - 1];
         }
-        toast.success("Đã đổ seed: V1 vs V2 (hết V2 → BYE)");
+
+        // 4) Chọn đối thủ cho từng cặp có "mạnh": ưu tiên tránh tái đấu
+        const pickWeakFor = (sSeed) => {
+          if (!weakPool.length) return null;
+          let idx = weakPool.findIndex((w) => !_hasRematchPO(sSeed, w, poN));
+          if (idx === -1) idx = 0; // nếu bất khả kháng, chấp nhận tái đấu
+          return weakPool.splice(idx, 1)[0];
+        };
+
+        for (let rank = 1; rank <= S; rank++) {
+          const pIdx = pairIndexForRank(rank) - 1;
+          const sSeed = resultPairs[pIdx].A;
+          resultPairs[pIdx].B = pickWeakFor(sSeed) || BYE;
+        }
+
+        // 5) Điền các cặp còn lại (không có "mạnh")
+        for (let i = 0; i < resultPairs.length; i++) {
+          const p = resultPairs[i];
+          if (isBye(p.A) && isBye(p.B)) {
+            p.A = weakPool.shift() || BYE;
+            p.B = weakPool.shift() || BYE;
+          } else if (isBye(p.B)) {
+            p.B = weakPool.shift() || BYE;
+          }
+        }
+
+        // 6) Cải thiện cục bộ: hoán đổi "B" giữa các cặp mạnh nếu giảm tổng tái đấu
+        const conflict = (pair) =>
+          !isBye(pair.A) && !isBye(pair.B) && _hasRematchPO(pair.A, pair.B, poN) ? 1 : 0;
+
+        let improved = true;
+        let iter = 0;
+        while (improved && iter < 20) {
+          improved = false;
+          iter++;
+          for (let i = 0; i < resultPairs.length; i++) {
+            for (let j = i + 1; j < resultPairs.length; j++) {
+              const p1 = resultPairs[i];
+              const p2 = resultPairs[j];
+              if (isBye(p1.A) || isBye(p2.A) || isBye(p1.B) || isBye(p2.B)) continue;
+
+              const cur = conflict(p1) + conflict(p2);
+
+              const swapP1 = { ...p1, B: p2.B };
+              const swapP2 = { ...p2, B: p1.B };
+              const sw = conflict(swapP1) + conflict(swapP2);
+
+              if (sw < cur) {
+                const tmp = p1.B;
+                p1.B = p2.B;
+                p2.B = tmp;
+                improved = true;
+              }
+            }
+          }
+        }
+
+        const finalPairs = fixDoubleByes(resultPairs);
+
+        const used = Math.min(capacity, strong.length + weak.length);
+        // if (used < capacity) {
+        //   toast.warning("Không đủ đội → đã chèn BYE & dàn đều để tránh BYE–BYE.");
+        // }
+        toast.success("Đã đổ seed: Ladder (giữ dáng + tránh tái đấu tối đa)");
         return { drawSize: size, seeds: finalPairs };
       }
 
-      // ====== Option: Ladder (1..N) – top nhận BYE, giống 1 vs 16, 8 vs 9... ======
-      if (method === "ladder") {
-        const ranked = qualifiers.slice(0, capacity); // đã r↑, i↑ -> V1 trước, rồi V2...
-        const positions = seedPositionsPow2(size); // mảng độ dài size (1..size)
+      // ====== Option: Ladder ngược (giữ dáng ladder + tránh tái đấu + ghép “xa” nhất) ======
+      if (method === "ladderReverse") {
+        const strong = (byRound.get(1) || [])
+          .slice()
+          .sort((a, b) => (a.ref.order || 0) - (b.ref.order || 0));
 
-        const slots = new Array(size).fill(null);
-        for (let s = 1; s <= ranked.length; s++) {
-          const pos = positions[s - 1] - 1; // về 0-index
-          slots[pos] = ranked[s - 1];
+        const weak = [];
+        for (const r of roundsAsc)
+          if (r >= 2) {
+            const arr = (byRound.get(r) || [])
+              .slice()
+              .sort((a, b) => (a.ref.order || 0) - (b.ref.order || 0));
+            weak.push(...arr);
+          }
+
+        const S = Math.min(firstPairs, strong.length);
+        const remainingStrong = strong.slice(S);
+        const weakPool = [...weak, ...remainingStrong];
+
+        // Dáng ladder
+        const positions = seedPositionsPow2(size);
+        const pairIndexForRank = (rank) => Math.ceil(positions[rank - 1] / 2);
+
+        const resultPairs = Array.from({ length: firstPairs }, (_, i) => ({
+          pair: i + 1,
+          A: BYE,
+          B: BYE,
+        }));
+        for (let rank = 1; rank <= S; rank++) {
+          const pIdx = pairIndexForRank(rank) - 1;
+          resultPairs[pIdx].A = strong[rank - 1];
         }
-        const pairs = makePairsFromSlots(slots);
-        const finalPairs = fixDoubleByes(pairs);
 
-        toast.success("Đã đổ seed: Ladder (1 vs N; top nhận BYE)");
+        // Tham chiếu “độ xa”
+        const weakRef = weak.slice(); // r↑, t↑
+        const weakIndex = new Map(weakRef.map((w, idx) => [w, idx])); // identity-based
+
+        const pickWeakForReverse = (sSeed, rank) => {
+          if (!weakPool.length) return null;
+          const desired = Math.max(0, weakRef.length - rank); // muốn “xa” về cuối
+          let bestIdx = -1;
+          let bestScore = -Infinity;
+          for (let i = 0; i < weakPool.length; i++) {
+            const cand = weakPool[i];
+            const refIdx = weakIndex.has(cand) ? weakIndex.get(cand) : weakRef.length + i; // đẩy dư về cuối
+            const dist = Math.abs(refIdx - desired);
+            const rematch = _hasRematchPO(sSeed, cand, poN);
+            const score = (rematch ? 0 : 1_000_000) + dist; // ưu tiên không tái đấu rồi mới tối đa dist
+            if (score > bestScore) {
+              bestScore = score;
+              bestIdx = i;
+            }
+          }
+          return bestIdx >= 0 ? weakPool.splice(bestIdx, 1)[0] : null;
+        };
+
+        for (let rank = 1; rank <= S; rank++) {
+          const pIdx = pairIndexForRank(rank) - 1;
+          const sSeed = resultPairs[pIdx].A;
+          resultPairs[pIdx].B = pickWeakForReverse(sSeed, rank) || BYE;
+        }
+
+        // Điền phần còn lại
+        for (let i = 0; i < resultPairs.length; i++) {
+          const p = resultPairs[i];
+          if (isBye(p.A) && isBye(p.B)) {
+            p.A = weakPool.shift() || BYE;
+            p.B = weakPool.shift() || BYE;
+          } else if (isBye(p.B)) {
+            p.B = weakPool.shift() || BYE;
+          }
+        }
+
+        // Hoán đổi cục bộ giảm tái đấu
+        const conflict = (pair) =>
+          !isBye(pair.A) && !isBye(pair.B) && _hasRematchPO(pair.A, pair.B, poN) ? 1 : 0;
+
+        let improved = true;
+        let iter = 0;
+        while (improved && iter < 20) {
+          improved = false;
+          iter++;
+          for (let i = 0; i < resultPairs.length; i++) {
+            for (let j = i + 1; j < resultPairs.length; j++) {
+              const p1 = resultPairs[i];
+              const p2 = resultPairs[j];
+              if (isBye(p1.A) || isBye(p2.A) || isBye(p1.B) || isBye(p2.B)) continue;
+
+              const cur = conflict(p1) + conflict(p2);
+              const swapP1 = { ...p1, B: p2.B };
+              const swapP2 = { ...p2, B: p1.B };
+              const sw = conflict(swapP1) + conflict(swapP2);
+
+              if (sw < cur) {
+                const tmp = p1.B;
+                p1.B = p2.B;
+                p2.B = tmp;
+                improved = true;
+              }
+            }
+          }
+        }
+
+        const finalPairs = fixDoubleByes(resultPairs);
+
+        const used = Math.min(capacity, strong.length + weak.length);
+        // if (used < capacity) {
+        //   toast.warning("Không đủ đội → đã chèn BYE & dàn đều để tránh BYE–BYE.");
+        // }
+        toast.success("Đã đổ seed: Ladder NGƯỢC (tránh tái đấu, ghép xa nhất)");
         return { drawSize: size, seeds: finalPairs };
       }
 
       // ====== Các cách cũ (default|cross|shift|random|lateFirst|interleave|pairSplit|snake) ======
-      // 1) Tạo linear theo phương án
       let linear = qualifiers.slice(0, capacity);
       switch (method) {
         case "lateFirst": {
-          // Ưu tiên winners ở vòng cao (Vmax → … → V1)
           const roundsDesc = [...roundsAsc].reverse();
           linear = [];
           for (const r of roundsDesc) linear.push(...(byRound.get(r) || []));
           break;
         }
         case "interleave": {
-          // Đan xen theo cột T: V1T1, V2T1, ..., rồi V1T2, V2T2, ...
           linear = [];
           const maxLen = Math.max(...roundsAsc.map((r) => (byRound.get(r) || []).length));
           for (let c = 0; c < maxLen; c++) {
@@ -1154,18 +1412,21 @@ export default function TournamentBlueprintPage() {
           break;
       }
 
-      // 2) Pair vào KO theo pairingMethod cũ + chặn BYE–BYE
       const pairingMethod = ["default", "cross", "shift", "random"].includes(method)
         ? method
         : "default";
-      const pairs = arrangeLinearIntoKO(linear, firstPairs, pairingMethod, seedKey);
+      const pairs = arrangeLinearIntoKO(
+        linear,
+        firstPairs,
+        pairingMethod,
+        String(tournamentId || "pt")
+      );
       const used = Math.min(capacity, linear.length);
       toast.success(`Đã đổ ${used}/${capacity} seed từ PO sang KO • Kiểu: ${method.toUpperCase()}`);
       return { drawSize: size, seeds: pairs };
     });
   };
 
-  /* ===== Đổ KO từ Vòng bảng (nhiều kiểu) ===== */
   /* ===== Đổ KO từ Vòng bảng (nhiều kiểu) ===== */
   const prefillKOfromGroups = (method = "default") => {
     const gIdx = stages.findIndex((s) => s.type === "group");
@@ -1227,7 +1488,7 @@ export default function TournamentBlueprintPage() {
         const pool = seededShuffle(ranks.flat(), seedKey + "_g");
         linear = pool;
       } else if (method === "snake") {
-        // Serpentine theo block hạng: rank1 G1→G2→...; rank2 đảo chiều; rank3 lại thuận;...
+        // Serpentine theo block hạng
         const rows = ranks.map((row, idx) => (idx % 2 === 0 ? row : row.slice().reverse()));
         linear = rows.flat();
       } else if (method === "pot") {
@@ -1258,7 +1519,7 @@ export default function TournamentBlueprintPage() {
         for (let j = 0; j < R.length; j++) if (!usedR.has(j)) linear.push(R[j]);
         linear.push(...othersFlat);
       } else if (method === "antiSameGroup") {
-        // Greedy để tránh cùng bảng tối đa: ưu tiên W vs R khác bảng
+        // Greedy để tránh cùng bảng tối đa
         const remW = [...winners];
         const remR = [...runners];
         while (remW.length) {
@@ -1271,7 +1532,7 @@ export default function TournamentBlueprintPage() {
         linear.push(...remR);
         linear.push(...othersFlat);
       } else {
-        // default – theo khối hạng: #1 toàn bộ bảng, rồi #2, #3…
+        // default – theo khối hạng
         linear = ranks.flat();
       }
 
@@ -1562,7 +1823,6 @@ export default function TournamentBlueprintPage() {
                         <MenuItem value="cross">So le (A1–B2, B1–A2)</MenuItem>
                         <MenuItem value="shift">Xoay lệch (#2 xoay nửa vòng)</MenuItem>
                         <MenuItem value="random">Ngẫu nhiên (khác bảng)</MenuItem>
-                        {/* --- mới thêm --- */}
                         <MenuItem value="snake">Serpentine (rank1 →, rank2 ← ...)</MenuItem>
                         <MenuItem value="pot">Rút “pot” (1 vs 2, tránh cùng bảng)</MenuItem>
                         <MenuItem value="antiSameGroup">Tránh cùng bảng tối đa</MenuItem>
@@ -1668,7 +1928,10 @@ export default function TournamentBlueprintPage() {
                       <MenuItem value="pairSplit">Tách lẻ/chẵn</MenuItem>
                       <MenuItem value="snake">Serpentine</MenuItem>
                       <MenuItem value="v1v2">Ưu tiên V1 vs V2 (hết V2 → BYE)</MenuItem>
-                      <MenuItem value="ladder">Ladder (1 vs N; top nhận BYE)</MenuItem>
+                      <MenuItem value="ladder">Ladder (giữ dáng + tránh tái đấu)</MenuItem>
+                      <MenuItem value="ladderReverse">
+                        Ladder ngược (tránh tái đấu, ghép xa nhất)
+                      </MenuItem>
                     </TextField>
 
                     <Button variant="outlined" onClick={() => prefillKOfromPO(po2KOMethod)}>
@@ -1892,7 +2155,6 @@ function normalizeSeedsKO(plan) {
   });
   return { drawSize: size, seeds };
 }
-
 function normalizeSeedsPO(plan) {
   const N = Math.max(0, Number(plan?.drawSize || 0));
   const firstPairs = Math.max(1, Math.ceil(N / 2));
