@@ -71,6 +71,7 @@ const viBracketType = (t) => {
     case "roundrobin":
       return "Vòng bảng";
     case "po":
+    case "roundElim":
       return "Playoff";
     case "knockout":
     case "ko":
@@ -82,10 +83,9 @@ const viBracketType = (t) => {
 
 const viFormat = (m) => viBracketType(m?.format || m?.bracket?.type);
 
-/** Lấy tên người chơi từ object người: ưu tiên fullName → nickName → name… */
+/** Lấy tên người chơi từ object người */
 const personLabel = (p) => {
   if (!p || typeof p !== "object") {
-    // Nếu chỉ là chuỗi ID thì tránh lộ full, cắt đuôi
     return typeof p === "string" ? `#${p.slice(-6)}` : "—";
   }
   return (
@@ -99,7 +99,7 @@ const personLabel = (p) => {
   );
 };
 
-/** Lấy tên đội (đôi/đơn). Không dùng p.player1.user (ID), mà dùng chính object player1/player2 */
+/** Lấy tên đội (đôi/đơn) */
 const pairLabel = (pair) => {
   if (!pair) return "—";
   if (pair.displayName || pair.name) return pair.displayName || pair.name;
@@ -108,7 +108,6 @@ const pairLabel = (pair) => {
   if (pair.player1) names.push(personLabel(pair.player1));
   if (pair.player2) names.push(personLabel(pair.player2));
 
-  // fallback participants[]
   if (!names.length && Array.isArray(pair.participants)) {
     for (const it of pair.participants) {
       names.push(personLabel(it?.user || it));
@@ -117,28 +116,42 @@ const pairLabel = (pair) => {
   return names.filter(Boolean).join(" & ") || "—";
 };
 
-/** Parse thẻ vòng từ m.round / m.rrRound / m.labelKey / m.code */
+/** Ưu tiên globalRound (API), nếu không có thì parse từ code/labelKey; luôn hiển thị V */
 const roundTag = (m) => {
   if (!m) return "";
-  if (isNum(m.rrRound)) return `V${m.rrRound}`;
-  if (isNum(m.round)) return `R${m.round}`;
-  if (typeof m.round === "string" && m.round) return m.round.toUpperCase();
+  // 1) globalRound từ API (đã cộng dồn theo bracket)
+  const gr = Number(m.globalRound);
+  if (Number.isFinite(gr) && gr > 0) return `V${gr}`;
 
-  const fromKey = (s) => {
+  // 2) từ code/labelKey: V{n} hoặc R{n}
+  const fromStr = (s) => {
     if (!s) return "";
-    const rr = /V(\d+)/i.exec(s);
-    if (rr) return `V${rr[1]}`;
-    const r = /R(\d+)/i.exec(s);
-    if (r) return `R${r[1]}`;
+    const mv = /V(\d+)/i.exec(s);
+    if (mv) return `V${mv[1]}`;
+    const mr = /R(\d+)/i.exec(s);
+    if (mr) return `V${mr[1]}`; // convert R -> V cho hiển thị
     return "";
   };
-  return fromKey(m.labelKey) || fromKey(m.code);
+  const byCode = fromStr(m.code) || fromStr(m.labelKey);
+  if (byCode) return byCode;
+
+  // 3) fallback local: rrRound/round (đổi R->V để nhất quán)
+  if (isNum(m.rrRound)) return `V${m.rrRound}`;
+  if (isNum(m.round)) return `V${m.round}`;
+  if (typeof m.round === "string" && m.round) {
+    const mr = /(\d+)/.exec(m.round);
+    if (mr) return `V${mr[1]}`;
+  }
+  return "";
 };
 
-/** Mã trận: ưu tiên labelKey → code → (tự sinh nếu cần) */
-const matchCode = (m) => m?.labelKey || m?.code || "";
+/** Mã trận: ưu tiên code do BE chuẩn hoá theo V */
+const matchCode = (m) => m?.globalCode || m?.code || m?.labelKey || "";
 
-/** Hiển thị tỉ số: hỗ trợ gameScores [{a,b}] hoặc [[a,b], ...] */
+/** T index: order + 1 (nếu có) */
+const matchTIndex = (m) => (isNum(m?.order) ? m.order + 1 : null);
+
+/** Hiển thị tỉ số */
 const scoresDisplay = (m) => {
   const arr = Array.isArray(m?.gameScores) ? m.gameScores : null;
   if (arr && arr.length) {
@@ -235,6 +248,7 @@ export default function AdminMatchDetailPage() {
   const code = match ? matchCode(match) : "";
   const teamA = pairLabel(match?.pairA);
   const teamB = pairLabel(match?.pairB);
+  const tIdx = matchTIndex(match);
 
   return (
     <DashboardLayout>
@@ -258,7 +272,7 @@ export default function AdminMatchDetailPage() {
 
           {statusChip}
           <Chip size="small" label={`Vòng: ${roundTag(match) || "—"}`} />
-          <Chip size="small" label={`Thứ tự: ${isNum(match?.order) ? match.order : "—"}`} />
+          <Chip size="small" label={`Thứ tự: ${tIdx ?? "—"}`} />
 
           {match?.ratingApplied && (
             <Chip
@@ -334,7 +348,6 @@ export default function AdminMatchDetailPage() {
               <Typography variant="body2">
                 Định dạng: <b>{viFormat(match)}</b>
               </Typography>
-              {/* Pool có thể không có trong data — chỉ hiển thị khi tồn tại */}
               {match?.pool && (
                 <Typography variant="body2">
                   Bảng: <b>{match?.pool?.name || match?.pool?.code || "—"}</b>
@@ -351,7 +364,6 @@ export default function AdminMatchDetailPage() {
             </Stack>
 
             <Stack spacing={0.5}>
-              {/* Cụm sân có thể không có trong data */}
               {match?.courtCluster && (
                 <Typography variant="body2">
                   <WorkspacePremiumIcon sx={{ fontSize: 16, mr: 0.5, mb: "-3px" }} />

@@ -9,14 +9,47 @@ import ReportsBarChart from "examples/Charts/BarCharts/ReportsBarChart";
 import ReportsLineChart from "examples/Charts/LineCharts/ReportsLineChart";
 import ComplexStatisticsCard from "examples/Cards/StatisticsCards/ComplexStatisticsCard";
 import Icon from "@mui/material/Icon";
+import Skeleton from "@mui/material/Skeleton";
+import LinearProgress from "@mui/material/LinearProgress";
 import { useMemo } from "react";
 
 import { useGetDashboardMetricsQuery, useGetDashboardSeriesQuery } from "slices/dashboardApiSlice";
 import { fillSeries, toBarLineDataset } from "./utils/chartTransforms.js";
 import PropTypes from "prop-types";
 
-// Simple Upcoming table
-function UpcomingCard({ items = [] }) {
+/* ============ Skeleton helpers ============ */
+function KpiSkeleton() {
+  return (
+    <Card>
+      <MDBox p={2}>
+        <MDBox mb={1}>
+          <Skeleton variant="text" width={120} height={20} />
+        </MDBox>
+        <Skeleton variant="rounded" height={28} width={80} />
+        <MDBox mt={1}>
+          <Skeleton variant="text" width={140} height={16} />
+        </MDBox>
+      </MDBox>
+    </Card>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <Card>
+      <MDBox p={2}>
+        <Skeleton variant="text" width="60%" height={24} />
+        <Skeleton variant="text" width="40%" height={16} />
+      </MDBox>
+      <MDBox px={2} pb={2}>
+        <Skeleton variant="rounded" height={260} />
+      </MDBox>
+    </Card>
+  );
+}
+
+/* ============ Simple Upcoming table ============ */
+function UpcomingCard({ items = [], loading = false }) {
   return (
     <Card>
       <MDBox p={2}>
@@ -25,7 +58,32 @@ function UpcomingCard({ items = [] }) {
         </MDBox>
       </MDBox>
       <MDBox px={2} pb={2}>
-        {items.length === 0 ? (
+        {loading ? (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th align="left">Tên</th>
+                <th align="left">Ngày</th>
+                <th align="right">Đã ĐK / Tối đa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...Array(3)].map((_, i) => (
+                <tr key={i}>
+                  <td style={{ padding: "8px 0" }}>
+                    <Skeleton variant="text" width="80%" />
+                  </td>
+                  <td>
+                    <Skeleton variant="text" width={110} />
+                  </td>
+                  <td align="right">
+                    <Skeleton variant="text" width={80} style={{ marginLeft: "auto" }} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : items.length === 0 ? (
           <MDBox color="text" fontSize={14}>
             Không có giải sắp tới
           </MDBox>
@@ -57,8 +115,8 @@ function UpcomingCard({ items = [] }) {
   );
 }
 
-// Simple TODOs card
-function TodosCard({ todos }) {
+/* ============ Simple TODOs card ============ */
+function TodosCard({ todos, loading = false }) {
   const rows = [
     { icon: "sports", label: "Trận chưa gán trọng tài", value: todos?.needReferee ?? 0 },
     { icon: "how_to_reg", label: "Đăng ký chờ duyệt", value: todos?.pendingApprovals ?? 0 },
@@ -73,21 +131,37 @@ function TodosCard({ todos }) {
         </MDBox>
       </MDBox>
       <MDBox px={2} pb={2}>
-        {rows.map((r) => (
-          <MDBox
-            key={r.label}
-            display="flex"
-            alignItems="center"
-            justifyContent="space-between"
-            py={1}
-          >
-            <MDBox display="flex" alignItems="center" gap={1}>
-              <Icon fontSize="small">{r.icon}</Icon>
-              <span>{r.label}</span>
-            </MDBox>
-            <MDBox fontWeight="bold">{r.value}</MDBox>
-          </MDBox>
-        ))}
+        {loading
+          ? [...Array(rows.length)].map((_, i) => (
+              <MDBox
+                key={i}
+                display="flex"
+                alignItems="center"
+                justifyContent="space-between"
+                py={1}
+              >
+                <MDBox display="flex" alignItems="center" gap={1}>
+                  <Skeleton variant="circular" width={20} height={20} />
+                  <Skeleton variant="text" width={180} />
+                </MDBox>
+                <Skeleton variant="text" width={30} />
+              </MDBox>
+            ))
+          : rows.map((r) => (
+              <MDBox
+                key={r.label}
+                display="flex"
+                alignItems="center"
+                justifyContent="space-between"
+                py={1}
+              >
+                <MDBox display="flex" alignItems="center" gap={1}>
+                  <Icon fontSize="small">{r.icon}</Icon>
+                  <span>{r.label}</span>
+                </MDBox>
+                <MDBox fontWeight="bold">{r.value}</MDBox>
+              </MDBox>
+            ))}
       </MDBox>
     </Card>
   );
@@ -130,126 +204,160 @@ function Dashboard() {
     return toBarLineDataset({ title: "Trận hoàn tất/ngày", labels, data });
   }, [series]);
 
+  const anyLoading = mLoading || sLoading;
+
   return (
     <DashboardLayout>
       <DashboardNavbar />
+      {/* {anyLoading && <LinearProgress />} */}
       <MDBox py={3}>
         <Grid container spacing={3}>
+          {/* KPI cards */}
           <Grid item xs={12} md={6} lg={3}>
             <MDBox mb={1.5}>
-              <ComplexStatisticsCard
-                color="dark"
-                icon="emoji_events"
-                title="Giải đang mở"
-                count={mLoading ? "-" : openTournaments}
-                percentage={{
-                  color: openDelta >= 0 ? "success" : "error",
-                  amount: `${openDelta >= 0 ? "+" : ""}${openDelta}%`,
-                  label: "so với tuần trước",
-                }}
-              />
+              {mLoading ? (
+                <KpiSkeleton />
+              ) : (
+                <ComplexStatisticsCard
+                  color="dark"
+                  icon="emoji_events"
+                  title="Giải đang mở"
+                  count={openTournaments}
+                  percentage={{
+                    color: openDelta >= 0 ? "success" : "error",
+                    amount: `${openDelta >= 0 ? "+" : ""}${openDelta}%`,
+                    label: "so với tuần trước",
+                  }}
+                />
+              )}
             </MDBox>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
             <MDBox mb={1.5}>
-              <ComplexStatisticsCard
-                icon="assignment_ind"
-                title="Đăng ký hôm nay"
-                count={mLoading ? "-" : regsToday}
-                percentage={{
-                  color: regsDelta >= 0 ? "success" : "error",
-                  amount: `${regsDelta >= 0 ? "+" : ""}${regsDelta}%`,
-                  label: "so với hôm qua",
-                }}
-              />
+              {mLoading ? (
+                <KpiSkeleton />
+              ) : (
+                <ComplexStatisticsCard
+                  icon="assignment_ind"
+                  title="Đăng ký hôm nay"
+                  count={regsToday}
+                  percentage={{
+                    color: regsDelta >= 0 ? "success" : "error",
+                    amount: `${regsDelta >= 0 ? "+" : ""}${regsDelta}%`,
+                    label: "so với hôm qua",
+                  }}
+                />
+              )}
             </MDBox>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
             <MDBox mb={1.5}>
-              <ComplexStatisticsCard
-                color="success"
-                icon="live_tv"
-                title="Trận đang diễn ra"
-                count={mLoading ? "-" : String(liveMatches)}
-                percentage={{ color: "success", amount: "", label: "Cập nhật" }}
-              />
+              {mLoading ? (
+                <KpiSkeleton />
+              ) : (
+                <ComplexStatisticsCard
+                  color="success"
+                  icon="live_tv"
+                  title="Trận đang diễn ra"
+                  count={String(liveMatches)}
+                  percentage={{ color: "success", amount: "", label: "Cập nhật" }}
+                />
+              )}
             </MDBox>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
             <MDBox mb={1.5}>
-              <ComplexStatisticsCard
-                color="primary"
-                icon="sports_handball"
-                title="Chưa gán trọng tài"
-                count={mLoading ? "-" : String(unassigned)}
-                percentage={{ color: "error", amount: "", label: "Cần xử lý" }}
-              />
+              {mLoading ? (
+                <KpiSkeleton />
+              ) : (
+                <ComplexStatisticsCard
+                  color="primary"
+                  icon="sports_handball"
+                  title="Chưa gán trọng tài"
+                  count={String(unassigned)}
+                  percentage={{ color: "error", amount: "", label: "Cần xử lý" }}
+                />
+              )}
             </MDBox>
           </Grid>
         </Grid>
 
+        {/* Charts */}
         <MDBox mt={4.5}>
           <Grid container spacing={3}>
             <Grid item xs={12} md={6} lg={4}>
               <MDBox mb={3}>
-                <ReportsBarChart
-                  color="info"
-                  title="Đăng ký theo ngày"
-                  description="30 ngày gần nhất"
-                  date={
-                    series?.updatedAt
-                      ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
-                      : ""
-                  }
-                  chart={barRegs || { labels: [], datasets: { label: "", data: [] } }}
-                />
+                {sLoading || !barRegs ? (
+                  <ChartSkeleton />
+                ) : (
+                  <ReportsBarChart
+                    color="info"
+                    title="Đăng ký theo ngày"
+                    description="30 ngày gần nhất"
+                    date={
+                      series?.updatedAt
+                        ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
+                        : ""
+                    }
+                    chart={barRegs}
+                  />
+                )}
               </MDBox>
             </Grid>
 
             <Grid item xs={12} md={6} lg={4}>
               <MDBox mb={3}>
-                <ReportsLineChart
-                  color="success"
-                  title="Người dùng mới"
-                  description="30 ngày gần nhất"
-                  date={
-                    series?.updatedAt
-                      ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
-                      : ""
-                  }
-                  chart={lineUsers || { labels: [], datasets: { label: "", data: [] } }}
-                />
+                {sLoading || !lineUsers ? (
+                  <ChartSkeleton />
+                ) : (
+                  <ReportsLineChart
+                    color="success"
+                    title="Người dùng mới"
+                    description="30 ngày gần nhất"
+                    date={
+                      series?.updatedAt
+                        ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
+                        : ""
+                    }
+                    chart={lineUsers}
+                  />
+                )}
               </MDBox>
             </Grid>
 
             <Grid item xs={12} md={6} lg={4}>
               <MDBox mb={3}>
-                <ReportsLineChart
-                  color="dark"
-                  title="Trận hoàn tất"
-                  description="30 ngày gần nhất"
-                  date={
-                    series?.updatedAt
-                      ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
-                      : ""
-                  }
-                  chart={lineFinished || { labels: [], datasets: { label: "", data: [] } }}
-                />
+                {sLoading || !lineFinished ? (
+                  <ChartSkeleton />
+                ) : (
+                  <ReportsLineChart
+                    color="dark"
+                    title="Trận hoàn tất"
+                    description="30 ngày gần nhất"
+                    date={
+                      series?.updatedAt
+                        ? `cập nhật ${new Date(series.updatedAt).toLocaleString()}`
+                        : ""
+                    }
+                    chart={lineFinished}
+                  />
+                )}
               </MDBox>
             </Grid>
           </Grid>
         </MDBox>
 
+        {/* Lists */}
         <MDBox>
           <Grid container spacing={3}>
             <Grid item xs={12} md={6} lg={8}>
-              <UpcomingCard items={metrics?.upcoming || []} />
+              <UpcomingCard items={metrics?.upcoming || []} loading={mLoading} />
             </Grid>
             <Grid item xs={12} md={6} lg={4}>
-              <TodosCard todos={metrics?.todos} />
+              <TodosCard todos={metrics?.todos} loading={mLoading} />
             </Grid>
           </Grid>
         </MDBox>
@@ -261,10 +369,11 @@ function Dashboard() {
 
 export default Dashboard;
 
+/* ===== PropTypes ===== */
 UpcomingCard.propTypes = {
   items: PropTypes.arrayOf(
     PropTypes.shape({
-      _id: PropTypes.oneOfType([PropTypes.string, PropTypes.object]), // object nếu là ObjectId
+      _id: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
       name: PropTypes.string,
       startDate: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
       endDate: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
@@ -274,10 +383,12 @@ UpcomingCard.propTypes = {
       registered: PropTypes.number,
     })
   ),
+  loading: PropTypes.bool,
 };
 
 UpcomingCard.defaultProps = {
   items: [],
+  loading: false,
 };
 
 TodosCard.propTypes = {
@@ -287,6 +398,7 @@ TodosCard.propTypes = {
     pendingKyc: PropTypes.number,
     incidents: PropTypes.number,
   }),
+  loading: PropTypes.bool,
 };
 
 TodosCard.defaultProps = {
@@ -296,4 +408,5 @@ TodosCard.defaultProps = {
     pendingKyc: 0,
     incidents: 0,
   },
+  loading: false,
 };

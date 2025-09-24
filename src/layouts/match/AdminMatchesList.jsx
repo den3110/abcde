@@ -55,19 +55,148 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import PropTypes from "prop-types";
 
 /* ========= helpers ========= */
+const toNum = (v, d = null) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : d;
+};
+
 const maskPhone = (p) => {
   if (!p) return "—";
   const s = String(p).replace(/\D/g, "");
   if (s.length < 7) return p;
   return `${s}`;
 };
-const isSinglesMatch = (m) => !m?.pairA?.player2 && !m?.pairB?.player2;
+
+// Ưu tiên nickname
+const preferNick = (obj) =>
+  (obj?.nickname && String(obj.nickname).trim()) ||
+  (obj?.nickName && String(obj.nickName).trim()) ||
+  (obj?.nick_name && String(obj.nick_name).trim()) ||
+  "";
+
+// Lấy label người chơi (ưu tiên nickname)
+const personLabel = (p) => {
+  if (!p || typeof p !== "object") return "—";
+  return (
+    preferNick(p) ||
+    p.displayName ||
+    p.name ||
+    p.fullName ||
+    (p.user && typeof p.user === "string" ? `#${p.user.slice(-6)}` : "—")
+  );
+};
+
+// Nhận diện singles: ưu tiên theo eventType, fallback theo việc có player2
+const isSinglesFromObj = (obj) => {
+  const et = String(obj?.tournament?.eventType || obj?.eventType || "").toLowerCase();
+  if (et === "single" || et === "singles") return true;
+  if (et === "double" || et === "doubles") return false;
+
+  const hasP2A = !!obj?.pairA?.player2;
+  const hasP2B = !!obj?.pairB?.player2;
+  return !(hasP2A || hasP2B);
+};
+
+// Label đội
 const sideLabel = (pair, singles) => {
   if (!pair) return "—";
-  const n1 = pair.player1?.fullName || pair.player1?.name || "—";
+  const n1 = personLabel(pair.player1);
   if (singles) return n1;
-  const n2 = pair.player2?.fullName || pair.player2?.name || "—";
+  const n2 = personLabel(pair.player2);
   return `${n1} & ${n2}`;
+};
+
+const isGroupType = (t) => {
+  const s = String(t || "").toLowerCase();
+  return s === "group" || s === "roundrobin";
+};
+
+// Tính mã hiển thị V…-T… (ưu tiên global*)
+const matchCodeV = (m) => {
+  const isGroup = isGroupType(m?.bracket?.type);
+  const v = Number.isFinite(m?.globalRound)
+    ? Number(m.globalRound)
+    : isGroup
+    ? 1
+    : Number.isFinite(m?.round)
+    ? Number(m.round)
+    : 1;
+  const tIdx = Number.isFinite(m?.order) ? m.order + 1 : null;
+  return m?.globalCode || `V${v}${tIdx ? `-T${tIdx}` : ""}`;
+};
+
+/* ====== Base V theo groups (fallback khi dialog không có global*) ====== */
+const roundsCountFromGroupBracket = (b) => {
+  if (!b) return 1;
+  if (isGroupType(b.type)) return 1;
+  const cands = [
+    b.rounds,
+    b.maxRounds,
+    b.drawRounds,
+    b?.meta?.maxRounds,
+    b?.config?.roundElim?.maxRounds,
+  ]
+    .map((x) => Number(x))
+    .filter((x) => Number.isFinite(x) && x > 0);
+  return cands.length ? Math.max(...cands) : 1;
+};
+
+const buildBaseMapByTournament = (groups) => {
+  // Map<tourId, Map<bracketId, baseStart>>
+  const out = new Map();
+  (groups || []).forEach((g) => {
+    const arr = (g.brackets || []).slice().sort((a, b) => {
+      const sa = toNum(a?.stage, 9999);
+      const sb = toNum(b?.stage, 9999);
+      if (sa !== sb) return sa - sb;
+      const oa = toNum(a?.order, 9999);
+      const ob = toNum(b?.order, 9999);
+      if (oa !== ob) return oa - ob;
+      return String(a.bracketId).localeCompare(String(b.bracketId));
+    });
+
+    let acc = 0;
+    const m = new Map();
+    arr.forEach((b) => {
+      m.set(String(b.bracketId), acc + 1);
+      acc += roundsCountFromGroupBracket(b);
+    });
+    out.set(String(g.tournamentId), m);
+  });
+  return out;
+};
+
+const globalRoundFromDetail = (detail, groupsBaseMaps) => {
+  if (!detail) return null;
+  if (Number.isFinite(detail?.globalRound)) return Number(detail.globalRound);
+
+  const tId =
+    String(detail?.tournament?._id || detail?.tournamentId || detail?.tournament || "") || "";
+  const bId = String(detail?.bracket?._id || detail?.bracketId || detail?.bracket || "") || "";
+  const baseMap = groupsBaseMaps.get(tId);
+  const base = baseMap?.get(bId) || 1;
+
+  const type = detail?.bracket?.type;
+  if (isGroupType(type)) return base;
+
+  const local = Number.isFinite(detail?.round) ? Number(detail.round) : 1;
+  return base + (local - 1);
+};
+
+const codeFromDetail = (detail, groupsBaseMaps, hint) => {
+  if (!detail) return "";
+  if (detail?.globalCode) return detail.globalCode;
+
+  // hint từ list (khi click card)
+  if (hint?.code) return hint.code;
+
+  const v =
+    (Number.isFinite(detail?.globalRound) ? Number(detail.globalRound) : null) ??
+    globalRoundFromDetail(detail, groupsBaseMaps) ??
+    1;
+
+  const ord = Number.isFinite(detail?.order) ? Number(detail.order) + 1 : null;
+  return `V${v}${ord ? `-T${ord}` : ""}`;
 };
 
 /* -------- BracketSection: gọi API theo trang ở BE -------- */
@@ -96,7 +225,6 @@ const BracketSection = memo(function BracketSection({
 
   const total = data?.total || 0;
   const listRaw = data?.list || [];
-  // Lọc client-side fallback nếu BE không hỗ trợ status (không hại nếu có)
   const list =
     statusFilter && statusFilter !== "all"
       ? listRaw.filter((m) => (m?.status || "").toLowerCase() === statusFilter)
@@ -178,10 +306,13 @@ const BracketSection = memo(function BracketSection({
       ) : (
         <Stack spacing={1}>
           {list.map((m) => {
-            const singles = isSinglesMatch(m);
+            const singles = isSinglesFromObj(m);
             const labelA = sideLabel(m?.pairA, singles);
             const labelB = sideLabel(m?.pairB, singles);
             const isHL = highlightId === m._id;
+
+            const code = matchCodeV(m);
+
             return (
               <Card
                 key={m._id}
@@ -198,9 +329,12 @@ const BracketSection = memo(function BracketSection({
               >
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Box>
+                    {/* Dòng tiêu đề: mã V…-T… + cặp đấu (hiển thị theo nickname) */}
                     <Typography>
-                      Vòng {m.round}: <strong>{labelA}</strong> vs <strong>{labelB}</strong>
+                      <strong>{code}</strong>: <strong>{labelA}</strong> vs{" "}
+                      <strong>{labelB}</strong>
                     </Typography>
+
                     <Typography variant="caption" color="text.secondary">
                       Trạng thái:{" "}
                       {m.status === "scheduled"
@@ -217,7 +351,7 @@ const BracketSection = memo(function BracketSection({
                       {m?.rules?.winByTwo ? "phải hơn 2 điểm" : "không cần hơn 2 điểm"})
                     </Typography>
                     <Typography variant="caption" display="block" color="text.secondary">
-                      Trọng tài: {m?.referee?.name || "Chưa phân"}
+                      Trọng tài: {preferNick(m?.referee) || m?.referee?.name || "Chưa phân"}
                     </Typography>
                     <Typography variant="caption" display="block" color="text.secondary">
                       _id: {m._id}
@@ -225,7 +359,20 @@ const BracketSection = memo(function BracketSection({
                   </Box>
                   <Stack direction="row" spacing={1}>
                     <Tooltip title="Chi tiết">
-                      <IconButton onClick={() => onOpenDetail(m._id)} size="small">
+                      <IconButton
+                        onClick={() =>
+                          onOpenDetail({
+                            id: m._id,
+                            code, // hint cho dialog
+                            round: Number.isFinite(m?.globalRound)
+                              ? Number(m.globalRound)
+                              : Number.isFinite(m?.round)
+                              ? Number(m.round)
+                              : 1,
+                          })
+                        }
+                        size="small"
+                      >
                         <InfoIcon />
                       </IconButton>
                     </Tooltip>
@@ -271,6 +418,9 @@ export default function AdminMatchesListGrouped() {
     error: groupsError,
   } = useListMatchGroupsQuery({});
 
+  // Base map cho toàn bộ tournaments (fallback dialog)
+  const baseMapsByTour = useMemo(() => buildBaseMapByTournament(groups), [groups]);
+
   // filter state (tournament / bracket / status)
   const [tourFilter, setTourFilter] = useState("all");
   const [bracketFilter, setBracketFilter] = useState("all");
@@ -289,6 +439,8 @@ export default function AdminMatchesListGrouped() {
   // dialog state
   const [assignDlg, setAssignDlg] = useState(null); // { match, refereeId }
   const [detailId, setDetailId] = useState(null); // match._id
+  const [detailHint, setDetailHint] = useState(null); // { code, round } từ list (nếu có)
+
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
 
@@ -341,10 +493,10 @@ export default function AdminMatchesListGrouped() {
     if (bId) setBracketFilter(String(bId));
     setHighlightId(foundMatch._id);
 
-    // mở dialog chi tiết ngay cho tiện
+    // mở dialog chi tiết ngay
     setDetailId(foundMatch._id);
+    setDetailHint(null); // không có hint từ list khi đi đường search
 
-    // cố gắng scroll tới card (nếu đang render)
     setTimeout(() => {
       const el = document.getElementById(`match-${foundMatch._id}`);
       if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -370,7 +522,6 @@ export default function AdminMatchesListGrouped() {
     if (tourFilter !== "all") {
       gs = gs.filter((g) => String(g.tournamentId) === String(tourFilter));
     }
-    // map để lọc bracket bên trong
     if (bracketFilter !== "all") {
       gs = gs
         .map((g) => ({
@@ -401,7 +552,6 @@ export default function AdminMatchesListGrouped() {
 
   const bracketOptions = useMemo(() => {
     if (tourFilter === "all") {
-      // gom tất cả bracket (ít dùng) – nhưng vẫn cho "all"
       const all = [];
       groups.forEach((g) =>
         g.brackets.forEach((b) =>
@@ -421,11 +571,21 @@ export default function AdminMatchesListGrouped() {
     error: detailError,
   } = useGetMatchQuery(detailId, { skip: !detailId });
 
-  const singlesDetail = useMemo(
-    () => (!detail ? false : !detail?.pairA?.player2 && !detail?.pairB?.player2),
-    [detail]
-  );
+  const singlesDetail = useMemo(() => (detail ? isSinglesFromObj(detail) : false), [detail]);
   const entityWord = singlesDetail ? "VĐV" : "Đôi";
+
+  // ----- Mã trận/round chuẩn cho dialog (fix) -----
+  const dialogCode = useMemo(
+    () => (detail ? codeFromDetail(detail, baseMapsByTour, detailHint) : ""),
+    [detail, baseMapsByTour, detailHint]
+  );
+
+  const dialogRound = useMemo(() => {
+    if (!detail) return null;
+    if (Number.isFinite(detail?.globalRound)) return Number(detail.globalRound);
+    if (Number.isFinite(detailHint?.round)) return Number(detailHint.round);
+    return globalRoundFromDetail(detail, baseMapsByTour);
+  }, [detail, detailHint, baseMapsByTour]);
 
   return (
     <DashboardLayout>
@@ -598,7 +758,16 @@ export default function AdminMatchesListGrouped() {
                       bracketName={b.bracketName}
                       expanded={expanded}
                       onOpenAssign={openAssign}
-                      onOpenDetail={setDetailId}
+                      onOpenDetail={(payload) => {
+                        // payload: { id, code, round } từ list
+                        if (payload && typeof payload === "object") {
+                          setDetailId(payload.id);
+                          setDetailHint({ code: payload.code, round: payload.round });
+                        } else {
+                          setDetailId(payload);
+                          setDetailHint(null);
+                        }
+                      }}
                       highlightId={highlightId}
                       statusFilter={statusFilter}
                     />
@@ -633,7 +802,7 @@ export default function AdminMatchesListGrouped() {
               </MenuItem>
               {users.users.map((u) => (
                 <MenuItem key={u._id} value={u._id}>
-                  {u.name} {u.nickname ? `(${u.nickname})` : ""}
+                  {preferNick(u) || u.name || "—"}
                 </MenuItem>
               ))}
             </Select>
@@ -662,7 +831,8 @@ export default function AdminMatchesListGrouped() {
           ) : detail ? (
             <>
               <Typography variant="h6" gutterBottom>
-                {detail?.tournament?.name} • {detail?.bracket?.name} • Vòng {detail?.round}
+                {detail?.tournament?.name} • {detail?.bracket?.name} • {dialogCode}
+                {dialogRound ? ` • Vòng V${dialogRound}` : ""}
               </Typography>
               <Divider sx={{ mb: 2 }} />
               <Grid container spacing={2}>
@@ -676,7 +846,6 @@ export default function AdminMatchesListGrouped() {
                           {title}
                         </Typography>
 
-                        {/* dòng chính tên */}
                         <Stack direction="row" spacing={2} alignItems="center" mb={1}>
                           <Avatar sx={{ width: 48, height: 48 }} />
                           <Box>
@@ -691,7 +860,6 @@ export default function AdminMatchesListGrouped() {
                           </Box>
                         </Stack>
 
-                        {/* điểm đăng ký */}
                         <Typography variant="body2" color="text.secondary">
                           {singlesDetail ? (
                             <>Điểm đăng ký: {p?.player1?.score ?? "—"}</>
@@ -758,7 +926,12 @@ export default function AdminMatchesListGrouped() {
                     : "Chưa xác định"}
                 </Typography>
                 <Typography>
-                  <strong>Trọng tài:</strong> {detail?.referee?.name || "Chưa phân"}
+                  <strong>Trọng tài:</strong>{" "}
+                  {preferNick(detail?.referee) || detail?.referee?.name || "Chưa phân"}
+                </Typography>
+                <Typography>
+                  <strong>Mã trận (V/T):</strong> {dialogCode}
+                  {dialogRound ? ` • Vòng: V${dialogRound}` : ""}
                 </Typography>
                 <Typography>
                   <strong>Match _id:</strong> {detail?._id}

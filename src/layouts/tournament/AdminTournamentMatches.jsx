@@ -39,19 +39,24 @@ import {
 
 /* ---------------- helpers ---------------- */
 const idOf = (x) => String(x?._id ?? x ?? "");
+const toNum = (v, dflt = null) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : dflt;
+};
+
 const normType = (t) => {
   const s = String(t || "").toLowerCase();
   if (s === "single" || s === "singles") return "single";
   if (s === "double" || s === "doubles") return "double";
   return "double";
 };
+
 const maskPhone = (p) => {
   const s = String(p || "");
-  if (s.length < 6) return s || "—";
-  const head = s.slice(0, 3);
-  const tail = s.slice(-3);
+  if (!s) return "—";
   return `${s}`;
 };
+
 const statusChip = (s) =>
   s === "live"
     ? { color: "warning", label: "Đang diễn ra" }
@@ -59,23 +64,114 @@ const statusChip = (s) =>
     ? { color: "success", label: "Đã kết thúc" }
     : { color: "default", label: "Chưa diễn ra" };
 
+/* ==== Ưu tiên nickname ==== */
+const preferNick = (obj) =>
+  (obj?.nickname && String(obj.nickname).trim()) ||
+  (obj?.nickName && String(obj.nickName).trim()) ||
+  (obj?.nick_name && String(obj.nick_name).trim()) ||
+  "";
+
+const nameWithNick = (p) => {
+  if (!p) return "—";
+  return preferNick(p) || p.fullName || p.name || "N/A";
+};
+
 const pairLabel = (reg, eventType = "double") => {
   if (!reg) return "—";
-  const p1 = reg.player1?.fullName || reg.player1?.name || "N/A";
-  const p2 = reg.player2?.fullName || reg.player2?.name || "";
+  const p1 = nameWithNick(reg.player1);
+  const p2 = reg.player2 ? nameWithNick(reg.player2) : "";
   return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
 };
 
-const sideLabel = (m, side, eventType) => {
-  const pair = side === "A" ? m?.pairA : m?.pairB;
-  if (pair) return pairLabel(pair, eventType);
-  const prev = side === "A" ? m?.previousA : m?.previousB;
-  if (prev) {
-    const r = prev.round ?? "?";
-    const idx = (prev.order ?? 0) + 1;
-    return `Winner of R${r} #${idx}`;
+/* ====== TÍNH VÒNG CỘNG DỒN (V) GIỮA CÁC BRACKET ======
+   - Mỗi bracket: số vòng = max(round) quan sát được trong dữ liệu của bracket; nếu type=group => 1
+   - Thứ tự bracket trong 1 giải: stage ↑, rồi order ↑, rồi _id
+   - baseStart (1-based) của bracket = 1 + tổng số vòng của các bracket trước
+   - globalRound = baseStart + (localRound - 1); với group => localRound coi là 1
+*/
+const roundsCountObserved = (brType, matches) => {
+  const type = String(brType || "").toLowerCase();
+  if (type === "group" || type === "roundrobin") return 1;
+  let mx = 0;
+  for (const m of matches) {
+    mx = Math.max(mx, toNum(m?.round, 0) || 0);
   }
-  return "—";
+  return Math.max(1, mx || 1);
+};
+
+const buildBracketBaseMap = (allMatchesOfTournament) => {
+  // Gom theo bracketId
+  const buckets = new Map();
+  for (const m of allMatchesOfTournament) {
+    const bId = idOf(m.bracket);
+    if (!bId) continue;
+    if (!buckets.has(bId)) buckets.set(bId, { meta: m.bracket || {}, arr: [] });
+    buckets.get(bId).arr.push(m);
+  }
+
+  // Chuẩn hoá list bracket có kèm stage/order để sort
+  const items = [];
+  for (const [bId, { meta, arr }] of buckets.entries()) {
+    const stage = toNum(meta?.stage, 9999);
+    const order = toNum(meta?.order, 9999);
+    const type = meta?.type || "";
+    const name = meta?.name || "";
+    const rounds = roundsCountObserved(type, arr);
+    items.push({ bId, stage, order, type, name, rounds });
+  }
+
+  // Sort và tính baseStart
+  items.sort((a, b) => {
+    if (a.stage !== b.stage) return a.stage - b.stage;
+    if (a.order !== b.order) return a.order - b.order;
+    return String(a.bId).localeCompare(String(b.bId));
+  });
+
+  const baseMap = new Map(); // bracketId -> baseStart (1-based)
+  let acc = 0;
+  for (const it of items) {
+    baseMap.set(it.bId, acc + 1);
+    acc += it.rounds;
+  }
+  return baseMap;
+};
+
+const globalRoundOf = (m, baseMap) => {
+  const br = m?.bracket || {};
+  const bid = idOf(br);
+  const base = toNum(baseMap.get(bid), 1) || 1;
+
+  const type = String(br?.type || "").toLowerCase();
+  if (type === "group" || type === "roundrobin") return base;
+
+  const local = toNum(m?.round, 1) || 1;
+  return base + (local - 1);
+};
+
+// Tính mã hiển thị chuẩn V…-T… (ưu tiên globalCode từ BE)
+const matchCodeVT = (m, baseMap) => {
+  if (m?.globalCode) return m.globalCode;
+
+  const v = toNum(m?.globalRound) ?? globalRoundOf(m, baseMap);
+
+  const ord = toNum(m?.order);
+  const t = ord !== null ? ord + 1 : null;
+
+  return `V${v}${t ? `-T${t}` : ""}`;
+};
+
+/* Winner label theo V/T (cùng bracket) */
+const winnerOfText = (m, side, baseMap) => {
+  const prev = side === "A" ? m?.previousA : m?.previousB;
+  if (!prev) return "—";
+  const br = m?.bracket || {};
+  const bid = idOf(br);
+  const base = toNum(baseMap.get(bid), 1) || 1;
+  const type = String(br?.type || "").toLowerCase();
+  const localPrev = toNum(prev.round, type === "group" ? 1 : 1) || 1;
+  const v = type === "group" || type === "roundrobin" ? base : base + (localPrev - 1);
+  const t = toNum(prev.order) !== null ? toNum(prev.order) + 1 : "?";
+  return `Winner of V${v}-T${t}`;
 };
 
 /* ---------------- component ---------------- */
@@ -127,14 +223,23 @@ export default function AdminTournamentMatches() {
   }, [mtsError]);
 
   // 5. Filter & group matches by bracket within this tournament
+  const matchesOfTour = useMemo(
+    () => (allMatches || []).filter((m) => idOf(m?.tournament) === idOf(tournamentId)),
+    [allMatches, tournamentId]
+  );
+
+  // Base round per bracket (cho toàn giải này)
+  const baseMap = useMemo(() => buildBracketBaseMap(matchesOfTour), [matchesOfTour]);
+
   const grouped = useMemo(() => {
-    const filtered = (allMatches || []).filter((m) => idOf(m?.tournament) === idOf(tournamentId));
-    // sort by bracket.order, then round, then order
+    const filtered = matchesOfTour.slice();
+    // sort by bracket.stage, bracket.order, then round, then order
     filtered.sort(
       (a, b) =>
-        (a?.bracket?.order ?? 0) - (b?.bracket?.order ?? 0) ||
-        (a?.round ?? 1) - (b?.round ?? 1) ||
-        (a?.order ?? 0) - (b?.order ?? 0)
+        toNum(a?.bracket?.stage, 9999) - toNum(b?.bracket?.stage, 9999) ||
+        toNum(a?.bracket?.order, 9999) - toNum(b?.bracket?.order, 9999) ||
+        toNum(a?.round, 1) - toNum(b?.round, 1) ||
+        toNum(a?.order, 0) - toNum(b?.order, 0)
     );
     const map = {};
     filtered.forEach((m) => {
@@ -150,12 +255,23 @@ export default function AdminTournamentMatches() {
       map[bId].matches.push(m);
     });
     return map;
-  }, [allMatches, tournamentId]);
+  }, [matchesOfTour]);
 
   const refresh = () => {
     refetchAll();
     if (detailId) refetchDetail();
   };
+
+  // side label with nick & winner text in V/T
+  const sideLabelVT = (m, side, eventType) => {
+    const pair = side === "A" ? m?.pairA : m?.pairB;
+    if (pair) return pairLabel(pair, eventType);
+    return winnerOfText(m, side, baseMap);
+  };
+
+  // dialog helpers
+  const dialogCode = detail ? matchCodeVT(detail, baseMap) : "";
+  const dialogRound = detail ? toNum(detail?.globalRound) ?? globalRoundOf(detail, baseMap) : null;
 
   return (
     <DashboardLayout>
@@ -202,26 +318,27 @@ export default function AdminTournamentMatches() {
               <Stack spacing={1}>
                 {matches.map((m) => {
                   const chip = statusChip(m?.status);
+                  const code = matchCodeVT(m, baseMap);
                   return (
                     <Card key={m._id} sx={{ p: 2 }}>
                       <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <Box>
                           <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
                             <Typography variant="subtitle2" fontWeight={700}>
-                              R{m.round ?? 1} • #{m.order ?? 0}
+                              {code}
                             </Typography>
                             <Chip size="small" color={chip.color} label={chip.label} />
                           </Stack>
                           <Typography>
-                            <strong>{sideLabel(m, "A", eventType)}</strong>
+                            <strong>{sideLabelVT(m, "A", eventType)}</strong>
                             <span style={{ opacity: 0.6 }}> &nbsp;vs&nbsp; </span>
-                            <strong>{sideLabel(m, "B", eventType)}</strong>
+                            <strong>{sideLabelVT(m, "B", eventType)}</strong>
                           </Typography>
                           <Typography variant="caption" color="text.secondary" display="block">
                             Best-of {m?.rules?.bestOf ?? "-"}, tới {m?.rules?.pointsToWin ?? "-"}{" "}
                             {m?.rules?.winByTwo ? "(chênh 2)" : ""}
-                            {m?.referee?.name
-                              ? ` • Trọng tài: ${m.referee.name}`
+                            {m?.referee?.nickname || m?.referee?.name
+                              ? ` • Trọng tài: ${m?.referee?.nickname || m?.referee?.name}`
                               : " • Trọng tài: —"}
                           </Typography>
                         </Box>
@@ -255,8 +372,8 @@ export default function AdminTournamentMatches() {
               <Typography variant="h6" gutterBottom>
                 {detail?.tournament?.name} • {detail?.bracket?.name} (
                 {detail?.bracket?.type === "group" ? "Vòng bảng" : "Knockout"}) • Stage{" "}
-                {detail?.bracket?.stage ?? "-"} • Vòng {detail?.round ?? "-"} • #
-                {detail?.order ?? 0}
+                {detail?.bracket?.stage ?? "-"} • Mã: {dialogCode}
+                {dialogRound ? ` • Vòng V${dialogRound}` : ""}
               </Typography>
               <Divider sx={{ mb: 2 }} />
 
@@ -364,7 +481,8 @@ export default function AdminTournamentMatches() {
                     : "Chưa xác định"}
                 </Typography>
                 <Typography>
-                  <strong>Trọng tài:</strong> {detail?.referee?.name || "—"}
+                  <strong>Trọng tài:</strong>{" "}
+                  {detail?.referee?.nickname || detail?.referee?.name || "—"}
                 </Typography>
               </Stack>
             </>

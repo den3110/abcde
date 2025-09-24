@@ -60,11 +60,103 @@ function statusChipProps(s) {
       return { color: "default", label: "Chưa diễn ra" };
   }
 }
+
+/* ======== Ưu tiên nickname ========= */
+const preferNick = (p) =>
+  (p?.nickname && String(p.nickname).trim()) ||
+  (p?.nickName && String(p.nickName).trim()) ||
+  (p?.nick_name && String(p.nick_name).trim()) ||
+  "";
+
+const nameWithNick = (p) => {
+  const nk = preferNick(p);
+  return nk || p?.fullName || p?.name || "N/A";
+};
+
 function pairLabel(reg, eventType = "double") {
   if (!reg) return "—";
-  const p1 = reg.player1?.fullName || reg.player1?.name || "N/A";
-  const p2 = reg.player2?.fullName || reg.player2?.name;
-  return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
+  const p1 = nameWithNick(reg.player1);
+  const p2 = reg.player2 ? nameWithNick(reg.player2) : "";
+  return String(eventType).toLowerCase() === "single" || !p2 ? p1 : `${p1} & ${p2}`;
+}
+
+/* ======== Hiển thị R{vòng} cộng dồn giữa các bracket ========
+
+Dữ liệu từ useListMatchGroupsQuery() giả định dạng:
+[
+  {
+    tournamentId,
+    tournamentName,
+    brackets: [
+      { bracketId, bracketName, type, stage, /* ...có thể có rounds/maxRounds/drawRounds *\/ },
+      ...
+    ]
+  },
+  ...
+]
+
+Logic:
+- Group = 1 vòng.
+- RoundElim/KO = số vòng = ưu tiên: max(round) quan sát được từ list matches của bracket → 
+  hoặc b.rounds || b.maxRounds || b.drawRounds → fallback 1.
+- BaseRoundStart của mỗi bracket = 1 + tổng số vòng của các bracket trước đó (cùng tournament),
+  sắp theo stage tăng dần. (Nếu stage bằng nhau, giữ nguyên thứ tự trả về).
+*/
+function buildBaseRoundStartMap(groups, matches) {
+  // Gom max(round) quan sát được theo bracketId
+  const observedMaxRound = new Map(); // bracketId -> maxRound
+  (matches || []).forEach((m) => {
+    const bid = String(m?.bracket?._id || m?.bracketId || "");
+    const r = Number(m?.round || 1);
+    if (!bid) return;
+    const cur = observedMaxRound.get(bid) || 0;
+    observedMaxRound.set(bid, Math.max(cur, r));
+  });
+
+  // Tính số vòng cho 1 bracket
+  const roundsCountFor = (b) => {
+    const bid = String(b?.bracketId || b?._id || "");
+    const type = String(b?.type || "").toLowerCase();
+    if (!bid) return 1;
+    if (type === "group") return 1;
+
+    // Ưu tiên round quan sát được
+    const obs = observedMaxRound.get(bid);
+    if (Number.isFinite(obs) && obs > 0) return obs;
+
+    // Nếu payload có thông tin cấu hình
+    const metaK = Number(b?.rounds) || Number(b?.maxRounds) || Number(b?.drawRounds) || 0;
+    if (metaK > 0) return metaK;
+
+    // fallback
+    return 1;
+  };
+
+  // Duyệt theo tournament, sắp theo stage, cộng dồn
+  const baseMap = new Map(); // bracketId -> baseStart (1-based)
+  (groups || []).forEach((g) => {
+    const arr = (g?.brackets || []).slice().sort((a, b) => {
+      const sa = Number(a?.stage || 0);
+      const sb = Number(b?.stage || 0);
+      return sa - sb;
+    });
+    let acc = 0;
+    arr.forEach((b) => {
+      const bid = String(b?.bracketId || "");
+      if (!bid) return;
+      baseMap.set(bid, acc + 1); // base cho bracket này
+      acc += roundsCountFor(b);
+    });
+  });
+
+  return baseMap;
+}
+
+function displayRoundForMatch(m, baseMap) {
+  const bid = String(m?.bracket?._id || m?.bracketId || "");
+  const base = baseMap.get(bid) || 1;
+  const r = Number(m?.round || 1);
+  return base + (r - 1);
 }
 
 export default function AdminRefereeMatches() {
@@ -158,12 +250,15 @@ export default function AdminRefereeMatches() {
     refetch,
   } = useListMatchesPagedQuery(listParams, { skip: hasIdQuery });
 
-  const list = hasIdQuery ? (idMatch ? [idMatch] : []) : resp.list || resp.items || [];
+  const listRaw = hasIdQuery ? (idMatch ? [idMatch] : []) : resp.list || resp.items || [];
   const totalPages = hasIdQuery
     ? 1
     : resp.totalPages || Math.max(1, Math.ceil((resp.total || 0) / rpp));
   const listLoading = hasIdQuery ? idLoading : isLoading;
   const listError = hasIdQuery ? idError : error;
+
+  /* ===== Tính base R theo nhóm giải/bracket + dữ liệu đang có ===== */
+  const baseMap = useMemo(() => buildBaseRoundStartMap(groups, listRaw), [groups, listRaw]);
 
   /* ===== realtime ===== */
   useEffect(() => {
@@ -218,6 +313,9 @@ export default function AdminRefereeMatches() {
   const renderDetailDialog = () => {
     const evType = (detail?.tournament?.eventType || "double").toLowerCase();
     const chip = statusChipProps(detail?.status);
+    const R = detail ? displayRoundForMatch(detail, baseMap) : null;
+    const ord = Number.isFinite(Number(detail?.order)) ? Number(detail.order) + 1 : detail?.order;
+
     return (
       <Dialog open={!!detailId} onClose={() => setDetailId(null)} maxWidth="md" fullWidth>
         <DialogTitle>Chi tiết trận</DialogTitle>
@@ -243,7 +341,7 @@ export default function AdminRefereeMatches() {
                   <Typography variant="h6">{detail?.tournament?.name}</Typography>
                   <Typography variant="body2" color="text.secondary">
                     Nhánh {detail?.bracket?.name} ({detail?.bracket?.type}) • Giai đoạn{" "}
-                    {detail?.bracket?.stage} • Vòng {detail?.round} • Trận #{detail?.order ?? 0}
+                    {detail?.bracket?.stage} • Vòng <b>R{R}</b> • Trận #{ord ?? 0}
                   </Typography>
                 </Box>
                 <Chip size="small" color={chip.color} label={chip.label} />
@@ -320,6 +418,8 @@ export default function AdminRefereeMatches() {
       </Dialog>
     );
   };
+
+  const list = listRaw; // alias
 
   return (
     <DashboardLayout>
@@ -445,14 +545,14 @@ export default function AdminRefereeMatches() {
               </TextField>
             </Grid>
 
-            {/* Autocomplete trọng tài (nếu là admin thì giữ điều kiện bọc ngoài) */}
+            {/* Autocomplete trọng tài */}
             <Grid item xs={12} sm={8} md={6} lg={3}>
               <Autocomplete
                 size="small"
                 options={refOptions}
                 loading={fetchingRefs}
                 value={selectedRef}
-                getOptionLabel={(o) => o?.name || o?.nickname || o?.email || ""}
+                getOptionLabel={(o) => o?.nickname || o?.name || o?.email || ""}
                 onChange={(_e, val) => setFilters((f) => ({ ...f, refereeId: val?._id || "" }))}
                 inputValue={refKeyword}
                 onInputChange={(_e, val) => setRefKeyword(val)}
@@ -504,6 +604,11 @@ export default function AdminRefereeMatches() {
               {list.map((m) => {
                 const evType = (m.tournament?.eventType || "double").toLowerCase();
                 const chip = statusChipProps(m.status);
+                const R = displayRoundForMatch(m, baseMap);
+                const ord = Number.isFinite(Number(m?.order)) ? Number(m.order) + 1 : m?.order;
+                const fallbackCode = `R${R}-T${ord ?? "?"}`;
+                const refName = m?.referee?.nickname || m?.referee?.name || m?.referee?.email || "";
+
                 return (
                   <Card key={m._id} sx={{ p: 2 }}>
                     <Stack
@@ -518,18 +623,18 @@ export default function AdminRefereeMatches() {
                             {m.tournament?.name}
                           </Typography>
                           <Chip size="small" color={chip.color} label={chip.label} />
-                          {m?.referee?.name && (
+                          {refName && (
                             <Chip
                               size="small"
                               variant="outlined"
-                              label={`TT: ${m.referee.name}`}
+                              label={`TT: ${refName}`}
                               sx={{ ml: 1 }}
                             />
                           )}
                         </Stack>
                         <Typography variant="body2" color="text.secondary">
                           Nhánh {m.bracket?.name} ({m.bracket?.type}) • Giai đoạn {m.bracket?.stage}{" "}
-                          • Vòng {m.round} • Trận #{m.order ?? 0}
+                          • Vòng <b>R{R}</b> • Trận #{ord ?? 0}
                         </Typography>
                         <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
                           {pairLabel(m.pairA, evType)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
@@ -537,7 +642,7 @@ export default function AdminRefereeMatches() {
                         </Typography>
                         {(m.code || m._id) && (
                           <Typography variant="caption" color="text.secondary">
-                            {m.code ? `Mã trận: ${m.code} • ` : ""}_id: {m._id}
+                            {`Mã trận: ${m.code || fallbackCode} • `}_id: {m._id}
                           </Typography>
                         )}
                       </Box>

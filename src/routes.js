@@ -43,6 +43,8 @@ import GroupPreassignBoard from "layouts/tournament/GroupPreassignBoard";
 import BroadcastPage from "layouts/Notifications/Broadcast";
 import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
+import SystemSettingsPage from "layouts/SystemSettingsPage";
+import FilesManager from "layouts/FilesManager";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -201,6 +203,18 @@ const routes = [
     component: <AdminAppVersionPage />,
     private: true,
     roles: ["admin"],
+  },
+
+  {
+    type: "collapse",
+    name: "File công khai",
+    key: "admin-files",
+    icon: <Icon fontSize="small">cloud_upload</Icon>,
+    route: "/admin/files",
+    component: <FilesManager />,
+    private: true,
+    roles: ["admin"],
+    show: true, // hiện trên sidebar
   },
 
   // 🆕 Tham số thuật toán (Admin)
@@ -397,6 +411,16 @@ const routes = [
     key: "bracket-group-insert",
     route: "/admin/brackets/:bracketId/groups/insert",
     component: <AdminInsertIntoGroupPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Cài đặt hệ thống",
+    key: "system-settings",
+    icon: <Icon fontSize="small">settings</Icon>,
+    route: "/admin/settings",
+    component: <SystemSettingsPage />,
     private: true,
     roles: ["admin"],
   },
