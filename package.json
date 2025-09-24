@@ -14,6 +14,7 @@
     "@mui/x-data-grid": "5.17.26",
     "@mui/x-date-pickers": "5.0.20",
     "@reduxjs/toolkit": "^2.8.2",
+    "axios": "^1.12.2",
     "chart.js": "4.3.0",
     "chroma-js": "2.4.2",
     "dayjs": "^1.11.13",

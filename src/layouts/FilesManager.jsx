@@ -21,14 +21,19 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SearchIcon from "@mui/icons-material/Search";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { DataGrid, GridToolbar } from "@mui/x-data-grid";
-import {
-  useDeleteFileMutation,
-  useListFilesQuery,
-  useUploadFilesMutation,
-} from "slices/filesApiSlice";
+
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
+import {
+  useListFilesQuery,
+  useDeleteFileMutation,
+  useMultipartInitMutation,
+  useMultipartUploadPartMutation,
+  useMultipartCompleteMutation,
+} from "slices/filesApiSlice";
+
+/* ============ Helpers ============ */
 function sizeFmt(n) {
   if (!n && n !== 0) return "";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -40,42 +45,175 @@ function sizeFmt(n) {
   }
   return `${x.toFixed(x >= 100 ? 0 : x >= 10 ? 1 : 2)} ${units[i]}`;
 }
+const speedFmt = (bytesPerSec) => {
+  if (!bytesPerSec) return "—";
+  const units = ["B/s", "KB/s", "MB/s", "GB/s"];
+  let i = 0;
+  let v = bytesPerSec;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${units[i]}`;
+};
+const etaFmt = (sec) => {
+  if (!isFinite(sec) || sec <= 0) return "—";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return m ? `${m}m ${s}s` : `${s}s`;
+};
+const cryptoId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+/* ============ Component ============ */
 const FilesManager = () => {
   const fileRef = useRef(null);
   const [picked, setPicked] = useState([]);
   const [category, setCategory] = useState("app");
   const [q, setQ] = useState("");
 
-  // DataGrid pagination model (0-based page index)
-  const [paginationModel, setPaginationModel] = useState({
-    page: 0,
-    pageSize: 20,
-  });
-
+  // DataGrid pagination model (0-based)
+  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 20 });
   const limit = paginationModel.pageSize;
-  const page = paginationModel.page + 1; // API is 1-based
+  const page = paginationModel.page + 1; // API 1-based
 
-  const { data, isFetching, refetch } = useListFilesQuery({
-    q,
-    category,
-    page,
-    limit,
-  });
-
-  const [uploadFiles, { isLoading: isUploading }] = useUploadFilesMutation();
+  const { data, isFetching, refetch } = useListFilesQuery({ q, category, page, limit });
   const [deleteFile, { isLoading: isDeleting }] = useDeleteFileMutation();
+
+  const [multipartInit] = useMultipartInitMutation();
+  const [multipartUploadPart] = useMultipartUploadPartMutation();
+  const [multipartComplete] = useMultipartCompleteMutation();
+
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
 
   const items = data?.items || [];
   const total = data?.total || 0;
 
+  // upload task UI
+  const [tasks, setTasks] = useState([]); // [{id,name,pct,bps,eta,status}]
+
   const onPick = (e) => {
     setError("");
     setOk("");
     const files = [...(e.target.files || [])];
     setPicked(files);
+  };
+
+  const pushTask = (name) => {
+    const id = cryptoId();
+    setTasks((arr) => [{ id, name, pct: 0, bps: 0, eta: Infinity, status: "uploading" }, ...arr]);
+    return id;
+  };
+  const updateTask = (id, patch) =>
+    setTasks((arr) => arr.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  const cleanupTasksLater = () =>
+    setTimeout(() => setTasks((arr) => arr.filter((t) => t.status === "uploading")), 3000);
+
+  /* ===== Chunk upload via slice (song song từng chunk) ===== */
+  const uploadOneFile = async (
+    file,
+    {
+      category,
+      chunkSize = 8 * 1024 * 1024,
+      parallel = 4,
+      withChecksum = false,
+      onProgress = () => {},
+    } = {}
+  ) => {
+    // 1) init
+    const init = await multipartInit({
+      fileName: file.name,
+      size: file.size,
+      mime: file.type || "application/octet-stream",
+      category,
+      chunkSize,
+    }).unwrap();
+    const uploadId = init.uploadId;
+    const useChunk = init.chunkSize || chunkSize;
+    const totalParts = init.totalParts;
+
+    // 2) chia parts
+    const parts = [];
+    for (let p = 1; p <= totalParts; p++) {
+      const start = (p - 1) * useChunk;
+      const end = Math.min(file.size, start + useChunk);
+      parts.push({ p, start, end });
+    }
+
+    let uploadedBytes = 0;
+    let lastBytes = 0;
+    let lastTick = performance.now();
+
+    const sha256Base64 = (blob) =>
+      new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onerror = reject;
+        fr.onload = async () => {
+          const h = await crypto.subtle.digest("SHA-256", fr.result);
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(h)));
+          resolve(`sha256-${b64}`);
+        };
+        fr.readAsArrayBuffer(blob);
+      });
+
+    const worker = async () => {
+      while (parts.length) {
+        const job = parts.shift();
+        if (!job) break;
+        const { p, start, end } = job;
+        const blob = file.slice(start, end);
+
+        const contentRange = `bytes ${start}-${end - 1}/${file.size}`;
+        const checksum = withChecksum ? await sha256Base64(blob) : undefined;
+
+        let attempts = 0;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          try {
+            await multipartUploadPart({
+              uploadId,
+              partNo: p,
+              blob,
+              contentRange,
+              checksum,
+              onUploadProgress: (e) => {
+                const curNow = performance.now();
+                const curBytes = uploadedBytes + (e.loaded || 0);
+                const dt = (curNow - lastTick) / 1000;
+                const dbytes = Math.max(0, curBytes - lastBytes);
+                const bps = dt > 0 ? dbytes / dt : 0;
+                const pct = Math.min(99, Math.floor((curBytes / file.size) * 100));
+                onProgress({ pct, bps, eta: bps > 0 ? (file.size - curBytes) / bps : Infinity });
+              },
+            }).unwrap();
+
+            uploadedBytes += blob.size;
+            const curNow = performance.now();
+            const dt = (curNow - lastTick) / 1000;
+            const dbytes = Math.max(0, uploadedBytes - lastBytes);
+            const bps = dt > 0 ? dbytes / dt : 0;
+            lastTick = curNow;
+            lastBytes = uploadedBytes;
+            const pct = Math.min(99, Math.floor((uploadedBytes / file.size) * 100));
+            onProgress({ pct, bps, eta: bps > 0 ? (file.size - uploadedBytes) / bps : Infinity });
+            break;
+          } catch (err) {
+            attempts += 1;
+            if (attempts >= 5) throw err;
+            await new Promise((r) => setTimeout(r, 300 * Math.pow(2, attempts)));
+          }
+        }
+      }
+    };
+
+    // chạy song song N worker
+    const workers = Array.from({ length: Math.min(parallel, totalParts || 1) }, () => worker());
+    await Promise.all(workers);
+
+    // 3) complete
+    await multipartComplete(uploadId).unwrap();
+
+    onProgress({ pct: 100, bps: 0, eta: 0 });
   };
 
   const onUpload = async () => {
@@ -86,13 +224,35 @@ const FilesManager = () => {
         setError("Chưa chọn file nào");
         return;
       }
-      const res = await uploadFiles({ files: picked, category }).unwrap();
-      setOk(`Đã upload ${res.count} file`);
+
+      // lần lượt từng file (mỗi file tự song song theo chunk)
+      for (const f of picked) {
+        const taskId = pushTask(f.name);
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await uploadOneFile(f, {
+            category,
+            chunkSize: 8 * 1024 * 1024,
+            parallel: 4,
+            withChecksum: false, // set true nếu cần bảo toàn dữ liệu tuyệt đối (tốn CPU)
+            onProgress: ({ pct, bps, eta }) => updateTask(taskId, { pct, bps, eta }),
+          });
+          updateTask(taskId, { pct: 100, bps: 0, eta: 0, status: "done" });
+          setOk((s) => (s ? `${s}, ${f.name}` : `Đã upload: ${f.name}`));
+          // refresh list sau mỗi file
+          // eslint-disable-next-line no-await-in-loop
+          await refetch();
+        } catch (e) {
+          updateTask(taskId, { status: "error" });
+          setError(e?.data?.message || e?.message || "Upload thất bại");
+        }
+      }
+
       setPicked([]);
       if (fileRef.current) fileRef.current.value = "";
-      refetch();
+      cleanupTasksLater();
     } catch (e) {
-      setError(e?.data?.message || "Upload thất bại");
+      setError(e?.data?.message || e?.message || "Upload thất bại");
     }
   };
 
@@ -115,12 +275,7 @@ const FilesManager = () => {
   // DataGrid columns
   const columns = useMemo(
     () => [
-      {
-        field: "originalName",
-        headerName: "Tên hiển thị",
-        flex: 1.2,
-        minWidth: 200,
-      },
+      { field: "originalName", headerName: "Tên hiển thị", flex: 1.2, minWidth: 200 },
       {
         field: "mime",
         headerName: "Loại",
@@ -212,11 +367,11 @@ const FilesManager = () => {
         <Card variant="outlined">
           <CardHeader
             title="Quản lý file public"
-            subheader="Upload nhiều file và tạo link công khai để tải về"
+            subheader="Upload & tạo link công khai để tải về"
           />
           <CardContent sx={{ position: "relative" }}>
-            {/* Scoped linear just inside this Card */}
-            {/* {(isUploading || isFetching || isDeleting) && (
+            {/* Scoped linear progress trong Card (fetch/delete) */}
+            {/* {(isFetching || isDeleting) && (
               <Box sx={{ position: "absolute", left: 16, right: 16, top: 8 }}>
                 <LinearProgress />
               </Box>
@@ -237,7 +392,7 @@ const FilesManager = () => {
               direction={{ xs: "column", sm: "row" }}
               spacing={1}
               alignItems={{ sm: "center" }}
-              sx={{ pt: isUploading || isFetching || isDeleting ? 2 : 0 }}
+              sx={{ pt: isFetching || isDeleting ? 2 : 0 }}
             >
               <TextField
                 label="Category"
@@ -258,7 +413,7 @@ const FilesManager = () => {
               <Button
                 variant="contained"
                 onClick={onUpload}
-                disabled={!picked.length || isUploading}
+                disabled={!picked.length || tasks.some((t) => t.status === "uploading")}
               >
                 Upload {picked.length ? `(${picked.length})` : ""}
               </Button>
@@ -268,7 +423,6 @@ const FilesManager = () => {
                 value={q}
                 onChange={(e) => {
                   setQ(e.target.value);
-                  // reset to first page when query changes
                   setPaginationModel((m) => ({ ...m, page: 0 }));
                 }}
                 placeholder="Tìm theo tên"
@@ -282,6 +436,33 @@ const FilesManager = () => {
               />
             </Stack>
 
+            {/* Tiến độ upload (nằm gọn trong Card) */}
+            {tasks.length > 0 && (
+              <Stack spacing={1.2} sx={{ mt: 2 }}>
+                {tasks.map((t) => (
+                  <Card key={t.id} variant="outlined" sx={{ p: 1.2 }}>
+                    <Stack direction="row" alignItems="center" spacing={2}>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="body2" noWrap title={t.name} sx={{ fontWeight: 600 }}>
+                          {t.name}
+                        </Typography>
+                        <LinearProgress variant="determinate" value={t.pct} sx={{ mt: 0.5 }} />
+                        <Typography variant="caption" color="text.secondary">
+                          {t.status === "uploading"
+                            ? `Đang tải… ${t.pct}% • ${speedFmt(t.bps)} • ETA ${etaFmt(t.eta)}`
+                            : t.status === "done"
+                            ? "Hoàn tất"
+                            : t.status === "cancelled"
+                            ? "Đã huỷ"
+                            : "Lỗi"}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </Card>
+                ))}
+              </Stack>
+            )}
+
             {picked.length > 0 && (
               <Alert severity="info" sx={{ mt: 2 }}>
                 Sắp upload: {picked.map((f) => f.name).join(", ")}
@@ -290,16 +471,13 @@ const FilesManager = () => {
           </CardContent>
         </Card>
 
-        {/* Grid in its own card so loading stays scoped */}
+        {/* DataGrid trong Card riêng để overlay loading chỉ ở khu vực lưới */}
         <Card variant="outlined">
           <CardContent sx={{ pt: 1 }}>
             <Box
               sx={{
                 width: "100%",
-                // autoHeight makes the grid size to rows; remove if you prefer fixed height:
-                "& .MuiDataGrid-cell:focus, & .MuiDataGrid-columnHeader:focus": {
-                  outline: "none",
-                },
+                "& .MuiDataGrid-cell:focus, & .MuiDataGrid-columnHeader:focus": { outline: "none" },
               }}
             >
               <DataGrid
@@ -310,19 +488,15 @@ const FilesManager = () => {
                 rowCount={total}
                 paginationMode="server"
                 paginationModel={paginationModel}
-                onPaginationModelChange={(model) => setPaginationModel(model)}
+                onPaginationModelChange={setPaginationModel}
                 pageSizeOptions={[10, 20, 50, 100]}
                 disableRowSelectionOnClick
-                loading={isFetching || isUploading || isDeleting}
+                loading={isFetching || isDeleting}
                 slots={{ toolbar: GridToolbar }}
                 slotProps={{
-                  toolbar: {
-                    showQuickFilter: true,
-                    quickFilterProps: { debounceMs: 400 },
-                  },
+                  toolbar: { showQuickFilter: true, quickFilterProps: { debounceMs: 400 } },
                 }}
                 sx={{
-                  // keep loading feedback INSIDE the grid area
                   "& .MuiDataGrid-overlayWrapper": { bgcolor: "transparent" },
                 }}
               />

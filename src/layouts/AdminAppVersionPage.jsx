@@ -18,6 +18,14 @@ import {
   Alert,
   Chip,
   Box,
+  IconButton,
+  Tooltip,
+  Switch,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Drawer,
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -32,6 +40,13 @@ import PeopleIcon from "@mui/icons-material/People";
 import ReportProblemIcon from "@mui/icons-material/ReportProblem";
 import BlockIcon from "@mui/icons-material/Block";
 import UpdateIcon from "@mui/icons-material/SystemUpdateAlt";
+import PhoneIphoneIcon from "@mui/icons-material/PhoneIphone";
+import AndroidIcon from "@mui/icons-material/Android";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import UsbIcon from "@mui/icons-material/Usb";
+import MemoryIcon from "@mui/icons-material/Memory";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import VisibilityIcon from "@mui/icons-material/Visibility";
 import PropTypes from "prop-types";
 
 // DataGrid
@@ -63,28 +78,44 @@ function formatTime(ts) {
   return d.toLocaleString();
 }
 
-function statusForBuild(build, { latestBuild = 0, minSupportedBuild = 0 } = {}) {
-  if (build < minSupportedBuild) return "force";
-  if (build < latestBuild) return "soft";
-  return "ok";
-}
-
-function StatusChip({ build, config }) {
-  const st = statusForBuild(build, config);
-  if (st === "force")
+function StatusPill({ status, newestBuild, cfg, behindBy }) {
+  if (status === "blocked")
+    return <Chip icon={<BlockIcon />} color="error" label="Blocked" size="small" />;
+  if (status === "force")
     return <Chip icon={<BlockIcon />} color="error" label="Bị chặn" size="small" />;
-  if (st === "soft")
-    return <Chip icon={<UpdateIcon />} color="warning" label="Chậm" size="small" />;
+  if (status === "soft")
+    return (
+      <Chip
+        icon={<UpdateIcon />}
+        color="warning"
+        label={typeof behindBy === "number" && behindBy > 0 ? `Chậm (${behindBy})` : "Chậm"}
+        size="small"
+      />
+    );
   return <Chip color="success" label="OK" size="small" />;
 }
-StatusChip.propTypes = {
-  build: PropTypes.number.isRequired,
-  config: PropTypes.shape({
+StatusPill.propTypes = {
+  status: PropTypes.string,
+  newestBuild: PropTypes.number,
+  cfg: PropTypes.shape({
     latestBuild: PropTypes.number,
     minSupportedBuild: PropTypes.number,
   }),
+  behindBy: PropTypes.number,
 };
-StatusChip.defaultProps = { config: { latestBuild: 0, minSupportedBuild: 0 } };
+
+function KeyValue({ k, v, mono = false }) {
+  return (
+    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+      <Typography variant="body2" sx={{ minWidth: 130, color: "text.secondary" }}>
+        {k}
+      </Typography>
+      <Typography variant="body2" sx={{ fontFamily: mono ? "monospace" : undefined }}>
+        {v ?? "—"}
+      </Typography>
+    </Stack>
+  );
+}
 
 export default function AdminAppVersionPage() {
   const [tab, setTab] = useState("all"); // all | ios | android
@@ -106,6 +137,7 @@ export default function AdminAppVersionPage() {
   const [blocked, setBlocked] = useState("");
   const [changelog, setChangelog] = useState("");
 
+  // nạp dữ liệu form từ API
   useEffect(() => {
     const d = q?.data;
     if (!d) return;
@@ -113,6 +145,9 @@ export default function AdminAppVersionPage() {
     setLatestBuild(String(d.latestBuild ?? ""));
     setMinSupportedBuild(String(d.minSupportedBuild ?? ""));
     setStoreUrl(d.storeUrl ?? "");
+    setRolloutPct(d.rollout?.percentage ?? 100);
+    setRolloutCohort(d.rollout?.cohortKey ?? "deviceId");
+    setBlocked((d.blockedBuilds || []).join(", "));
     setChangelog(d.changelog ?? "");
   }, [q?.data]);
 
@@ -172,6 +207,7 @@ export default function AdminAppVersionPage() {
   const [filterType, setFilterType] = useState("all"); // all | soft | force
   const [searchText, setSearchText] = useState("");
   const [limit, setLimit] = useState(50);
+  const [includeDevices, setIncludeDevices] = useState(true);
 
   const statsQ = useGetVersionStatsQuery({ platform: tab === "all" ? "" : tab });
   const usersQ = useGetUsersVersionQuery({
@@ -179,30 +215,90 @@ export default function AdminAppVersionPage() {
     type: filterType,
     q: searchText,
     limit,
+    includeDevices,
   });
 
   const users = usersQ.data?.rows ?? [];
   const usersCfg = usersQ.data?.config || { latestBuild: 0, minSupportedBuild: 0 };
 
-  // DataGrid columns
+  // Drawer xem danh sách devices theo user
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerUser, setDrawerUser] = useState(null);
+
+  const openDevices = (row) => {
+    setDrawerUser(row);
+    setDrawerOpen(true);
+  };
+
+  const closeDevices = () => {
+    setDrawerOpen(false);
+    setDrawerUser(null);
+  };
+
+  // DataGrid columns (mới, tận dụng dữ liệu API mới)
   const columns = useMemo(
     () => [
       {
         field: "userName",
         headerName: "User",
-        flex: 1.2,
-        minWidth: 140,
-        renderCell: (params) => <Typography fontWeight={600}>{params.value || "—"}</Typography>,
+        flex: 1.3,
+        minWidth: 170,
+        renderCell: (p) => (
+          <Stack>
+            <Typography fontWeight={700}>{p.value || "—"}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {p.row.userEmail || "—"}
+            </Typography>
+          </Stack>
+        ),
       },
-      { field: "userEmail", headerName: "Email", flex: 1.4, minWidth: 180 },
+      {
+        field: "platforms",
+        headerName: "Platforms",
+        width: 120,
+        align: "center",
+        headerAlign: "center",
+        renderCell: (p) => {
+          const arr = p.row.platforms || [];
+          return (
+            <Stack direction="row" spacing={0.5}>
+              {arr.includes("ios") && (
+                <Tooltip title="iOS">
+                  <PhoneIphoneIcon fontSize="small" />
+                </Tooltip>
+              )}
+              {arr.includes("android") && (
+                <Tooltip title="Android">
+                  <AndroidIcon fontSize="small" />
+                </Tooltip>
+              )}
+            </Stack>
+          );
+        },
+      },
+      {
+        field: "iosCount",
+        headerName: "iOS",
+        type: "number",
+        width: 80,
+        align: "center",
+        headerAlign: "center",
+      },
+      {
+        field: "androidCount",
+        headerName: "Android",
+        type: "number",
+        width: 100,
+        align: "center",
+        headerAlign: "center",
+      },
       {
         field: "deviceCount",
         headerName: "Thiết bị",
         type: "number",
+        width: 100,
         align: "center",
         headerAlign: "center",
-        width: 110,
-        valueGetter: (p) => p.row.deviceCount ?? 0,
       },
       {
         field: "newestBuild",
@@ -213,10 +309,62 @@ export default function AdminAppVersionPage() {
         headerAlign: "center",
       },
       {
-        field: "oldestBuild",
-        headerName: "Oldest build",
+        field: "newestAppVersion",
+        headerName: "Newest version",
+        width: 150,
+        align: "center",
+        headerAlign: "center",
+      },
+      {
+        field: "newestPlatform",
+        headerName: "On",
+        width: 90,
+        align: "center",
+        headerAlign: "center",
+        renderCell: (p) =>
+          p.value ? (
+            p.value === "ios" ? (
+              <PhoneIphoneIcon fontSize="small" />
+            ) : (
+              <AndroidIcon fontSize="small" />
+            )
+          ) : (
+            "—"
+          ),
+      },
+      {
+        field: "newestModelName",
+        headerName: "Model",
+        flex: 1.3,
+        minWidth: 180,
+        renderCell: (p) => (
+          <Stack sx={{ overflow: "hidden" }}>
+            <Typography noWrap>{p.value || "—"}</Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {p.row.newestBrand || "—"} / {p.row.newestModelId || "—"}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        field: "hasPush",
+        headerName: "Push Notification",
+        width: 90,
+        align: "center",
+        headerAlign: "center",
+        renderCell: (p) => (
+          <Chip
+            size="small"
+            label={p.value ? "Yes" : "No"}
+            color={p.value ? "success" : "default"}
+          />
+        ),
+      },
+      {
+        field: "behindBy",
+        headerName: "Behind",
+        width: 90,
         type: "number",
-        width: 140,
         align: "center",
         headerAlign: "center",
       },
@@ -234,9 +382,31 @@ export default function AdminAppVersionPage() {
         width: 140,
         align: "center",
         headerAlign: "center",
+        sortable: true,
+        renderCell: (p) => (
+          <StatusPill
+            status={p.row.status}
+            newestBuild={Number(p.row.newestBuild || 0)}
+            cfg={usersCfg}
+            behindBy={p.row.behindBy}
+          />
+        ),
+      },
+      {
+        field: "actions",
+        headerName: "",
+        width: 64,
+        align: "center",
+        headerAlign: "center",
         sortable: false,
         filterable: false,
-        renderCell: (p) => <StatusChip build={Number(p.row.newestBuild || 0)} config={usersCfg} />,
+        renderCell: (p) => (
+          <Tooltip title="Xem thiết bị">
+            <IconButton size="small" onClick={() => openDevices(p.row)}>
+              <VisibilityIcon fontSize="inherit" />
+            </IconButton>
+          </Tooltip>
+        ),
       },
     ],
     [usersCfg]
@@ -439,7 +609,7 @@ export default function AdminAppVersionPage() {
             </FormControl>
 
             <TextField
-              label="Tìm theo tên/email"
+              label="Tìm theo tên/email / model / build / version"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               InputProps={{
@@ -458,6 +628,7 @@ export default function AdminAppVersionPage() {
               onChange={(e) => setLimit(Math.max(1, Number(e.target.value || 50)))}
               sx={{ maxWidth: 160 }}
             />
+
             <Box sx={{ display: "flex", gap: 1 }}>
               <Button
                 variant="outlined"
@@ -470,6 +641,13 @@ export default function AdminAppVersionPage() {
                 Làm mới
               </Button>
             </Box>
+          </Stack>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Switch
+              checked={includeDevices}
+              onChange={(e) => setIncludeDevices(e.target.checked)}
+            />
+            <Typography variant="body2">Tải kèm danh sách thiết bị</Typography>
           </Stack>
 
           {/* Cards thống kê */}
@@ -520,6 +698,61 @@ export default function AdminAppVersionPage() {
             </Paper>
           </Stack>
 
+          {/* Breakdown theo platform + top lists */}
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mb: 2 }}>
+            <Paper variant="outlined" sx={{ p: 2, flex: 1 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Phân bổ nền tảng
+              </Typography>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Chip
+                  icon={<PhoneIphoneIcon />}
+                  label={`iOS: ${statsQ.data?.platformBreakdown?.ios ?? 0}`}
+                  variant="outlined"
+                  size="small"
+                />
+                <Chip
+                  icon={<AndroidIcon />}
+                  label={`Android: ${statsQ.data?.platformBreakdown?.android ?? 0}`}
+                  variant="outlined"
+                  size="small"
+                />
+              </Stack>
+            </Paper>
+            <Paper variant="outlined" sx={{ p: 2, flex: 1 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Top Builds
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                {(statsQ.data?.topBuilds ?? []).map((b) => (
+                  <Chip
+                    key={b.buildNumber}
+                    icon={<MemoryIcon />}
+                    label={`${b.buildNumber} (${b.count})`}
+                    size="small"
+                    sx={{ mb: 1 }}
+                  />
+                ))}
+              </Stack>
+            </Paper>
+            <Paper variant="outlined" sx={{ p: 2, flex: 1 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Top App Versions
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                {(statsQ.data?.topAppVersions ?? []).map((v) => (
+                  <Chip
+                    key={v.appVersion}
+                    icon={<InfoOutlinedIcon />}
+                    label={`${v.appVersion} (${v.count})`}
+                    size="small"
+                    sx={{ mb: 1 }}
+                  />
+                ))}
+              </Stack>
+            </Paper>
+          </Stack>
+
           {/* DataGrid danh sách user */}
           <div style={{ width: "100%" }}>
             <DataGrid
@@ -533,6 +766,12 @@ export default function AdminAppVersionPage() {
               initialState={{
                 pagination: { paginationModel: { pageSize: Math.min(limit, 100), page: 0 } },
                 density: "compact",
+                sorting: {
+                  sortModel: [
+                    { field: "status", sort: "asc" },
+                    { field: "lastSeenAt", sort: "desc" },
+                  ],
+                },
               }}
               slots={{ toolbar: GridToolbar }}
               slotProps={{
@@ -543,11 +782,89 @@ export default function AdminAppVersionPage() {
 
           <Typography variant="caption" sx={{ color: "text.secondary", display: "block", mt: 1 }}>
             Config hiện tại: latestBuild = <b>{usersCfg.latestBuild ?? 0}</b>, minSupportedBuild ={" "}
-            <b>{usersCfg.minSupportedBuild ?? 0}</b>. Trạng thái dựa trên <i>newestBuild</i> của mỗi
-            user.
+            <b>{usersCfg.minSupportedBuild ?? 0}</b>. Trạng thái dựa trên <i>newestBuild</i> & logic
+            server (<i>blocked/force/soft/ok</i>).
           </Typography>
         </Paper>
       </Container>
+
+      {/* Drawer hiển thị danh sách thiết bị */}
+      <Drawer
+        anchor="right"
+        open={drawerOpen}
+        onClose={closeDevices}
+        PaperProps={{ sx: { width: 420 } }}
+      >
+        <Box sx={{ p: 2 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+            <Typography variant="h6" fontWeight={800}>
+              Thiết bị của {drawerUser?.userName || "—"}
+            </Typography>
+            <Tooltip title="Mở hồ sơ (nếu có)">
+              <span>
+                <IconButton size="small" disabled>
+                  <OpenInNewIcon fontSize="inherit" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
+          <Divider sx={{ mb: 2 }} />
+          {drawerUser?.devices?.length ? (
+            <List dense>
+              {drawerUser.devices.map((d, idx) => (
+                <ListItem key={`${d.deviceId}-${idx}`} alignItems="flex-start" sx={{ mb: 1 }}>
+                  <ListItemIcon>
+                    {d.platform === "ios" ? <PhoneIphoneIcon /> : <AndroidIcon />}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography fontWeight={700}>
+                          {d.deviceModelName || d.deviceModel || "—"}
+                        </Typography>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          icon={<UsbIcon />}
+                          label={d.deviceId || "—"}
+                        />
+                      </Stack>
+                    }
+                    secondary={
+                      <Stack spacing={0.2} sx={{ mt: 0.5 }}>
+                        <KeyValue k="Brand" v={d.deviceBrand || "—"} />
+                        <KeyValue k="Model ID" v={d.deviceModelId || "—"} />
+                        <KeyValue
+                          k="App Version"
+                          v={`${d.appVersion || "0.0.0"} (${d.buildNumber ?? 0})`}
+                        />
+                        <KeyValue k="First seen" v={formatTime(d.firstSeenAt)} />
+                        <KeyValue k="Last seen" v={formatTime(d.lastSeenAt)} />
+                        <KeyValue k="Push token" v={d.pushToken ? "Yes" : "No"} />
+                      </Stack>
+                    }
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Alert severity="info" icon={<InfoOutlinedIcon />}>
+              Không có dữ liệu thiết bị. Hãy bật “Tải kèm danh sách thiết bị” hoặc chọn user khác.
+            </Alert>
+          )}
+        </Box>
+      </Drawer>
     </DashboardLayout>
   );
 }
+
+KeyValue.propTypes = {
+  k: PropTypes.node.isRequired, // nhãn bên trái
+  v: PropTypes.node, // giá trị bên phải (string/number/element đều OK)
+  mono: PropTypes.bool, // hiển thị font monospace cho v
+};
+
+KeyValue.defaultProps = {
+  v: "—",
+  mono: false,
+};
