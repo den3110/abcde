@@ -69,16 +69,20 @@ export const filesApiSlice = apiSlice.injectEndpoints({
         const { uploadId, partNo, blob, contentRange, checksum, signal, onUploadProgress } =
           args || {};
         try {
-          const res = await axios.put(`/api/files/multipart/${uploadId}/${partNo}`, blob, {
-            withCredentials: true,
-            signal,
-            headers: {
-              "Content-Type": "application/octet-stream",
-              ...(contentRange ? { "Content-Range": contentRange } : {}),
-              ...(checksum ? { "X-Chunk-Checksum": checksum } : {}),
-            },
-            onUploadProgress,
-          });
+          const res = await axios.put(
+            process.env.REACT_APP_API_URL + `/files/multipart/${uploadId}/${partNo}`,
+            blob,
+            {
+              withCredentials: true,
+              signal,
+              headers: {
+                "Content-Type": "application/octet-stream",
+                ...(contentRange ? { "Content-Range": contentRange } : {}),
+                ...(checksum ? { "X-Chunk-Checksum": checksum } : {}),
+              },
+              onUploadProgress,
+            }
+          );
           // 204 No Content -> coi như ok
           return { data: res.data ?? {} };
         } catch (err) {
