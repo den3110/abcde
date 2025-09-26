@@ -199,19 +199,19 @@ export default function UserManagement() {
   // search debounce
   const [search, setSearch] = useState(keyword);
   useEffect(() => {
-    const t = setTimeout(() => dispatch(setKeyword(search.trim())), 500);
+    const t = setTimeout(() => {
+      const v = search.trim();
+      if (v !== keyword) {
+        dispatch(setKeyword(v));
+        dispatch(setPage(0));
+      }
+    }, 400);
     return () => clearTimeout(t);
-  }, [search, dispatch]);
+  }, [search, keyword, dispatch]);
 
   // ✅ Optimistic map: { [userId]: boolean } → true nếu FULL tỉnh (admin chấm trình)
-  const [fullMap, setFullMap] = useState({});
-  useEffect(() => {
-    if (data?.users) {
-      const next = {};
-      data.users.forEach((u) => (next[u._id] = getIsFullEvaluator(u)));
-      setFullMap(next);
-    }
-  }, [data?.users]);
+  const [optimisticFull, setOptimisticFull] = useState({});
+  const isFullEvaluator = (u) => optimisticFull[u._id] ?? getIsFullEvaluator(u);
 
   // ✅ helper chuẩn: trả về promise để .then() được
   const handle = async (promise, successMsg) => {
@@ -228,30 +228,32 @@ export default function UserManagement() {
 
   // Bật/tắt "Admin chấm trình (FULL tỉnh)"
   const toggleAdminEvaluator = async (userId, enable) => {
-    // optimistic UI
-    setFullMap((m) => ({ ...m, [userId]: enable }));
+    // Lạc quan
+    setOptimisticFull((m) => ({ ...m, [userId]: enable }));
     try {
       if (enable) {
-        // ✅ BẬT = promote full tỉnh
         await promoteEvaluatorMut({
           idOrEmail: userId,
           provinces: PROVINCES,
-          sports: [], // để BE tự default "pickleball"
+          sports: [],
         }).unwrap();
         showSnack("success", "Đã bật Admin chấm trình (FULL tỉnh)");
       } else {
-        // ✅ TẮT = DEMOTE
-        await demoteEvaluatorMut({
-          id: userId,
-          body: { toRole: "user" },
-        }).unwrap();
+        await demoteEvaluatorMut({ id: userId, body: { toRole: "user" } }).unwrap();
         showSnack("success", "Đã tắt Admin chấm trình");
       }
-      refetch();
+      await refetch();
     } catch (err) {
       // rollback khi lỗi
-      setFullMap((m) => ({ ...m, [userId]: !enable }));
+      setOptimisticFull((m) => ({ ...m, [userId]: !enable }));
       showSnack("error", err?.data?.message || err.error || "Đã xảy ra lỗi");
+      return;
+    } finally {
+      // dọn override để trả quyền cho dữ liệu server sau refetch
+      setOptimisticFull((m) => {
+        const { [userId]: _, ...rest } = m;
+        return rest;
+      });
     }
   };
 
@@ -270,7 +272,7 @@ export default function UserManagement() {
   const rows =
     (data?.users || []).map((u) => {
       const st = u.cccdStatus || "unverified";
-      const isFull = !!fullMap[u._id];
+      const isFull = !!isFullEvaluator(u);
 
       return {
         name: <MDTypography variant="button">{u.name}</MDTypography>,
@@ -394,7 +396,13 @@ export default function UserManagement() {
             placeholder="Tìm tên / email"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            InputProps={{ startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1 }} /> }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
             sx={{ width: { xs: "100%", sm: 280 } }}
           />
 
