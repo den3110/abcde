@@ -160,28 +160,50 @@ const roundIndexKOPO = (m) => {
   return tryParse(m?.labelKey) ?? tryParse(m?.roundName) ?? tryParse(roundTag(m)) ?? null;
 };
 
-// ==== QUY ƯỚC MÃ TRẬN ====
-// - Group: "V{stageIndex}-B{index}#{order+1}"
-// - KO/PO:  "R{index}#{order}"
-const buildMatchCode = (m) => {
-  if (!m) return "";
+// ==== QUY ƯỚC MÃ TRẬN (mới) ====
+// Ưu tiên dùng code server (global) -> nếu chưa có, FE tính fallback theo rule V-B-T / V-T
+
+const isGlobalCodeString = (s) => typeof s === "string" && /^V\d+(?:-B\d+)?-T\d+$/.test(s);
+
+const poolIndexNumber = (m) => {
+  const lbl = poolBoardLabel(m); // thường dạng "B3" hoặc chữ A/B/C...
+  const hit = /^B(\d+)$/i.exec(lbl);
+  if (hit) return Number(hit[1]);
+  // nếu pool.name là chữ cái A/B/C...
+  const byLetter = letterToIndex(m?.pool?.name || m?.pool?.code || "");
+  return byLetter || 1;
+};
+
+// Fallback khi server chưa cung cấp code toàn cục
+// - Group-like:  V1-Bx-T{order+1}
+// - Non-group:   V{(m.elimOffset||0) + (m.round||1)}-T{order+1}
+const fallbackGlobalCode = (m, idx) => {
+  const baseOrder =
+    typeof m?.order === "number" && Number.isFinite(m.order)
+      ? m.order
+      : Number.isFinite(idx)
+      ? idx
+      : 0;
+  const T = baseOrder + 1;
+
   if (isGroupLike(m)) {
-    const st = stageIndexOf(m);
-    const prefix = isNum(st) ? `V${st}` : "V?";
-    const board = poolBoardLabel(m);
-    const ord = m.order != null ? `#${(m.order ?? 0) + 1}` : "";
-    return `${prefix}-${board}${ord}`;
+    const B = poolIndexNumber(m);
+    return `V1-B${B}-T${T}`;
   }
-  if (isKO(m) || isPO(m)) {
-    const idx = roundIndexKOPO(m);
-    const ord = m.order != null ? `#${m.order}` : "";
-    return `R${isNum(idx) ? idx : "?"}${ord}`;
-  }
-  if (m.labelKey) return String(m.labelKey);
-  if (m.code) return String(m.code);
-  const r = roundTag(m);
-  const ord = m.order != null ? `#${m.order}` : "";
-  return `${r}${ord}`;
+
+  const elimOffset = Number.isFinite(Number(m?.elimOffset)) ? Number(m.elimOffset) : 0;
+  const r = Number.isFinite(Number(m?.round)) ? Number(m.round) : 1;
+  const V = elimOffset + r;
+  return `V${V}-T${T}`;
+};
+
+const buildMatchCode = (m, idx) => {
+  if (!m) return "";
+  // 1) Ưu tiên code server nếu đúng định dạng global
+  if (isGlobalCodeString(m.globalCode)) return m.globalCode;
+  if (isGlobalCodeString(m.code)) return m.code;
+  // 2) Fallback FE
+  return fallbackGlobalCode(m, idx);
 };
 
 /* ================= Helpers (labels, formatters) ================= */
@@ -241,6 +263,32 @@ const fmtTime = (v) => {
   } catch {
     return "";
   }
+};
+
+const STATUS_RANK = { queued: 0, scheduled: 1, assigned: 2, live: 3, finished: 4 };
+const statusRank = (s) => STATUS_RANK[String(s || "").toLowerCase()] ?? 9;
+
+const parseTripletFromCode = (code) => {
+  const m = /^V(\d+)(?:-B(\d+))?-T(\d+)$/.exec(String(code || "").trim());
+  if (!m) return null;
+  return { v: Number(m[1]), b: m[2] ? Number(m[2]) : null, t: Number(m[3]) };
+};
+
+// Trích {v,b,t} để sort
+const tripletOf = (m, idx) => {
+  const code = isGlobalCodeString(m?.globalCode)
+    ? m.globalCode
+    : isGlobalCodeString(m?.code)
+    ? m.code
+    : fallbackGlobalCode(m, idx);
+  const p = parseTripletFromCode(code);
+  if (p) return p;
+
+  // Fallback cứng nếu ko parse được
+  const t = (Number.isFinite(m?.order) ? m.order : Number.isFinite(idx) ? idx : 0) + 1;
+  const b = isGroupLike(m) ? poolIndexNumber(m) : null;
+  const v = isGroupLike(m) ? 1 : (Number(m?.elimOffset) || 0) + (Number(m?.round) || 1);
+  return { v, b, t };
 };
 
 /* ================= Component ================= */
@@ -310,6 +358,52 @@ export default function AdminBracketCourtManagerPage() {
   }, [socketMatches]);
   /* ⭐ NEW: list các trận có thể chọn để "sửa vào sân" */
   const selectableMatches = useMemo(() => {
+    const STATUS_RANK = { queued: 0, scheduled: 1, assigned: 2, live: 3, finished: 4 };
+    const statusRank = (s) => STATUS_RANK[String(s || "").toLowerCase()] ?? 9;
+
+    const isGlobalCodeString = (s) => typeof s === "string" && /^V\d+(?:-B\d+)?-T\d+$/.test(s);
+
+    const parseTripletFromCode = (code) => {
+      const m = /^V(\d+)(?:-B(\d+))?-T(\d+)$/.exec(String(code || "").trim());
+      return m ? { v: Number(m[1]), b: m[2] ? Number(m[2]) : null, t: Number(m[3]) } : null;
+    };
+
+    const poolIndexNumber = (m) => {
+      const lbl = poolBoardLabel(m); // "B3" hoặc A/B/C...
+      const hit = /^B(\d+)$/i.exec(lbl);
+      if (hit) return Number(hit[1]);
+      const byLetter = letterToIndex(m?.pool?.name || m?.pool?.code || "");
+      return byLetter || 1;
+    };
+
+    // Fallback V-B-T / V-T nếu server chưa có globalCode
+    const fallbackGlobalCode = (m) => {
+      const baseOrder = Number.isFinite(m?.order) ? m.order : 0;
+      const T = baseOrder + 1;
+      if (isGroupLike(m)) {
+        const B = poolIndexNumber(m);
+        return `V1-B${B}-T${T}`;
+      }
+      const elimOffset = Number.isFinite(Number(m?.elimOffset)) ? Number(m.elimOffset) : 0;
+      const r = Number.isFinite(Number(m?.round)) ? Number(m.round) : 1;
+      return `V${elimOffset + r}-T${T}`;
+    };
+
+    const tripletOf = (m) => {
+      const code = isGlobalCodeString(m?.globalCode)
+        ? m.globalCode
+        : isGlobalCodeString(m?.code)
+        ? m.code
+        : fallbackGlobalCode(m);
+      const p = parseTripletFromCode(code);
+      if (p) return p;
+      // Fallback cứng
+      const t = (Number.isFinite(m?.order) ? m.order : 0) + 1;
+      const b = isGroupLike(m) ? poolIndexNumber(m) : null;
+      const v = isGroupLike(m) ? 1 : (Number(m?.elimOffset) || 0) + (Number(m?.round) || 1);
+      return { v, b, t };
+    };
+
     const seen = new Set();
     const out = [];
     const push = (m) => {
@@ -319,13 +413,55 @@ export default function AdminBracketCourtManagerPage() {
       seen.add(id);
       out.push(m);
     };
-    // ưu tiên hàng đợi
+
+    // Ưu tiên lấy từ queue trước, rồi bổ sung từ socket (scheduled/queued/assigned)
     for (const m of queue || []) push(m);
-    // bổ sung từ socket (scheduled/queued/assigned)
     for (const m of socketMatches || []) {
       const st = String(m?.status || "");
       if (["scheduled", "queued", "assigned"].includes(st)) push(m);
     }
+
+    // ===== Sort mới =====
+    out.sort((a, b) => {
+      const ta = tripletOf(a); // {v,b,t}
+      const tb = tripletOf(b);
+      if (ta.v !== tb.v) return ta.v - tb.v; // ƯU TIÊN V TRƯỚC
+
+      const ga = isGroupLike(a);
+      const gb = isGroupLike(b);
+
+      if (ga && gb) {
+        // Group: T ↑ rồi B ↑
+        if (ta.t !== tb.t) return ta.t - tb.t;
+        const ba = ta.b ?? 999,
+          bb = tb.b ?? 999;
+        if (ba !== bb) return ba - bb;
+      } else if (!ga && !gb) {
+        // KO/PO: T ↑ (V cùng nhau rồi)
+        if (ta.t !== tb.t) return ta.t - tb.t;
+      } else {
+        // Cùng V mà khác kiểu: ưu tiên group trước
+        return ga ? -1 : 1;
+      }
+
+      // Sau cùng mới tới status (tie-break)
+      const sdiff = statusRank(a.status) - statusRank(b.status);
+      if (sdiff !== 0) return sdiff;
+
+      // Tie-break thêm
+      const oa = Number.isFinite(a.order) ? a.order : 9999;
+      const ob = Number.isFinite(b.order) ? b.order : 9999;
+      if (oa !== ob) return oa - ob;
+
+      const qa = Number.isFinite(a.queueOrder) ? a.queueOrder : 9999;
+      const qb = Number.isFinite(b.queueOrder) ? b.queueOrder : 9999;
+      if (qa !== qb) return qa - qb;
+
+      const sa = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0;
+      const sb = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+      return sa - sb;
+    });
+
     return out;
   }, [queue, socketMatches]);
 
@@ -528,7 +664,7 @@ export default function AdminBracketCourtManagerPage() {
   const getMatchCodeForCourt = (c) => {
     const m = getMatchForCourt(c);
     if (!m) return "";
-    return buildMatchCode(m);
+    return buildMatchCode(m); // <-- dùng builder mới
   };
 
   const getTeamsForCourt = (c) => {
@@ -584,6 +720,49 @@ export default function AdminBracketCourtManagerPage() {
     () => (finishedRows || []).some((r) => isGroupLike(r) && isNum(r?.rrRound)),
     [finishedRows]
   );
+
+  const filterMatches = (options, inputValue) => {
+    if (!inputValue) return options;
+    const rx = buildLooseCodeRegex(inputValue);
+    if (!rx) return options;
+
+    const scored = options
+      .map((o) => {
+        const fields = [
+          o?.globalCode, // "V1-B2-T27"
+          o?.code, // nếu có
+          o?.courtLabel, // "Sân 1"
+          o?.pairA?.teamName,
+          o?.pairB?.teamName,
+        ]
+          .filter(Boolean)
+          .map(String);
+
+        const hit = fields.some((f) => rx.test(f));
+        if (!hit) return null;
+
+        // ưu tiên match theo mã
+        let score = 0;
+        if (o?.globalCode && rx.test(String(o.globalCode))) score += 4;
+        if (o?.code && rx.test(String(o.code))) score += 3;
+        if (o?.courtLabel && rx.test(String(o.courtLabel))) score += 1;
+        if (
+          (o?.pairA?.teamName && rx.test(String(o.pairA.teamName))) ||
+          (o?.pairB?.teamName && rx.test(String(o.pairB.teamName)))
+        )
+          score += 1;
+
+        return { o, score };
+      })
+      .filter(Boolean)
+      .sort(
+        (a, b) =>
+          b.score - a.score || new Date(a.o.scheduledAt || 0) - new Date(b.o.scheduledAt || 0)
+      )
+      .map((x) => x.o);
+
+    return scored;
+  };
 
   // Column defs
   const poolColDef = {
