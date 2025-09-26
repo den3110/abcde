@@ -1,5 +1,5 @@
 // src/pages/tournament/TournamentBlueprintPage.jsx
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, startTransition } from "react";
 import {
   Box,
   Stack,
@@ -22,10 +22,12 @@ import {
   Alert,
   AlertTitle,
   Tooltip,
+  IconButton,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
 import { toast } from "react-toastify";
+import { Add as AddIcon, Remove as RemoveIcon } from "@mui/icons-material";
 import {
   useGetTournamentQuery,
   usePlanTournamentMutation,
@@ -418,21 +420,21 @@ function buildGroupQualMatrix(groupStage, groupStageIndex, topN) {
 }
 
 // Random có seed
-function seededShuffle(arr, seedStr = "42") {
+function seededShuffle(arr = [], seedStr = "42") {
+  const input = Array.isArray(arr) ? arr : [];
   let seed = 0;
   for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
   function rand() {
     seed = (1664525 * seed + 1013904223) >>> 0;
     return seed / 0xffffffff;
   }
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i++) {
+  const a = input.slice();
+  for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
-
 /* ===== BYE helpers & fixers ===== */
 const isBye = (s) => s?.type === "bye" || s?.label === "BYE" || s?.name === "BYE";
 /** Sửa cặp BYE–BYE bằng cách mượn 1 đội từ cặp phía sau */
@@ -832,6 +834,35 @@ export default function TournamentBlueprintPage() {
   const [groupTotal, setGroupTotal] = useState(0);
   const [groupTopN, setGroupTopN] = useState(1);
 
+  const [manualRemainder, setManualRemainder] = useState(false);
+  const [groupExtras, setGroupExtras] = useState([]); // mảng extra cho từng bảng (0..groupCount-1)
+
+  useEffect(() => {
+    if (!includeGroup) {
+      setGroupExtras([]);
+      setManualRemainder(false);
+      return;
+    }
+    setGroupExtras((prev) =>
+      Array.from({ length: Math.max(0, groupCount) }, (_, i) => prev[i] || 0)
+    );
+  }, [includeGroup, groupCount]);
+
+  useEffect(() => {
+    // Đổi tổng đội → reset extras để tránh overflow
+    setGroupExtras((prev) => prev.map(() => 0));
+  }, [groupTotal]);
+
+  const groupRemainder = useMemo(() => {
+    if (!includeGroup || groupCount <= 0) return 0;
+    const total = Math.max(0, Number(groupTotal) || 0);
+    if (total <= 0) return 0;
+    const base = Math.floor(total / groupCount);
+    const rem = total - base * groupCount;
+    const used = (groupExtras || []).slice(0, groupCount).reduce((a, b) => a + (Number(b) || 0), 0);
+    return Math.max(0, rem - used);
+  }, [includeGroup, groupCount, groupTotal, groupExtras]);
+
   // PO defaults (non-2^n)
   const [poPlan, setPoPlan] = useState({ drawSize: 8, maxRounds: 1, seeds: [] });
 
@@ -864,15 +895,37 @@ export default function TournamentBlueprintPage() {
   const groupSizes = useMemo(() => {
     if (!includeGroup || groupCount <= 0) return [];
     const total = Math.max(0, Number(groupTotal) || 0);
+
     if (total > 0) {
       const base = Math.floor(total / groupCount);
-      const remainder = total - base * groupCount;
       const arr = new Array(groupCount).fill(base);
-      if (groupCount > 0) arr[groupCount - 1] += remainder; // dồn dư vào bảng cuối
+      const rem = total - base * groupCount;
+
+      if (manualRemainder) {
+        const extras = (groupExtras || [])
+          .slice(0, groupCount)
+          .map((x) => Math.max(0, Number(x) || 0));
+        // đảm bảo tổng extras ≤ rem
+        let sum = extras.reduce((a, b) => a + b, 0);
+        if (sum > rem) {
+          let over = sum - rem;
+          for (let i = extras.length - 1; i >= 0 && over > 0; i--) {
+            const take = Math.min(extras[i], over);
+            extras[i] -= take;
+            over -= take;
+          }
+        }
+        for (let i = 0; i < groupCount; i++) arr[i] += extras[i] || 0;
+      } else {
+        // Giữ hành vi cũ: dồn dư vào bảng cuối
+        if (groupCount > 0) arr[groupCount - 1] += rem;
+      }
       return arr;
     }
+
+    // Không nhập "Tổng số đội" → dùng size đều
     return new Array(groupCount).fill(Math.max(0, Number(groupSize) || 0));
-  }, [includeGroup, groupCount, groupSize, groupTotal]);
+  }, [includeGroup, groupCount, groupSize, groupTotal, manualRemainder, groupExtras]);
 
   const minGroupSize = useMemo(() => {
     if (!includeGroup || !groupSizes.length) return Math.max(0, Number(groupSize) || 0);
@@ -1492,32 +1545,71 @@ export default function TournamentBlueprintPage() {
         const rows = ranks.map((row, idx) => (idx % 2 === 0 ? row : row.slice().reverse()));
         linear = rows.flat();
       } else if (method === "pot") {
-        // Pot1 = winners, Pot2 = runners; bắt cặp cố tránh cùng bảng
-        const W = seededShuffle(winners, seedKey + "_potW");
-        const R = seededShuffle(runners, seedKey + "_potR");
+        const size = Math.max(2, nextPow2(Number(koPlan?.drawSize || 2)));
+        const firstPairs = size / 2;
+        const capacity = firstPairs * 2;
+
+        const W = seededShuffle(Array.isArray(winners) ? winners : [], seedKey + "_potW");
+        const R = seededShuffle(Array.isArray(runners) ? runners : [], seedKey + "_potR");
+
+        if (W.length === 0 || R.length === 0) {
+          // Không đủ Pot #2 → fallback an toàn, không crash/đơ
+          const linearDefault = ranks.flat();
+          const pairs = arrangeLinearIntoKO(linearDefault, firstPairs, "default", seedKey);
+          startTransition(() => {
+            setKoPlan({ drawSize: size, seeds: pairs });
+          });
+          toast.info("‘Rút pot’ cần tối thiểu Top 2/bảng. Đã dùng cách mặc định theo thứ hạng.");
+          return;
+        }
+
         const usedR = new Set();
-        for (const a of W) {
+        const linear = [];
+
+        // Ghép 1 vs 2, cố tránh cùng bảng
+        for (let i = 0; i < W.length && linear.length < capacity; i++) {
+          const a = W[i];
           let pick = -1;
+
+          // Ưu tiên R khác bảng
           for (let j = 0; j < R.length; j++) {
             if (!usedR.has(j) && R[j].__group !== a.__group) {
               pick = j;
               break;
             }
           }
-          if (pick === -1)
-            for (let j = 0; j < R.length; j++)
+          // Nếu không tránh được, lấy bất kỳ R chưa dùng
+          if (pick === -1) {
+            for (let j = 0; j < R.length; j++) {
               if (!usedR.has(j)) {
                 pick = j;
                 break;
               }
-          linear.push(a);
-          if (pick !== -1) {
+            }
+          }
+
+          // Đẩy vào linear (giới hạn capacity)
+          if (linear.length < capacity) linear.push(a);
+          if (pick !== -1 && linear.length < capacity) {
             linear.push(R[pick]);
             usedR.add(pick);
           }
         }
-        for (let j = 0; j < R.length; j++) if (!usedR.has(j)) linear.push(R[j]);
-        linear.push(...othersFlat);
+
+        // Thêm phần R còn thừa (nếu còn slot)
+        for (let j = 0; j < R.length && linear.length < capacity; j++) {
+          if (!usedR.has(j)) linear.push(R[j]);
+        }
+        // Thêm các hạng khác (nếu còn slot)
+        for (let k = 0; k < othersFlat.length && linear.length < capacity; k++) {
+          linear.push(othersFlat[k]);
+        }
+
+        const pairs = arrangeLinearIntoKO(linear, firstPairs, "default", seedKey);
+        startTransition(() => {
+          setKoPlan({ drawSize: size, seeds: pairs });
+        });
+        toast.success("Đã đổ seed: Rút pot (1 vs 2, tránh cùng bảng)");
       } else if (method === "antiSameGroup") {
         // Greedy để tránh cùng bảng tối đa
         const remW = [...winners];
@@ -1574,9 +1666,22 @@ export default function TournamentBlueprintPage() {
       if (sum > 0) {
         setGroupTotal(sum);
         setGroupSize(gSize || (gCount ? Math.floor(sum / gCount) : 0));
+
+        // Nếu có groupSizes → bật chia dư thủ công và khôi phục extras
+        if (gCount > 0 && sizes.length === gCount) {
+          const base = Math.floor(sum / gCount);
+          const extras = sizes.map((s) => Math.max(0, (Number(s) || 0) - base));
+          setManualRemainder(extras.some((e) => e > 0));
+          setGroupExtras(Array.from({ length: gCount }, (_, i) => extras[i] || 0));
+        } else {
+          setManualRemainder(false);
+          setGroupExtras(Array.from({ length: gCount }, () => 0));
+        }
       } else {
         setGroupTotal(0);
         setGroupSize(gSize || 0);
+        setManualRemainder(false);
+        setGroupExtras(Array.from({ length: gCount || 0 }, () => 0));
       }
       setGroupTopN(Math.max(1, qualifiersPerGroup));
 
@@ -1643,6 +1748,7 @@ export default function TournamentBlueprintPage() {
           ? {
               count: groupCount,
               totalTeams: total,
+              ...(manualRemainder ? { groupSizes: groupSizes } : {}), // ⟵ thêm dòng này
               qualifiersPerGroup: qpg,
               rules: normalizeRulesForState(groupRules),
             }
@@ -1824,7 +1930,7 @@ export default function TournamentBlueprintPage() {
                         <MenuItem value="shift">Xoay lệch (#2 xoay nửa vòng)</MenuItem>
                         <MenuItem value="random">Ngẫu nhiên (khác bảng)</MenuItem>
                         <MenuItem value="snake">Serpentine (rank1 →, rank2 ← ...)</MenuItem>
-                        <MenuItem value="pot">Rút “pot” (1 vs 2, tránh cùng bảng)</MenuItem>
+                        {/* <MenuItem value="pot">Rút “pot” (1 vs 2, tránh cùng bảng)</MenuItem> */}
                         <MenuItem value="antiSameGroup">Tránh cùng bảng tối đa</MenuItem>
                       </TextField>
 
@@ -1834,6 +1940,29 @@ export default function TournamentBlueprintPage() {
                       >
                         Đổ seed KO từ Vòng bảng
                       </Button>
+                    </Stack>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems="center">
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={manualRemainder}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setManualRemainder(on);
+                              if (!on) setGroupExtras(Array.from({ length: groupCount }, () => 0));
+                            }}
+                            disabled={(Number(groupTotal) || 0) <= 0}
+                          />
+                        }
+                        label="Chia dư thủ công"
+                      />
+                      {(Number(groupTotal) || 0) > 0 && (
+                        <Chip
+                          size="small"
+                          color={groupRemainder > 0 ? "warning" : "success"}
+                          label={`Dư còn lại: ${groupRemainder}`}
+                        />
+                      )}
                     </Stack>
                   </Stack>
                 )}
@@ -2075,6 +2204,62 @@ export default function TournamentBlueprintPage() {
                                 <Typography variant="subtitle2">{`Dự kiến ${sizeThis} đội • ${RR_MATCHES(
                                   sizeThis
                                 )} trận`}</Typography>
+                                <Stack
+                                  direction="row"
+                                  alignItems="center"
+                                  spacing={1}
+                                  sx={{ mb: 1 }}
+                                >
+                                  <Chip size="small" color="secondary" label={`B${g}`} />
+                                  <Typography variant="subtitle2">{`Dự kiến ${sizeThis} đội • ${RR_MATCHES(
+                                    sizeThis
+                                  )} trận`}</Typography>
+
+                                  {manualRemainder && (Number(groupTotal) || 0) > 0 && (
+                                    <Stack direction="row" spacing={0.5} alignItems="center">
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => {
+                                          setGroupExtras((prev) => {
+                                            const next = Array.from(
+                                              { length: groupCount },
+                                              (_, i) => prev[i] || 0
+                                            );
+                                            if (next[gi] > 0) next[gi] -= 1;
+                                            else toast.info("Nhóm này chưa nhận dư để bớt.");
+                                            return next;
+                                          });
+                                        }}
+                                      >
+                                        <RemoveIcon fontSize="small" />
+                                      </IconButton>
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => {
+                                          if (groupRemainder <= 0) {
+                                            toast.info("Hết số dư để phân bổ.");
+                                            return;
+                                          }
+                                          setGroupExtras((prev) => {
+                                            const next = Array.from(
+                                              { length: groupCount },
+                                              (_, i) => prev[i] || 0
+                                            );
+                                            next[gi] += 1;
+                                            return next;
+                                          });
+                                        }}
+                                      >
+                                        <AddIcon fontSize="small" />
+                                      </IconButton>
+                                      <Chip
+                                        size="small"
+                                        variant="outlined"
+                                        label={`+${groupExtras[gi] || 0}`}
+                                      />
+                                    </Stack>
+                                  )}
+                                </Stack>
                               </Stack>
                               <Stack direction="row" gap={1} flexWrap="wrap">
                                 {names.map((n) => (
