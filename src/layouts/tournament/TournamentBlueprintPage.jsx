@@ -437,6 +437,59 @@ function seededShuffle(arr = [], seedStr = "42") {
 }
 /* ===== BYE helpers & fixers ===== */
 const isBye = (s) => s?.type === "bye" || s?.label === "BYE" || s?.name === "BYE";
+
+// --- Section helpers: tách nửa/quarter/eighth... để tránh cùng bảng gặp nhau sớm ---
+function makeSectionHelpers(firstPairs) {
+  const L = Math.max(0, Math.round(Math.log2(Math.max(1, firstPairs))));
+  // trọng số: va chạm cùng nửa phạt nặng hơn cùng quarter/eighth...
+  const weights = Array.from({ length: L }, (_, i) => 1 << (L - i + 2)); // ví dụ [8,4,2,1]
+  const occ = new Map(); // groupCode -> [Set(level0), Set(level1), ...]
+
+  const ensure = (g) => {
+    if (!occ.has(g))
+      occ.set(
+        g,
+        Array.from({ length: L }, () => new Set())
+      );
+    return occ.get(g);
+  };
+
+  const sectionsOf = (pairIndexZeroBased) => {
+    const ids = [];
+    for (let lvl = 1; lvl <= L; lvl++) {
+      const buckets = 1 << lvl; // số vùng ở level này
+      const size = firstPairs / buckets; // số cặp/pairs mỗi vùng
+      const id = Math.floor(pairIndexZeroBased / size);
+      ids.push(id); // 0..buckets-1
+    }
+    return ids; // [halfId, quarterId, eighthId, ...]
+  };
+
+  const scoreFor = (groupCodes /* array of string */, pairIndexOneBased) => {
+    const pz = (pairIndexOneBased || 1) - 1;
+    const secs = sectionsOf(pz);
+    let s = 0;
+    for (const g of groupCodes) {
+      const o = ensure(g);
+      for (let k = 0; k < secs.length; k++) {
+        if (o[k].has(secs[k])) s += weights[k];
+      }
+    }
+    return s;
+  };
+
+  const commit = (groupCodes, pairIndexOneBased) => {
+    const pz = (pairIndexOneBased || 1) - 1;
+    const secs = sectionsOf(pz);
+    for (const g of groupCodes) {
+      const o = ensure(g);
+      for (let k = 0; k < secs.length; k++) o[k].add(secs[k]);
+    }
+  };
+
+  return { scoreFor, commit };
+}
+
 /** Sửa cặp BYE–BYE bằng cách mượn 1 đội từ cặp phía sau */
 function fixDoubleByes(pairs) {
   const totalPairs = pairs.length;
@@ -1610,6 +1663,150 @@ export default function TournamentBlueprintPage() {
           setKoPlan({ drawSize: size, seeds: pairs });
         });
         toast.success("Đã đổ seed: Rút pot (1 vs 2, tránh cùng bảng)");
+      } else if (method === "strongWeak") {
+        const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
+        const firstPairs = size / 2;
+        const capacity = firstPairs * 2;
+
+        // các “pot” theo hạng: ranks[0] = Top1 (mạnh), ranks[1] = Top2 (yếu hơn), ...
+        const winners = (ranks[0] || []).slice(); // Top1
+        const tiers = ranks.slice(1).map((row) => row.slice()); // Top2, Top3, ...
+
+        // khởi tạo cặp KO
+        const result = Array.from({ length: firstPairs }, (_, i) => ({
+          pair: i + 1,
+          A: BYE,
+          B: BYE,
+        }));
+
+        // helper phân vùng để tránh cùng bảng “gặp sớm”
+        const section = makeSectionHelpers(firstPairs);
+
+        // vị trí “ladder” để rải Top1 xa nhau
+        const positions = seedPositionsPow2(size);
+        const pairIndexForRank = (rank) => Math.ceil(positions[rank - 1] / 2);
+
+        // 1) Đặt Top1 vào A-slots theo ladder (rải đều các nửa/quarter/eighth)
+        let rankCounter = 1;
+        for (const a of winners) {
+          if (rankCounter > firstPairs) break;
+          let p = pairIndexForRank(rankCounter); // 1-based
+          // nếu A đã có thì tìm cặp trống tiếp theo (hiếm khi xảy ra)
+          let spins = 0;
+          while (spins < firstPairs && !isBye(result[p - 1].A)) {
+            p = (p % firstPairs) + 1;
+            spins++;
+          }
+          result[p - 1].A = a;
+          section.commit([String(a.__group || "")], p);
+          rankCounter++;
+        }
+
+        // 2) Với mỗi A=Top1, chọn đối thủ “yếu nhất có thể” nhưng khác bảng và ít xung đột nhất
+        const takeBestOpponentFor = (a, pairNo) => {
+          let best = null,
+            bestTier = -1,
+            bestIdx = -1,
+            bestScore = Infinity;
+          for (let t = 0; t < tiers.length; t++) {
+            const arr = tiers[t];
+            for (let j = 0; j < arr.length; j++) {
+              const cand = arr[j];
+              if (!cand) continue;
+              if (cand.__group === a.__group) continue; // cấm cùng bảng ở vòng hiện tại
+              const sc = section.scoreFor(
+                [String(a.__group || ""), String(cand.__group || "")],
+                pairNo
+              );
+              // Ưu tiên yếu hơn (tier lớn hơn), sau đó ưu tiên ít xung đột
+              if (sc < bestScore || (sc === bestScore && t > bestTier)) {
+                best = cand;
+                bestTier = t;
+                bestIdx = j;
+                bestScore = sc;
+              }
+            }
+          }
+          if (best) tiers[bestTier].splice(bestIdx, 1);
+          return best;
+        };
+
+        for (const p of result) {
+          if (!isBye(p.A) && isBye(p.B)) {
+            const opp = takeBestOpponentFor(p.A, p.pair);
+            if (opp) {
+              p.B = opp;
+              section.commit([String(opp.__group || "")], p.pair);
+            } else {
+              p.B = BYE; // không còn đối thủ hợp lệ → BYE
+            }
+          }
+        }
+
+        // 3) Ghép phần còn lại: luôn “mạnh vs yếu” (tier nhỏ gặp tier lớn) + tránh cùng bảng + tránh gặp sớm
+        let remaining = [];
+        for (let t = 0; t < tiers.length; t++) {
+          for (const s of tiers[t]) remaining.push({ s, t });
+        }
+        // mạnh trước (t nhỏ), yếu sau (t lớn)
+        remaining.sort((a, b) => a.t - b.t);
+
+        const pickBestForPair = (pair, anchor /* có thể null */) => {
+          let bestIdx = -1,
+            bestScore = Infinity,
+            bestTier = -1;
+          for (let k = 0; k < remaining.length; k++) {
+            const r = remaining[k];
+            // cấm cùng bảng với anchor nếu có
+            if (anchor && r.s.__group === anchor.__group) continue;
+            // điểm xung đột theo phân vùng
+            const sc = section.scoreFor(
+              anchor
+                ? [String(anchor.__group || ""), String(r.s.__group || "")]
+                : [String(r.s.__group || "")],
+              pair.pair
+            );
+            if (sc < bestScore || (sc === bestScore && r.t > bestTier)) {
+              bestScore = sc;
+              bestTier = r.t; // ưu tiên yếu hơn nếu cùng score
+              bestIdx = k;
+            }
+          }
+          return bestIdx;
+        };
+
+        for (const p of result) {
+          // cặp rỗng hoàn toàn
+          if (isBye(p.A) && isBye(p.B)) {
+            // lấy 1 đội mạnh nhất còn lại
+            const first = remaining.shift();
+            if (first) {
+              p.A = first.s;
+              section.commit([String(p.A.__group || "")], p.pair);
+              // tìm đối thủ yếu nhất có thể ở cặp này
+              const idx = pickBestForPair(p, p.A);
+              if (idx >= 0) {
+                p.B = remaining.splice(idx, 1)[0].s;
+                section.commit([String(p.B.__group || "")], p.pair);
+              } else {
+                p.B = BYE;
+              }
+            }
+          } else if (!isBye(p.A) && isBye(p.B)) {
+            // đã có A (thường là Top1) mà chưa có B → kiếm đối thủ
+            const idx = pickBestForPair(p, p.A);
+            if (idx >= 0) {
+              p.B = remaining.splice(idx, 1)[0].s;
+              section.commit([String(p.B.__group || "")], p.pair);
+            } else {
+              p.B = BYE;
+            }
+          }
+        }
+
+        const finalPairs = fixDoubleByes(result);
+        toast.success("Đã đổ seed: Mạnh–Yếu (tránh cùng bảng & phân tán gặp sớm)");
+        return { drawSize: size, seeds: finalPairs };
       } else if (method === "antiSameGroup") {
         // Greedy để tránh cùng bảng tối đa
         const remW = [...winners];
@@ -1932,6 +2129,9 @@ export default function TournamentBlueprintPage() {
                         <MenuItem value="snake">Serpentine (rank1 →, rank2 ← ...)</MenuItem>
                         {/* <MenuItem value="pot">Rút “pot” (1 vs 2, tránh cùng bảng)</MenuItem> */}
                         <MenuItem value="antiSameGroup">Tránh cùng bảng tối đa</MenuItem>
+                        <MenuItem value="strongWeak">
+                          Mạnh–Yếu (Top1 vs Top2; tránh cùng bảng & gặp sớm)
+                        </MenuItem>
                       </TextField>
 
                       <Button
