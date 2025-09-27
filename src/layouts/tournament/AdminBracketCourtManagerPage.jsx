@@ -34,6 +34,7 @@ import {
   DialogContent,
   Autocomplete,
   DialogActions,
+  Switch,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SaveIcon from "@mui/icons-material/Save";
@@ -310,7 +311,7 @@ export default function AdminBracketCourtManagerPage() {
   const [mode, setMode] = useState("count");
   const [count, setCount] = useState(10);
   const [namesText, setNamesText] = useState("Sân 1\nSân 2\nSân 3");
-
+  const [autoAssign, setAutoAssign] = useState(false);
   const names = useMemo(
     () =>
       namesText
@@ -547,12 +548,16 @@ export default function AdminBracketCourtManagerPage() {
     }
     const payload =
       mode === "names"
-        ? { tournamentId, bracket, names }
-        : { tournamentId, bracket, count: Number(count) || 0 };
+        ? { tournamentId, bracket, names, autoAssign } // ⭐ NEW
+        : { tournamentId, bracket, count: Number(count) || 0, autoAssign }; // ⭐ NEW
 
     try {
       await upsertCourts(payload).unwrap();
-      toast.success("Đã lưu danh sách sân và sắp xếp theo hàng đợi.");
+      toast.success(
+        autoAssign
+          ? "Đã lưu danh sách sân. Tự động gán trận đang BẬT."
+          : "Đã lưu danh sách sân. (Không tự động gán trận)"
+      );
       socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
     } catch (err) {
       toast.error(err?.data?.message || err?.error || "Lỗi lưu sân");
@@ -1027,6 +1032,19 @@ export default function AdminBracketCourtManagerPage() {
                   sx={{ mb: 2 }}
                 />
               )}
+
+              {/* ⭐ NEW: Công tắc tự động gán trận sau khi lưu */}
+              <FormControlLabel
+                control={
+                  <Switch checked={autoAssign} onChange={(e) => setAutoAssign(e.target.checked)} />
+                }
+                label="Tự động gán trận sau khi lưu"
+                sx={{ mb: 2 }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
+                Khi bật, hệ thống sẽ rebuild queue và tự gán trận vào sân đang trống ngay sau khi
+                lưu.
+              </Typography>
 
               <Button
                 type="submit"

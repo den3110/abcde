@@ -53,6 +53,7 @@ import {
 /* ===== Default overlay (khớp ScoreOverlay) ===== */
 const DEFAULT_OVERLAY = {
   theme: "dark",
+  size: "md", // ⬅️ NEW
   accentA: "#25C2A0",
   accentB: "#4F46E5",
   corner: "tl",
@@ -140,11 +141,9 @@ function useCssValidity(
         CSSStyleSheet.prototype &&
         "replaceSync" in CSSStyleSheet.prototype
       ) {
-        // Parse qua constructable stylesheet
         const sheet = new CSSStyleSheet();
-        sheet.replaceSync(text); // throw nếu sai cú pháp
+        sheet.replaceSync(text);
       } else {
-        // Fallback: inject tạm và đọc cssRules
         const el = document.createElement("style");
         el.setAttribute("data-test", "css-validate");
         el.textContent = text;
@@ -168,10 +167,50 @@ function useCssValidity(
   return state; // { ok: boolean, reason: string }
 }
 
+/* ===== Helpers cho chip “giai đoạn vòng” (đồng bộ ScoreOverlay) ===== */
+const parseRoundSize = (roundCode) => {
+  if (!roundCode) return null;
+  const m = String(roundCode)
+    .toUpperCase()
+    .match(/^R(\d+)$/);
+  return m ? +m[1] : null;
+};
+const labelForRoundSize = (size) => {
+  if (!size) return "";
+  if (size >= 16) return `Vòng ${size} đội`;
+  if (size === 8) return "Tứ kết";
+  if (size === 4) return "Bán kết";
+  if (size === 2) return "Chung kết";
+  return `Vòng ${size}`;
+};
+const phaseLabelFromPreview = (bracketType, roundCode) => {
+  const bt = (bracketType || "").toLowerCase();
+  const size = parseRoundSize(roundCode);
+
+  if (bt === "group") return "Vòng bảng";
+
+  if (bt === "po" || bt === "playoff" || bt === "play-offs")
+    return size ? `Vòng ${size}` : "Vòng PO";
+
+  if (
+    bt === "ko" ||
+    bt === "knockout" ||
+    bt === "single" ||
+    bt === "singleelimination" ||
+    bt === "double" ||
+    bt === "doubleelimination"
+  ) {
+    return size ? `${labelForRoundSize(size)}` : "Vòng loại trực tiếp";
+  }
+
+  return size ? labelForRoundSize(size) : "";
+};
+
 /* ---------- Live preview (mini) ---------- */
-function OverlayPreview({ form }) {
+function OverlayPreview({ form, previewCtx }) {
   const {
     theme,
+    size = "md",
     accentA,
     accentB,
     rounded,
@@ -181,9 +220,18 @@ function OverlayPreview({ form }) {
     fontFamily,
     showSets,
     customCss,
-  } = form || DEFAULT_OVERLAY;
+    logoUrl,
+  } = { ...DEFAULT_OVERLAY, ...(form || {}) };
 
-  const cssOK = useCssValidity(customCss); // ✅ kiểm tra realtime
+  const cssOK = useCssValidity(customCss);
+
+  // Map kích thước giống ScoreOverlay
+  const baseName = size === "lg" ? 18 : size === "sm" ? 14 : 16;
+  const baseScore = size === "lg" ? 28 : size === "sm" ? 20 : 24;
+  const baseMeta = size === "lg" ? 12 : size === "sm" ? 10 : 11;
+  const baseBadge = size === "lg" ? 10 : size === "sm" ? 9 : 10;
+  const baseTable = size === "lg" ? 12 : size === "sm" ? 10 : 11;
+  const baseCell = size === "lg" ? 26 : size === "sm" ? 20 : 22;
 
   const cssVars = {
     "--bg": theme === "light" ? "#ffffffcc" : "#0b0f14cc",
@@ -193,15 +241,16 @@ function OverlayPreview({ form }) {
     "--accent-b": accentB,
     "--radius": `${rounded}px`,
     "--shadow": shadow ? "0 8px 24px rgba(0,0,0,.25)" : "none",
-    "--name": `calc(16px * ${nameScale || 1})`,
-    "--score": `calc(24px * ${scoreScale || 1})`,
-    "--meta": "11px",
-    "--badge": "10px",
-    "--table": "11px",
-    "--table-cell": "22px",
+    "--name": `${Math.round(baseName * (nameScale || 1))}px`,
+    "--score": `${Math.round(baseScore * (scoreScale || 1))}px`,
+    "--meta": `${baseMeta}px`,
+    "--badge": `${baseBadge}px`,
+    "--table": `${baseTable}px`,
+    "--table-cell": `${baseCell}px`,
     "--font": fontFamily || DEFAULT_OVERLAY.fontFamily,
   };
 
+  // inline style objects (giữ nguyên như trước)
   const card = {
     display: "inline-flex",
     flexDirection: "column",
@@ -211,8 +260,8 @@ function OverlayPreview({ form }) {
     backdropFilter: "blur(8px)",
     borderRadius: "var(--radius)",
     boxShadow: "var(--shadow)",
-    padding: "12px 14px",
-    minWidth: 320,
+    padding: size === "lg" ? "14px 16px" : size === "sm" ? "8px 10px" : "12px 14px",
+    minWidth: size === "lg" ? 380 : size === "sm" ? 260 : 320,
     fontFamily: "var(--font)",
   };
 
@@ -245,14 +294,6 @@ function OverlayPreview({ form }) {
     maxWidth: 180,
   };
   const score = { fontWeight: 800, lineHeight: 1, fontSize: "var(--score)" };
-  const badge = {
-    fontWeight: 700,
-    fontSize: "var(--badge)",
-    padding: "2px 6px",
-    borderRadius: 999,
-    background: "#ef4444",
-    color: "#fff",
-  };
 
   const tableWrap = {
     display: "grid",
@@ -274,9 +315,20 @@ function OverlayPreview({ form }) {
     textAlign: "center",
     minWidth: 24,
   };
+  const badgePhase = {
+    fontWeight: 700,
+    fontSize: "var(--badge)",
+    padding: "2px 6px",
+    borderRadius: 999,
+    background: "#334155",
+    color: "#fff",
+  };
+
+  const phaseText = phaseLabelFromPreview(previewCtx?.bracketType, previewCtx?.roundCode);
 
   return (
     <Box
+      className="ovl-preview-wrap"
       sx={{
         p: 2,
         borderRadius: 2,
@@ -285,71 +337,123 @@ function OverlayPreview({ form }) {
         bgcolor: theme === "light" ? "#f8fafc" : "#0b0f14",
       }}
     >
-      {/* ✅ Vùng preview có scope [data-ovl] + biến CSS */}
-      <Box id="ovl-preview" data-ovl sx={{ ...cssVars }}>
-        {/* ✅ Chỉ inject khi CSS hợp lệ */}
+      {/* ✅ scope + data-attrs để target CSS dễ */}
+      <Box
+        id="ovl-preview"
+        className={`ovl ovl--${theme} ovl--${size}`}
+        data-ovl
+        data-theme={theme}
+        data-size={size}
+        data-bracket-type={previewCtx?.bracketType || ""}
+        data-round-code={previewCtx?.roundCode || ""}
+        sx={{ ...cssVars }}
+      >
+        {/* Inject custom CSS khi hợp lệ */}
         {cssOK.ok && !!(customCss || "").trim() ? <style>{customCss}</style> : null}
 
-        <div style={card} data-theme={theme}>
-          <div style={meta}>
+        <div className="ovl-card" style={card} data-theme={theme}>
+          {/* meta */}
+          <div className="ovl-meta" style={meta}>
             <span
+              className="ovl-meta-left ovl-brand"
               style={{
+                minWidth: 0,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
               }}
             >
-              Vietnam Open 2025
+              {logoUrl ? (
+                <img
+                  className="ovl-logo"
+                  src={logoUrl}
+                  alt="logo"
+                  style={{ height: 18, width: "auto", display: "block", borderRadius: 4 }}
+                />
+              ) : null}
+              <span
+                className="ovl-tournament"
+                style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+              >
+                Vietnam Open 2025
+              </span>
             </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: "var(--muted)" }}>Vòng Chung kết</span>
-              <span style={badge}>LIVE</span>
+
+            <span
+              className="ovl-meta-right"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+            >
+              {phaseText ? (
+                <span className="ovl-phase chip" style={badgePhase}>
+                  {phaseText}
+                </span>
+              ) : null}
             </span>
           </div>
 
-          <div style={row}>
-            <div style={team}>
-              <span style={{ ...pill, background: "var(--accent-a)" }} />
-              <span style={nameStyle} title="Nguyen A & Tran B">
+          {/* row A */}
+          <div className="ovl-row ovl-row--a" style={row} data-team="A">
+            <div className="ovl-team ovl-team--a" style={team} data-team="A">
+              <span
+                className="ovl-pill ovl-pill--a"
+                style={{ ...pill, background: "var(--accent-a)" }}
+              />
+              <span className="ovl-name" style={nameStyle} title="Nguyen A & Tran B">
                 Nguyen A & Tran B
               </span>
             </div>
-            <div style={score}>10</div>
+            <div className="ovl-score ovl-score--a" style={score}>
+              10
+            </div>
           </div>
 
-          <div style={row}>
-            <div style={team}>
-              <span style={{ ...pill, background: "var(--accent-b)" }} />
-              <span style={nameStyle} title="Le C & Pham D">
+          {/* row B */}
+          <div className="ovl-row ovl-row--b" style={row} data-team="B">
+            <div className="ovl-team ovl-team--b" style={team} data-team="B">
+              <span
+                className="ovl-pill ovl-pill--b"
+                style={{ ...pill, background: "var(--accent-b)" }}
+              />
+              <span className="ovl-name" style={nameStyle} title="Le C & Pham D">
                 Le C & Pham D
               </span>
             </div>
-            <div style={score}>11</div>
+            <div className="ovl-score ovl-score--b" style={score}>
+              11
+            </div>
           </div>
 
+          {/* sets */}
           {showSets && (
-            <div style={tableWrap}>
+            <div className="ovl-sets" style={tableWrap}>
               <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "24px repeat(3, 1fr)",
-                  gap: 4,
-                }}
+                className="ovl-sets-head"
+                style={{ display: "grid", gridTemplateColumns: "24px repeat(3, 1fr)", gap: 4 }}
               >
-                <div style={{ visibility: "hidden" }}>.</div>
-                <div style={th}>S1</div>
-                <div style={th}>S2</div>
-                <div style={th}>S3</div>
+                <div className="ovl-sets-head-gap" style={{ visibility: "hidden" }}>
+                  .
+                </div>
+                <div className="ovl-th">S1</div>
+                <div className="ovl-th">S2</div>
+                <div className="ovl-th">S3</div>
               </div>
+
               <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "24px repeat(3, 1fr)",
-                  gap: 4,
-                }}
+                className="ovl-sets-row ovl-sets-row--a"
+                style={{ display: "grid", gridTemplateColumns: "24px repeat(3, 1fr)", gap: 4 }}
+                data-team="A"
               >
-                <div style={{ textAlign: "center", color: "var(--muted)" }}>A</div>
                 <div
+                  className="ovl-sets-label ovl-sets-label--a"
+                  style={{ textAlign: "center", color: "var(--muted)" }}
+                >
+                  A
+                </div>
+                <div
+                  className="ovl-td ovl-td--win ovl-td--a"
                   style={{
                     ...td,
                     background: "var(--accent-a)",
@@ -359,19 +463,30 @@ function OverlayPreview({ form }) {
                 >
                   11
                 </div>
-                <div style={{ ...td, borderColor: "#94a3b8" }}>9</div>
-                <div style={{ ...td, borderColor: "#94a3b8" }}>–</div>
+                <div className="ovl-td" style={{ ...td, borderColor: "#94a3b8" }}>
+                  9
+                </div>
+                <div className="ovl-td" style={{ ...td, borderColor: "#94a3b8" }}>
+                  –
+                </div>
               </div>
+
               <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "24px repeat(3, 1fr)",
-                  gap: 4,
-                }}
+                className="ovl-sets-row ovl-sets-row--b"
+                style={{ display: "grid", gridTemplateColumns: "24px repeat(3, 1fr)", gap: 4 }}
+                data-team="B"
               >
-                <div style={{ textAlign: "center", color: "var(--muted)" }}>B</div>
-                <div style={{ ...td, borderColor: "#94a3b8" }}>9</div>
                 <div
+                  className="ovl-sets-label ovl-sets-label--b"
+                  style={{ textAlign: "center", color: "var(--muted)" }}
+                >
+                  B
+                </div>
+                <div className="ovl-td" style={{ ...td, borderColor: "#94a3b8" }}>
+                  9
+                </div>
+                <div
+                  className="ovl-td ovl-td--win ovl-td--b"
                   style={{
                     ...td,
                     background: "var(--accent-b)",
@@ -381,14 +496,15 @@ function OverlayPreview({ form }) {
                 >
                   11
                 </div>
-                <div style={{ ...td, borderColor: "#94a3b8" }}>–</div>
+                <div className="ovl-td" style={{ ...td, borderColor: "#94a3b8" }}>
+                  –
+                </div>
               </div>
             </div>
           )}
         </div>
       </Box>
 
-      {/* Thông báo nhẹ nếu CSS không hợp lệ */}
       {!cssOK.ok && (customCss || "").trim() && (
         <Typography variant="caption" color="error" sx={{ mt: 1, display: "block" }}>
           CSS không hợp lệ, không áp dụng vào preview. {cssOK.reason}
@@ -440,7 +556,6 @@ export default function AdminOverlayPage() {
   /* ---- detail for selected ---- */
   const { data: detailData } = useGetTournamentByIdQuery(selId ?? skipToken);
 
-  // Khi có detail hoặc chọn mới -> fill overlay
   useEffect(() => {
     if (!selId) return;
     const ovl = detailData?.overlay || selected?.overlay || {};
@@ -478,9 +593,22 @@ export default function AdminOverlayPage() {
 
   const copyObsUrl = async () => {
     if (!selId) return;
-    const url = `${window.location.origin}/overlay?matchId=<MATCH_ID>&theme=${encodeURIComponent(
-      form.theme
-    )}&accentA=${encodeURIComponent(form.accentA)}&accentB=${encodeURIComponent(form.accentB)}`;
+    const q = new URLSearchParams({
+      matchId: "<MATCH_ID>",
+      theme: form.theme,
+      size: form.size || "md",
+      accentA: form.accentA,
+      accentB: form.accentB,
+      corner: form.corner,
+      rounded: String(form.rounded ?? 18),
+      shadow: String(!!form.shadow),
+      showSets: String(!!form.showSets),
+      font: form.fontFamily || "",
+      nameScale: String(form.nameScale ?? 1),
+      scoreScale: String(form.scoreScale ?? 1),
+      logo: form.logoUrl || "",
+    });
+    const url = `${window.location.origin}/overlay?${q.toString()}`;
     try {
       await navigator.clipboard.writeText(url);
       setSnack({ open: true, type: "success", msg: "Đã copy URL overlay" });
@@ -496,7 +624,13 @@ export default function AdminOverlayPage() {
 
   const canEdit = !!selId;
 
-  const cssCheck = useCssValidity(form.customCss); // ✅ validate để hiển thị trạng thái ở TextField
+  const cssCheck = useCssValidity(form.customCss);
+
+  /* ---- Ngữ cảnh preview: chọn bracketType + roundCode ---- */
+  const [previewCtx, setPreviewCtx] = useState({
+    bracketType: "group",
+    roundCode: "R16",
+  });
 
   return (
     <DashboardLayout>
@@ -672,6 +806,21 @@ export default function AdminOverlayPage() {
                       </Select>
                     </FormControl>
 
+                    {/* NEW: size */}
+                    <FormControl fullWidth>
+                      <InputLabel id="size-lbl">Kích thước</InputLabel>
+                      <Select
+                        labelId="size-lbl"
+                        label="Kích thước"
+                        value={form.size}
+                        onChange={onField("size")}
+                      >
+                        <MenuItem value="sm">Small</MenuItem>
+                        <MenuItem value="md">Medium</MenuItem>
+                        <MenuItem value="lg">Large</MenuItem>
+                      </Select>
+                    </FormControl>
+
                     <FormControl fullWidth>
                       <InputLabel id="corner-lbl">Vị trí</InputLabel>
                       <Select
@@ -802,10 +951,54 @@ export default function AdminOverlayPage() {
                 </CardContent>
               </Card>
 
+              {/* NEW: Ngữ cảnh Preview (để chip phase hiển thị đúng) */}
+              <Card variant="outlined">
+                <CardHeader title="Ngữ cảnh Preview (vòng đấu)" />
+                <CardContent>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                    <FormControl fullWidth>
+                      <InputLabel id="bt-lbl">Bracket type</InputLabel>
+                      <Select
+                        labelId="bt-lbl"
+                        label="Bracket type"
+                        value={previewCtx.bracketType}
+                        onChange={(e) =>
+                          setPreviewCtx((p) => ({ ...p, bracketType: e.target.value }))
+                        }
+                      >
+                        <MenuItem value="group">Group</MenuItem>
+                        <MenuItem value="po">Play-off</MenuItem>
+                        <MenuItem value="ko">Knockout</MenuItem>
+                        <MenuItem value="single">Single Elimination</MenuItem>
+                        <MenuItem value="double">Double Elimination</MenuItem>
+                      </Select>
+                    </FormControl>
+
+                    <FormControl fullWidth>
+                      <InputLabel id="rc-lbl">Round code</InputLabel>
+                      <Select
+                        labelId="rc-lbl"
+                        label="Round code"
+                        value={previewCtx.roundCode}
+                        onChange={(e) =>
+                          setPreviewCtx((p) => ({ ...p, roundCode: e.target.value }))
+                        }
+                      >
+                        {["R64", "R32", "R16", "R8", "R4", "R2"].map((r) => (
+                          <MenuItem key={r} value={r}>
+                            {r}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Stack>
+                </CardContent>
+              </Card>
+
               <Card variant="outlined">
                 <CardHeader title="Preview" subheader="Xem thử overlay với cấu hình hiện tại" />
                 <CardContent>
-                  <OverlayPreview form={form} />
+                  <OverlayPreview form={form} previewCtx={previewCtx} />
                 </CardContent>
               </Card>
 
@@ -898,6 +1091,7 @@ ColorField.propTypes = {
 OverlayPreview.propTypes = {
   form: PropTypes.shape({
     theme: PropTypes.oneOf(["dark", "light"]),
+    size: PropTypes.oneOf(["sm", "md", "lg"]),
     accentA: PropTypes.string,
     accentB: PropTypes.string,
     corner: PropTypes.oneOf(["tl", "tr", "bl", "br"]),
@@ -909,6 +1103,10 @@ OverlayPreview.propTypes = {
     scoreScale: PropTypes.number,
     customCss: PropTypes.string,
     logoUrl: PropTypes.string,
+  }).isRequired,
+  previewCtx: PropTypes.shape({
+    bracketType: PropTypes.string,
+    roundCode: PropTypes.string,
   }).isRequired,
 };
 

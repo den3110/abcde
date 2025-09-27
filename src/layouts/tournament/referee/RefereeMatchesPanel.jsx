@@ -47,6 +47,14 @@ import {
 } from "./AdminRefereeConsole";
 import PropTypes from "prop-types";
 
+/* Ưu tiên lấy mã từ server: codeResolved > code > displayCode > meta.code > _code */
+function pickMatchCode(m) {
+  const cand = [m?.codeResolved, m?.code, m?.displayCode, m?.meta?.code, m?._code].find(
+    (v) => typeof v === "string" && v.trim()
+  );
+  return (cand || matchCode(m) || "").trim();
+}
+
 /* ============ debounce nhỏ cho ô tìm kiếm ============ */
 function useDebounced(value, delay = 400) {
   const [v, setV] = useState(value);
@@ -100,7 +108,7 @@ function TournamentAccordion({
   const totalPages = matchesResp?.totalPages || 1;
 
   // Hiển thị mã ưu tiên codeResolved (server đã chuẩn hoá theo bảng)
-  const renderMatchCode = (m) => matchCode(m);
+  const renderMatchCode = (m) => pickMatchCode(m);
 
   // Render chip “Bảng …” khi là vòng bảng & có index
   const renderGroupChip = (m) => {

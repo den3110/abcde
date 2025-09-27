@@ -13,21 +13,25 @@ export const adminCourtApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     // Upsert danh sách sân theo BRACKET (names[] hoặc count)
     upsertCourts: builder.mutation({
-      // { tournamentId, bracket, names?: string[], count?: number }
-      query: ({ tournamentId, bracket, names, count }) => {
+      // { tournamentId, bracket, names?: string[], count?: number, autoAssign?: boolean }
+      query: ({ tournamentId, bracket, names, count, autoAssign }) => {
         const tid = asId(tournamentId);
         const bid = asId(bracket);
+
+        const body = {
+          bracket: bid,
+          ...(Array.isArray(names) && names.length ? { names } : {}),
+          ...(Number.isInteger(count) ? { count } : {}),
+          ...(typeof autoAssign !== "undefined" ? { autoAssign: !!autoAssign } : {}),
+        };
+
         return {
           url: `/admin/tournaments/${enc(tid)}/courts`,
           method: "POST",
-          body: {
-            bracket: bid,
-            ...(Array.isArray(names) && names.length ? { names } : {}),
-            ...(Number.isInteger(count) ? { count } : {}),
-          },
+          body,
         };
       },
-      transformResponse: (res) => res?.items ?? res,
+      transformResponse: (res) => res?.items ?? res, // BE có trả meta.autoAssignApplied; vẫn giữ items như cũ
       invalidatesTags: ["ADMIN_COURTS", "ADMIN_QUEUE"],
     }),
 
