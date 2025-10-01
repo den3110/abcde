@@ -45,6 +45,7 @@ import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPag
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
 import FilesManager from "layouts/FilesManager";
+import AdminMonitorPage from "layouts/AdminMonitorPage";
 // nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
 
 const routes = [
@@ -423,6 +424,17 @@ const routes = [
     component: <SystemSettingsPage />,
     private: true,
     roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Theo dõi realtime",
+    key: "admin-monitor",
+    icon: <Icon fontSize="small">monitor_heart</Icon>, // nếu không có icon này, thay bằng "wifi_tethering"
+    route: "/admin/monitor",
+    component: <AdminMonitorPage />,
+    private: true,
+    roles: ["admin"],
+    show: true, // hiện trên sidebar
   },
 ];
 
