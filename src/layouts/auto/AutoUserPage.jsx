@@ -1,5 +1,5 @@
 // src/layouts/admin/AutoUserPage.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   Box,
   Card,
@@ -29,6 +29,11 @@ import {
   InputAdornment,
   LinearProgress,
   CircularProgress,
+  Avatar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 
@@ -42,17 +47,23 @@ import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import PreviewIcon from "@mui/icons-material/Preview";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import ShuffleIcon from "@mui/icons-material/Shuffle";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import CloseIcon from "@mui/icons-material/Close";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
-// hooks của bạn
 import {
   usePreviewAutoUsersMutation,
   useCreateAutoUsersMutation,
 } from "slices/tournamentsApiSlice";
+import PropTypes from "prop-types";
+// Upload avatar: mutation nhận trực tiếp File/Blob, field "avatar" được append trong slice
+import { useUploadAvatarMutation } from "slices/tournamentsApiSlice";
+// Admin tạo user
+import { useAdminCreateUserMutation } from "slices/adminUsersApiSlice";
 
-// ====== Provinces (VN) ======
+/* ====== Provinces (VN) ====== */
 const PROVINCES = [
   "An Giang",
   "Bà Rịa - Vũng Tàu",
@@ -146,6 +157,289 @@ function toCSV(rows) {
   return lines.join("\n");
 }
 
+/* ------------------ Utils ------------------ */
+const randFrom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const genPassword = (len = 12) => {
+  const U = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const L = "abcdefghijkmnopqrstuvwxyz";
+  const D = "23456789";
+  const S = "!@#$%^&*()-_=+[]{}";
+  const all = U + L + D + S;
+  const base = [randFrom(U), randFrom(L), randFrom(D), randFrom(S)];
+  while (base.length < len) base.push(randFrom(all));
+  for (let i = base.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [base[i], base[j]] = [base[j], base[i]];
+  }
+  return base.join("");
+};
+
+/* ------------------ Dialog: Tạo user thủ công ------------------ */
+function ManualCreateUserDialog({ open, onClose, onCreated }) {
+  const [uploadAvatar, { isLoading: uploading }] = useUploadAvatarMutation();
+  const [adminCreateUser, { isLoading: creating }] = useAdminCreateUserMutation();
+
+  const fileRef = useRef(null);
+  const [form, setForm] = useState({
+    name: "",
+    nickname: "",
+    phone: "",
+    password: genPassword(12),
+    avatarFile: null,
+    avatarPreview: "",
+    avatarUrl: "",
+  });
+  const [showPass, setShowPass] = useState(false);
+  const [toast, setToast] = useState("");
+
+  // Reset & random lại khi mở
+  useEffect(() => {
+    if (open) {
+      setForm({
+        name: "",
+        nickname: "",
+        phone: "",
+        password: genPassword(12),
+        avatarFile: null,
+        avatarPreview: "",
+        avatarUrl: "",
+      });
+      setShowPass(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }, [open]);
+
+  // Thu hồi objectURL khi thay đổi hoặc unmount để tránh leak
+  useEffect(() => {
+    return () => {
+      if (form.avatarPreview) URL.revokeObjectURL(form.avatarPreview);
+    };
+  }, [form.avatarPreview]);
+
+  const onPickAvatar = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!f.type.startsWith("image/")) {
+      setToast("File không phải ảnh.");
+      return;
+    }
+    const preview = URL.createObjectURL(f);
+    // Thu hồi preview cũ nếu có
+    if (form.avatarPreview) URL.revokeObjectURL(form.avatarPreview);
+    setForm((s) => ({ ...s, avatarFile: f, avatarPreview: preview }));
+  };
+
+  const clearAvatar = () => {
+    if (form.avatarPreview) URL.revokeObjectURL(form.avatarPreview);
+    setForm((s) => ({ ...s, avatarFile: null, avatarPreview: "", avatarUrl: "" }));
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const clearAll = () => {
+    clearAvatar();
+    setForm({
+      name: "",
+      nickname: "",
+      phone: "",
+      password: genPassword(12),
+      avatarFile: null,
+      avatarPreview: "",
+      avatarUrl: "",
+    });
+    setShowPass(false);
+  };
+
+  const canSubmit = Boolean(form.name?.trim() && form.nickname?.trim() && form.password);
+
+  const handleCreate = async () => {
+    try {
+      // 1) Upload avatar nếu có file (slice nhận trực tiếp File)
+      let avatarUrl = (form.avatarUrl || "").trim();
+      if (form.avatarFile instanceof File || form.avatarFile instanceof Blob) {
+        const up = await uploadAvatar(form.avatarFile).unwrap();
+        avatarUrl =
+          up?.url ||
+          up?.avatar ||
+          up?.path ||
+          up?.Location ||
+          up?.secure_url ||
+          up?.data?.url ||
+          "";
+      }
+
+      // 2) Payload tạo user
+      const payload = {
+        role: "user",
+        name: String(form.name || "").trim(),
+        nickname: String(form.nickname || "").trim(),
+        phone: String(form.phone || "").trim(),
+        password: String(form.password || "").trim() || genPassword(12),
+        verified: "pending",
+        gender: "unspecified",
+      };
+      if (avatarUrl) payload.avatar = avatarUrl;
+
+      // 3) Tạo user
+      const res = await adminCreateUser(payload).unwrap();
+
+      setToast("Tạo user thành công");
+      onCreated?.(res?.user || res);
+
+      // 4) Clear & đóng popup
+      clearAll();
+      onClose?.();
+    } catch (e) {
+      setToast(e?.data?.message || e?.error || "Tạo user thất bại");
+    }
+  };
+
+  return (
+    <>
+      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1, pr: 3 }}>
+          <PersonAddAlt1Icon />
+          Tạo user thủ công
+        </DialogTitle>
+        <DialogContent dividers sx={{ px: 3, pt: 2, pb: 1, pr: 3 }}>
+          <Stack spacing={2}>
+            {/* Avatar chọn/preview */}
+            <Stack direction="row" alignItems="center" spacing={2}>
+              <Avatar
+                src={form.avatarPreview || form.avatarUrl || ""}
+                alt={form.name || form.nickname || "avatar"}
+                sx={{ width: 72, height: 72 }}
+              />
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Button
+                  component="label"
+                  variant="outlined"
+                  startIcon={<PhotoCameraIcon />}
+                  disabled={uploading || creating}
+                >
+                  Chọn ảnh
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={onPickAvatar}
+                  />
+                </Button>
+                {!!(form.avatarPreview || form.avatarUrl) && (
+                  <Button
+                    color="error"
+                    variant="text"
+                    startIcon={<CloseIcon />}
+                    onClick={clearAvatar}
+                    disabled={uploading || creating}
+                  >
+                    Bỏ ảnh
+                  </Button>
+                )}
+              </Stack>
+            </Stack>
+
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  label="Họ tên"
+                  fullWidth
+                  value={form.name}
+                  onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+                  required
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Nickname"
+                  fullWidth
+                  value={form.nickname}
+                  onChange={(e) => setForm((s) => ({ ...s, nickname: e.target.value }))}
+                  required
+                  helperText="Bắt buộc với role user (unique)"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Số điện thoại"
+                  fullWidth
+                  value={form.phone}
+                  onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  label="Mật khẩu"
+                  fullWidth
+                  value={form.password}
+                  onChange={(e) => setForm((s) => ({ ...s, password: e.target.value }))}
+                  type={showPass ? "text" : "password"}
+                  required
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Tooltip title={showPass ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>
+                          <IconButton onClick={() => setShowPass((v) => !v)} edge="end">
+                            {showPass ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Random lại mật khẩu">
+                          <IconButton
+                            onClick={() => setForm((s) => ({ ...s, password: genPassword(12) }))}
+                            edge="end"
+                          >
+                            <ShuffleIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </InputAdornment>
+                    ),
+                  }}
+                  helperText="Có thể nhập tay hoặc bấm random lại."
+                />
+              </Grid>
+            </Grid>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          {(uploading || creating) && (
+            <Box sx={{ mr: 2, minWidth: 160 }}>
+              <LinearProgress />
+            </Box>
+          )}
+          <Button onClick={onClose} disabled={uploading || creating}>
+            Huỷ
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleCreate}
+            disabled={!canSubmit || uploading || creating}
+            startIcon={creating ? <CircularProgress size={16} /> : <PlayArrowIcon />}
+          >
+            Tạo user
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={3000}
+        onClose={() => setToast("")}
+        message={toast}
+      />
+    </>
+  );
+}
+
+ManualCreateUserDialog.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onCreated: PropTypes.func,
+};
+ManualCreateUserDialog.defaultProps = {
+  onCreated: () => {},
+};
+
+/* ------------------ Trang chính ------------------ */
 export default function AutoUserPage() {
   const [form, setForm] = useState({
     count: 10,
@@ -158,7 +452,7 @@ export default function AutoUserPage() {
     withCCCD: false,
     cccdStatus: "unverified",
     gender: "unspecified",
-    province: "", // "" = random; khi chọn sẽ là tên tỉnh
+    province: "",
     seed: "",
   });
 
@@ -169,6 +463,8 @@ export default function AutoUserPage() {
   const [toast, setToast] = useState("");
   const [filter, setFilter] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  const [openManual, setOpenManual] = useState(false);
 
   const isUser = form.role === "user";
 
@@ -187,7 +483,7 @@ export default function AutoUserPage() {
   const payload = useMemo(() => {
     const p = { ...form };
     if (!p.seed) delete p.seed;
-    if (!p.province) delete p.province; // "" => random server
+    if (!p.province) delete p.province;
     if (p.passwordMode !== "fixed") delete p.fixedPassword;
     return p;
   }, [form]);
@@ -223,7 +519,6 @@ export default function AutoUserPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Lọc trước khi đổ vào DataGrid
   const filteredRowsRaw = useMemo(() => {
     if (!filter) return rows;
     const q = filter.toLowerCase();
@@ -235,7 +530,6 @@ export default function AutoUserPage() {
     );
   }, [rows, filter]);
 
-  // Chuẩn hóa rows cho DataGrid (cần field id)
   const gridRows = useMemo(
     () =>
       filteredRowsRaw.map((r, i) => ({
@@ -252,7 +546,7 @@ export default function AutoUserPage() {
         headerName: "#",
         width: 70,
         sortable: false,
-        valueGetter: (v, row, col, id) => gridRows.findIndex((rr) => rr.id === id) + 1,
+        valueGetter: (params) => gridRows.findIndex((rr) => rr.id === params.id) + 1,
       },
       { field: "name", headerName: "name", flex: 1, minWidth: 160 },
       { field: "email", headerName: "email", flex: 1.2, minWidth: 220 },
@@ -324,18 +618,19 @@ export default function AutoUserPage() {
             </Typography>
           </Stack>
 
-          <Stack direction="row" spacing={1} flexWrap="wrap">
+          <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
             <Chip size="small" color="primary" variant="outlined" label={`Role: ${form.role}`} />
             <Chip size="small" variant="outlined" label={`Verified: ${form.verified}`} />
             <Chip size="small" variant="outlined" label={`Count: ${form.count}`} />
-            {isUser && (
-              <Chip
-                size="small"
-                variant="outlined"
-                color="success"
-                label="Yêu cầu: nickname/phone/dob"
-              />
-            )}
+
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<PersonAddAlt1Icon />}
+              onClick={() => setOpenManual(true)}
+            >
+              Tạo user thủ công
+            </Button>
           </Stack>
         </Box>
 
@@ -649,7 +944,7 @@ export default function AutoUserPage() {
                   pageSizeOptions={[25, 50, 100]}
                   initialState={{
                     pagination: { paginationModel: { pageSize: 25, page: 0 } },
-                    columns: { columnVisibilityModel: { _id: false } }, // ẩn _id nếu muốn
+                    columns: { columnVisibilityModel: { _id: false } },
                   }}
                 />
               </Box>
@@ -664,6 +959,16 @@ export default function AutoUserPage() {
           message={toast}
         />
       </Box>
+
+      {/* Popup tạo user thủ công */}
+      <ManualCreateUserDialog
+        open={openManual}
+        onClose={() => setOpenManual(false)}
+        onCreated={(u) => {
+          if (u) setRows((prev) => [u, ...prev]);
+          setToast("Đã tạo 1 user thủ công");
+        }}
+      />
     </DashboardLayout>
   );
 }

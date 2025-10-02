@@ -203,7 +203,7 @@ export default function AdminBracketsPage() {
     data: usersData,
     isLoading: refsLoading,
     error: refsError,
-  } = useGetUsersQuery({ page: 1, keyword: "", role: "referee" });
+  } = useGetUsersQuery({ page: 1, keyword: "", role: "referee", pageSize: 100 });
   const referees = usersData?.users ?? [];
   const refName = (u) => u?.nickName || u?.name || u?.email || "Referee";
   const formatReferees = (refField) => {

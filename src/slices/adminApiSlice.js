@@ -6,10 +6,10 @@ export const adminApiSlice = apiSlice.injectEndpoints({
     // USER MANAGEMENT (cũ)
     // =========================
     getUsers: builder.query({
-      query: ({ page = 1, keyword = "", role = "", cccdStatus = "" }) =>
+      query: ({ page = 1, keyword = "", role = "", cccdStatus = "", pageSize = 10 }) =>
         `/admin/users?page=${page}&keyword=${encodeURIComponent(
           keyword
-        )}&role=${role}&cccdStatus=${cccdStatus}`,
+        )}&role=${role}&cccdStatus=${cccdStatus}&pageSize=${pageSize}`,
       providesTags: ["User"],
       keepUnusedDataFor: 30,
     }),
