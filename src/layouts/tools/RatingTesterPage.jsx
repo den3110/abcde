@@ -1,4 +1,3 @@
-// src/layouts/tools/RatingTesterPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
@@ -16,6 +15,7 @@ import {
   Alert,
   CircularProgress,
   Tooltip,
+  Autocomplete,
 } from "@mui/material";
 import { Add as AddIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import CalculateIcon from "@mui/icons-material/Calculate";
@@ -48,6 +48,18 @@ const regName = (reg, evType) => {
   const b = reg?.player2?.fullName || "N/A";
   return `${a} & ${b}`;
 };
+
+// New: prefer nickname when available
+const regNickName = (reg, evType) => {
+  if (!reg) return "—";
+  // if registration has a team-level nickname / displayName
+  if (reg?.nickName) return reg.nickName;
+  if (evType === "single") return reg?.player1?.nickName || reg?.player1?.fullName || "N/A";
+  const a = reg?.player1?.nickName || reg?.player1?.fullName || "N/A";
+  const b = reg?.player2?.nickName || reg?.player2?.fullName || "N/A";
+  return `${a} & ${b}`;
+};
+
 const idOf = (x) => String(x?._id ?? x);
 
 export default function RatingTesterPage() {
@@ -149,6 +161,11 @@ export default function RatingTesterPage() {
     }
   };
 
+  // helpers to find option objects for Autocomplete values
+  const findTournamentById = (id) => tournaments.find((t) => idOf(t._id || t.id) === id) || null;
+  const findBracketById = (id) => (brackets || []).find((b) => idOf(b._id) === id) || null;
+  const findRegById = (id) => (registrations || []).find((r) => idOf(r._id) === id) || null;
+
   return (
     <DashboardLayout>
       <DashboardNavbar />
@@ -168,90 +185,73 @@ export default function RatingTesterPage() {
         <Card variant="outlined" sx={{ p: 2, mb: 3 }}>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <TextField
-                select
-                fullWidth
-                label="Giải đấu"
-                value={tournamentId}
-                onChange={(e) => setTournamentId(e.target.value)}
-                helperText={
-                  loadingRec ? "Đang tải danh sách..." : "Chọn giải để tải brackets/registrations"
-                }
-                sx={{ "& .MuiInputBase-root": { minHeight: 56 }, "& .MuiSelect-select": { py: 2 } }}
-              >
-                <MenuItem value="">
-                  <em>— Chưa chọn —</em>
-                </MenuItem>
-                {tournaments.map((t) => (
-                  <MenuItem key={idOf(t._id || t.id)} value={idOf(t._id || t.id)}>
-                    {t.name}
-                  </MenuItem>
-                ))}
-              </TextField>
+              <Autocomplete
+                options={tournaments}
+                getOptionLabel={(option) => option?.name || ""}
+                value={findTournamentById(tournamentId)}
+                onChange={(e, val) => setTournamentId(val ? idOf(val._id || val.id) : "")}
+                disabled={loadingRec}
+                sx={{ "& .MuiInputBase-root": { minHeight: 56 } }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Giải đấu"
+                    fullWidth
+                    helperText={
+                      loadingRec
+                        ? "Đang tải danh sách..."
+                        : "Chọn giải để tải brackets/registrations"
+                    }
+                  />
+                )}
+              />
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <TextField
-                select
-                fullWidth
-                label="Bracket (tuỳ chọn)"
-                value={bracketId}
-                onChange={(e) => setBracketId(e.target.value)}
+              <Autocomplete
+                options={brackets || []}
+                getOptionLabel={(option) => option?.name || ""}
+                value={findBracketById(bracketId)}
+                onChange={(e, val) => setBracketId(val ? idOf(val._id) : "")}
                 disabled={!tournamentId || loadingB}
-                helperText="Phục vụ phase multiplier / context"
-                sx={{ "& .MuiInputBase-root": { minHeight: 56 }, "& .MuiSelect-select": { py: 2 } }}
-              >
-                <MenuItem value="">
-                  <em>— Không chọn —</em>
-                </MenuItem>
-                {(brackets || []).map((b) => (
-                  <MenuItem key={idOf(b._id)} value={idOf(b._id)}>
-                    {b.name} ({b.type}, stage {b.stage ?? 1})
-                  </MenuItem>
-                ))}
-              </TextField>
+                sx={{ "& .MuiInputBase-root": { minHeight: 56 } }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Bracket (tuỳ chọn)"
+                    fullWidth
+                    helperText="Phục vụ phase multiplier / context"
+                  />
+                )}
+              />
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <TextField
-                select
-                fullWidth
-                label={isSingles ? "VĐV A" : "Đội A"}
-                value={pairA}
-                onChange={(e) => setPairA(e.target.value)}
+              <Autocomplete
+                options={registrations || []}
+                getOptionLabel={(option) => regNickName(option, evType)}
+                value={findRegById(pairA)}
+                onChange={(e, val) => setPairA(val ? idOf(val._id) : "")}
                 disabled={!tournamentId || loadingRegs}
-                sx={{ "& .MuiInputBase-root": { minHeight: 56 }, "& .MuiSelect-select": { py: 2 } }}
-              >
-                <MenuItem value="">
-                  <em>— Chưa chọn —</em>
-                </MenuItem>
-                {(registrations || []).map((r) => (
-                  <MenuItem key={idOf(r._id)} value={idOf(r._id)}>
-                    {regName(r, evType)}
-                  </MenuItem>
-                ))}
-              </TextField>
+                sx={{ "& .MuiInputBase-root": { minHeight: 56 } }}
+                renderInput={(params) => (
+                  <TextField {...params} label={isSingles ? "VĐV A" : "Đội A"} fullWidth />
+                )}
+              />
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <TextField
-                select
-                fullWidth
-                label={isSingles ? "VĐV B" : "Đội B"}
-                value={pairB}
-                onChange={(e) => setPairB(e.target.value)}
+              <Autocomplete
+                options={registrations || []}
+                getOptionLabel={(option) => regNickName(option, evType)}
+                value={findRegById(pairB)}
+                onChange={(e, val) => setPairB(val ? idOf(val._id) : "")}
                 disabled={!tournamentId || loadingRegs}
-                sx={{ "& .MuiInputBase-root": { minHeight: 56 }, "& .MuiSelect-select": { py: 2 } }}
-              >
-                <MenuItem value="">
-                  <em>— Chưa chọn —</em>
-                </MenuItem>
-                {(registrations || []).map((r) => (
-                  <MenuItem key={idOf(r._id)} value={idOf(r._id)}>
-                    {regName(r, evType)}
-                  </MenuItem>
-                ))}
-              </TextField>
+                sx={{ "& .MuiInputBase-root": { minHeight: 56 } }}
+                renderInput={(params) => (
+                  <TextField {...params} label={isSingles ? "VĐV B" : "Đội B"} fullWidth />
+                )}
+              />
             </Grid>
 
             <Grid item xs={12} md={3}>

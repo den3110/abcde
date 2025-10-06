@@ -89,6 +89,8 @@ import {
   useFeedStageToNextMutation, // ⭐ NEW
 } from "slices/progressionApiSlice";
 
+import Autocomplete from "@mui/material/Autocomplete";
+
 const STATUS_LABELS = {
   scheduled: "chưa xếp",
   live: "đang diễn ra",
@@ -114,6 +116,38 @@ const regName = (reg, evType) => {
 
 const detectVideoUrl = (m) => m?.video || "";
 const sanitizeVideoUrl = (s) => String(s || "").trim();
+
+// ===== Helpers: hiển thị mã trận dạng V-B-T / V-T (dùng gạch nối) =====
+const joinDash = (...parts) => parts.filter(Boolean).join("-");
+
+const getMatchCode = (mt, brType) => {
+  if (!mt) return "";
+  // Nếu server đã build sẵn mã
+  if (mt.code) return String(mt.code).replace(/\s+/g, "-");
+
+  // Fallback từ nhãn rời
+  const v = mt.vLabel || `V${Number(mt.round || 1)}`;
+  const t = mt.tLabel || `T${Number(mt.order ?? 0) + 1}`;
+
+  if (brType === "group") {
+    // Ưu tiên bLabel; fallback từ group name/key
+    const b =
+      mt.bLabel ||
+      (mt.group?.name ? `B${String(mt.group.name).toUpperCase()}` : null) ||
+      (mt.groupName ? `B${String(mt.groupName).toUpperCase()}` : "") ||
+      "";
+    return joinDash(v, b, t);
+  }
+  return joinDash(v, t);
+};
+
+const getPrevCode = (prev) => {
+  if (!prev) return "";
+  if (prev.code) return String(prev.code).replace(/\s+/g, "-");
+  const v = prev.vLabel || `V${Number(prev.round || 1)}`;
+  const t = prev.tLabel || `T${Number(prev.order ?? 0) + 1}`;
+  return joinDash(v, t);
+};
 
 // ------ Responsive styles cho Accordion/list ------
 const sxUI = {
@@ -606,15 +640,17 @@ export default function AdminBracketsPage() {
   const getSideLabel = (mt, side) => {
     const pair = side === "A" ? mt?.pairA : mt?.pairB;
     if (pair) return regName(pair, evType);
-    const prevId = side === "A" ? mt?.previousA : mt?.previousB;
-    if (!prevId) return "—";
-    const prev = matches?.find((m) => idOf(m?._id) === idOf(prevId));
-    if (!prev) return "Thắng trận ?";
-    if (prev?.status === "finished" && prev?.winner) {
-      const reg = prev?.winner === "A" ? prev?.pairA : prev?.pairB;
-      return `${regName(reg, evType)} (thắng R${prev?.round}-#${prev?.order ?? 0})`;
+    const prevRef = side === "A" ? mt?.previousA : mt?.previousB;
+    if (!prevRef) return "—";
+    // Có thể là object (được populate) hoặc chỉ là id → tìm trong matches
+    const prevObj = prevRef && typeof prevRef === "object" ? prevRef : null;
+    const prevFromList = prevObj || matches?.find((m) => idOf(m?._id) === idOf(prevRef));
+    const code = getPrevCode(prevFromList) || "?";
+    if (prevFromList?.status === "finished" && prevFromList?.winner) {
+      const reg = prevFromList.winner === "A" ? prevFromList.pairA : prevFromList.pairB;
+      return `${regName(reg, evType)} (thắng ${code})`;
     }
-    return `Thắng trận R${prev?.round}-#${prev?.order ?? 0} (TBD)`;
+    return `Thắng trận ${code} (TBD)`;
   };
 
   /* =====================
@@ -1243,42 +1279,95 @@ export default function AdminBracketsPage() {
   const willDowngrade = emOldStatus === "finished" && emStatus !== "finished";
   const willChangeWinner = emStatus === "finished" && emWinner && emWinner !== emOldWinner;
 
+  // Chuẩn hoá cap.points để so sánh
+  const normCapPoints = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+
   const saveEditMatch = async () => {
     if (!emId) return;
-    if (!emPairA || !emPairB || emPairA === emPairB) {
+
+    // === 1) Phát hiện "cap-only change" ===
+    const origCapMode = editingMatch?.rules?.cap?.mode ?? "none";
+    const origCapPoints = normCapPoints(editingMatch?.rules?.cap?.points);
+
+    const curCapMode = emRules?.cap?.mode ?? "none";
+    const curCapPoints = normCapPoints(emRules?.cap?.points);
+
+    const capChanged =
+      String(curCapMode) !== String(origCapMode) ||
+      normCapPoints(curCapPoints) !== normCapPoints(origCapPoints);
+
+    // Các trường còn lại giữ nguyên?
+    const othersEqual =
+      Number(emRound) === Number(editingMatch?.round ?? 1) &&
+      Number(emOrder) === Number(editingMatch?.order ?? 0) &&
+      (emPairA || "") === String(editingMatch?.pairA?._id || "") &&
+      (emPairB || "") === String(editingMatch?.pairB?._id || "") &&
+      Number(emRules?.bestOf ?? 3) === Number(editingMatch?.rules?.bestOf ?? 3) &&
+      Number(emRules?.pointsToWin ?? 11) === Number(editingMatch?.rules?.pointsToWin ?? 11) &&
+      Boolean(emRules?.winByTwo ?? true) === Boolean(editingMatch?.rules?.winByTwo ?? true) &&
+      String(emStatus || "scheduled") === String(editingMatch?.status || "scheduled") &&
+      String(emWinner || "") === String(editingMatch?.winner || "") &&
+      (sanitizeVideoUrl(emVideo) || "") === (sanitizeVideoUrl(editingMatch?.video || "") || "") &&
+      Math.max(0, Number(emRatingDelta) || 0) ===
+        Math.max(0, Number(editingMatch?.ratingDelta) || 0) &&
+      // so sánh danh sách referee theo id
+      JSON.stringify([...(Array.isArray(emReferees) ? emReferees : [])].map(String).sort()) ===
+        JSON.stringify(
+          [
+            ...(Array.isArray(editingMatch?.referee)
+              ? editingMatch.referee.map((r) => (typeof r === "object" ? String(r._id) : String(r)))
+              : editingMatch?.referee
+              ? [
+                  typeof editingMatch.referee === "object"
+                    ? String(editingMatch.referee._id)
+                    : String(editingMatch.referee),
+                ]
+              : []),
+          ].sort()
+        );
+
+    const capOnly = capChanged && othersEqual;
+
+    // === 2) Chỉ chặn khi KHÔNG phải cap-only ===
+    const pairsInvalid = !emPairA || !emPairB || emPairA === emPairB;
+    if (pairsInvalid && !capOnly) {
       return showSnack("error", "Phải chọn 2 đội khác nhau");
     }
-    try {
-      await updateMatch({
-        matchId: emId,
-        body: {
-          round: Number(emRound),
-          order: Number(emOrder),
-          pairA: emPairA,
-          pairB: emPairB,
-          rules: {
-            bestOf: Number(emRules.bestOf),
-            pointsToWin: Number(emRules.pointsToWin),
-            winByTwo: !!emRules.winByTwo,
-            cap: {
-              mode: emRules?.cap?.mode ?? "none",
-              points: emRules?.cap?.mode === "none" ? null : Number(emRules?.cap?.points) || null,
-            },
-          },
-          status: emStatus,
-          winner: emStatus === "finished" ? emWinner : "",
-          referee: Array.isArray(emReferees) ? emReferees : [],
-          ratingDelta: Math.max(0, Number(emRatingDelta) || 0),
-          video: sanitizeVideoUrl(emVideo) || "",
-        },
-      }).unwrap();
 
-      // Nếu bật reset tỉ số, gọi API reset điểm/ván về 0
+    try {
+      // Chuẩn bị body
+      const body = {
+        round: Number(emRound),
+        order: Number(emOrder),
+        rules: {
+          bestOf: Number(emRules.bestOf),
+          pointsToWin: Number(emRules.pointsToWin),
+          winByTwo: !!emRules.winByTwo,
+          cap: {
+            mode: curCapMode,
+            points: curCapMode === "none" ? null : normCapPoints(curCapPoints),
+          },
+        },
+        status: emStatus,
+        winner: emStatus === "finished" ? emWinner : "",
+        referee: Array.isArray(emReferees) ? emReferees : [],
+        ratingDelta: Math.max(0, Number(emRatingDelta) || 0),
+        video: sanitizeVideoUrl(emVideo) || "",
+      };
+
+      // Với cap-only & cặp đang trống/trùng → KHÔNG gửi pairA/pairB (tránh ghi đè prevA/B)
+      if (!(capOnly && pairsInvalid)) {
+        body.pairA = emPairA;
+        body.pairB = emPairB;
+      }
+
+      await updateMatch({ matchId: emId, body }).unwrap();
+
+      // Reset điểm nếu tick
       if (emResetScores) {
         try {
           await resetMatchScores({ matchId: emId }).unwrap();
         } catch (e) {
-          // Không chặn lưu — chỉ cảnh báo nếu reset tỉ số lỗi
           showSnack("warning", e?.data?.message || e.error || "Không reset được tỉ số");
         }
       }
@@ -1287,7 +1376,6 @@ export default function AdminBracketsPage() {
         await resetMatchChain({ matchId: emId }).unwrap();
       }
 
-      // showSnack("success", emCascade ? "Đã lưu & reset chuỗi trận sau" : "Đã lưu");
       const msgParts = ["Đã lưu"];
       if (emResetScores) msgParts.push("đã reset tỉ số");
       if (emCascade) msgParts.push("đã reset chuỗi trận sau");
@@ -1825,7 +1913,7 @@ export default function AdminBracketsPage() {
                                               </Box>
 
                                               <Typography>
-                                                <strong>Trận #{(mt.order ?? idx) + 1}</strong>:{" "}
+                                                <strong>{getMatchCode(mt, "group")}</strong>:
                                                 <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
                                                 <strong>{getSideLabel(mt, "B")}</strong>
                                               </Typography>
@@ -1977,8 +2065,7 @@ export default function AdminBracketsPage() {
                                     </Box>
 
                                     <Typography>
-                                      Vòng {mt.round || 1} —{" "}
-                                      <strong>#{(mt.order ?? idx) + 1}</strong>:{" "}
+                                      <strong>{getMatchCode(mt, br.type)}</strong>:
                                       <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
                                       <strong>{getSideLabel(mt, "B")}</strong>
                                     </Typography>
@@ -2631,33 +2718,36 @@ export default function AdminBracketsPage() {
               placeholder="https://..., m3u8, rtmp://..., v.v."
               helperText="Nhập URL video/stream (YouTube, Facebook, Twitch, HLS, RTMP,...)"
             />
-            <Stack>
+            <Box>
               <Typography variant="subtitle2" sx={{ mt: 1, mb: 0.5 }}>
                 Trọng tài
               </Typography>
-              <FormGroup>
-                {referees.map((u) => {
-                  const id = String(u._id);
-                  const checked = newReferees.includes(id);
-                  return (
-                    <FormControlLabel
-                      key={id}
-                      control={
-                        <Checkbox
-                          checked={checked}
-                          onChange={() =>
-                            setNewReferees((prev) =>
-                              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-                            )
-                          }
-                        />
-                      }
-                      label={`${u.name}${u.nickname ? ` (${u.nickname})` : ""}`}
-                    />
-                  );
-                })}
-              </FormGroup>
-            </Stack>
+
+              <Autocomplete
+                multiple
+                disableCloseOnSelect
+                options={referees}
+                loading={refsLoading}
+                value={referees.filter((u) => emReferees.includes(String(u._id)))}
+                onChange={(_, values) => setEmReferees(values.map((u) => String(u._id)))}
+                getOptionLabel={(u) => refName(u)}
+                isOptionEqualToValue={(opt, val) => String(opt._id) === String(val._id)}
+                renderOption={(props, option, { selected }) => (
+                  <li {...props} key={String(option._id)}>
+                    <Checkbox style={{ marginRight: 8 }} checked={selected} />
+                    {refName(option)}
+                  </li>
+                )}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Trọng tài"
+                    placeholder="Chọn một hoặc nhiều trọng tài"
+                    helperText="Để trống = không gán trọng tài"
+                  />
+                )}
+              />
+            </Box>
 
             <Grid container spacing={2} mt={1} p={2}>
               <Grid item xs={4}>
@@ -2830,33 +2920,36 @@ export default function AdminBracketsPage() {
               placeholder="https://..., m3u8, rtmp://..., v.v."
               helperText="Để trống rồi Lưu để xoá link video"
             />
-            <Stack>
+            <Box>
               <Typography variant="subtitle2" sx={{ mt: 1, mb: 0.5 }}>
                 Trọng tài
               </Typography>
-              <FormGroup>
-                {referees.map((u) => {
-                  const id = String(u._id);
-                  const checked = emReferees.includes(id);
-                  return (
-                    <FormControlLabel
-                      key={id}
-                      control={
-                        <Checkbox
-                          checked={checked}
-                          onChange={() =>
-                            setEmReferees((prev) =>
-                              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-                            )
-                          }
-                        />
-                      }
-                      label={`${u.name}${u.nickname ? ` (${u.nickname})` : ""}`}
-                    />
-                  );
-                })}
-              </FormGroup>
-            </Stack>
+
+              <Autocomplete
+                multiple
+                disableCloseOnSelect
+                options={referees}
+                loading={refsLoading}
+                value={referees.filter((u) => emReferees.includes(String(u._id)))}
+                onChange={(_, values) => setEmReferees(values.map((u) => String(u._id)))}
+                getOptionLabel={(u) => refName(u)}
+                isOptionEqualToValue={(opt, val) => String(opt._id) === String(val._id)}
+                renderOption={(props, option, { selected }) => (
+                  <li {...props} key={String(option._id)}>
+                    <Checkbox style={{ marginRight: 8 }} checked={selected} />
+                    {refName(option)}
+                  </li>
+                )}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Trọng tài"
+                    placeholder="Chọn một hoặc nhiều trọng tài"
+                    helperText="Để trống = không gán trọng tài"
+                  />
+                )}
+              />
+            </Box>
 
             <TextField
               select
@@ -3212,18 +3305,17 @@ export default function AdminBracketsPage() {
                   const rm = row.rightMatch;
 
                   const lmLabel = lm
-                    ? `R${lm.round}-#${lm.order ?? 0}: ${regName(lm.pairA, evType)} vs ${regName(
+                    ? `${getPrevCode(lm)}: ${regName(lm.pairA, evType)} vs ${regName(
                         lm.pairB,
                         evType
                       )}`
                     : "—";
                   const rmLabel = rm
-                    ? `R${rm.round}-#${rm.order ?? 0}: ${regName(rm.pairA, evType)} vs ${regName(
+                    ? `${getPrevCode(rm)}: ${regName(rm.pairA, evType)} vs ${regName(
                         rm.pairB,
                         evType
                       )}`
                     : "—";
-
                   const prevList = (grouped[idOf(nextDlgBracket._id)] || []).filter(
                     (m) => (m.round || 1) === nextRound - 1
                   );
