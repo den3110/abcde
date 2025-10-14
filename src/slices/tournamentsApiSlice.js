@@ -480,7 +480,7 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
     }),
     planTournament: builder.mutation({
       query: ({ tournamentId, body }) => ({
-        url: `/admin/tournaments/${tournamentId}/plan/auto`,
+        url: `/admin/tournaments/${tournamentId}/plan`,
         method: "POST",
         body,
       }),
@@ -642,6 +642,13 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["Match"],
     }),
+    suggestTournamentPlan: builder.mutation({
+      query: ({ tournamentId, body }) => ({
+        url: `/admin/tournaments/${tournamentId}/plan/suggest`,
+        method: "POST",
+        body,
+      }),
+    }),
   }),
 });
 
@@ -708,4 +715,5 @@ export const {
   useRefereeNextGameMutation,
   useInsertRegIntoGroupSlotMutation,
   useGenerateGroupMatchesForTeamMutation,
+  useSuggestTournamentPlanMutation,
 } = tournamentsApiSlice;

@@ -46,7 +46,11 @@ import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
 import FilesManager from "layouts/FilesManager";
 import AdminMonitorPage from "layouts/AdminMonitorPage";
-// nếu bạn đặt file ở "pages/admin/AlgoSettingsPage.jsx" thì đổi import cho đúng
+import AdminSponsorsPage from "layouts/AdminSponsorsPage";
+import FbLiveConfigPage from "layouts/FbLiveConfigPage";
+
+// 🆕 FB Live Config (Admin UI - MUI + RTK Query)
+// Đổi đường dẫn import nếu bạn đặt file ở vị trí khác (vd: "pages/admin/FbLiveConfigPage")
 
 const routes = [
   // Dashboard
@@ -59,6 +63,19 @@ const routes = [
     component: <Dashboard />,
     roles: ["admin"],
     private: true,
+  },
+
+  // 🆕 Nhà tài trợ (Admin)
+  {
+    type: "collapse",
+    name: "Nhà tài trợ",
+    key: "admin-sponsors",
+    icon: <Icon fontSize="small">handshake</Icon>, // có thể đổi: 'workspace_premium' | 'volunteer_activism'
+    route: "/admin/sponsors",
+    component: <AdminSponsorsPage />,
+    private: true,
+    roles: ["admin"],
+    show: true, // hiện trên sidebar
   },
 
   // Xác thực (ẩn)
@@ -229,6 +246,8 @@ const routes = [
     private: true,
     roles: ["admin"],
   },
+
+  // 🆕 Cấu hình Overlay
   {
     type: "collapse",
     name: "Cấu hình Overlay",
@@ -240,6 +259,20 @@ const routes = [
     roles: ["admin"],
     show: true, // hiện trên sidebar
   },
+
+  // 🆕 Cấu hình Facebook Live (Admin)
+  {
+    type: "collapse",
+    name: "FB Live Config",
+    key: "fb-live-config",
+    icon: <Icon fontSize="small">live_tv</Icon>,
+    route: "/admin/fb-live-config",
+    component: <FbLiveConfigPage />,
+    private: true,
+    roles: ["admin"],
+    show: true, // hiện trên sidebar
+  },
+
   // 🆕 Tạo user tự động (Admin)
   {
     type: "collapse",
@@ -251,6 +284,7 @@ const routes = [
     private: true,
     roles: ["admin"],
   },
+
   // Màn hình cho trọng tài và các view liên quan
   {
     show: false,
@@ -365,16 +399,6 @@ const routes = [
     private: true,
     roles: ["admin"],
   },
-  // {
-  //   show: false,
-  //   type: "collapse",
-  //   name: "Quản lý sân & hàng đợi",
-  //   key: "admin-courts-scheduler",
-  //   route: "/admin/tournaments/:tournamentId/courts",
-  //   component: <AdminCourtManagerPage />,
-  //   private: true,
-  //   roles: ["admin"],
-  // },
   {
     show: false,
     type: "collapse",

@@ -37,6 +37,8 @@ import {
 import PropTypes from "prop-types";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+import { useSuggestTournamentPlanMutation } from "slices/tournamentsApiSlice";
+import { useGetRegistrationsQuery } from "slices/tournamentsApiSlice";
 
 /* ===== Helpers ===== */
 const ceilPow2 = (n) => (n <= 1 ? 1 : 1 << Math.ceil(Math.log2(n)));
@@ -877,6 +879,9 @@ export default function TournamentBlueprintPage() {
 
   const [tab, setTab] = useState("auto");
 
+  // ===== Auto (OpenAI) =====
+  const [askingAI, setAskingAI] = useState(false);
+  const [suggestTournamentPlan] = useSuggestTournamentPlanMutation();
   // stage toggles (order: Group -> PO -> KO)
   const [includeGroup, setIncludeGroup] = useState(true);
   const [includePO, setIncludePO] = useState(false);
@@ -886,9 +891,99 @@ export default function TournamentBlueprintPage() {
   const [groupSize, setGroupSize] = useState(4);
   const [groupTotal, setGroupTotal] = useState(0);
   const [groupTopN, setGroupTopN] = useState(1);
-
   const [manualRemainder, setManualRemainder] = useState(false);
   const [groupExtras, setGroupExtras] = useState([]); // mảng extra cho từng bảng (0..groupCount-1)
+  const [aiResult, setAiResult] = useState(null);
+
+  // Lấy danh sách đội đăng ký của giải & đếm đội đã thanh toán
+  const {
+    data: registrations,
+    isLoading: loadingRegs,
+    isError: regsError,
+  } = useGetRegistrationsQuery(tournamentId); // truyền đúng params slice của bạn
+
+  const paidCount = useMemo(() => {
+    const list = Array.isArray(registrations) ? registrations : registrations?.items || [];
+    const isPaid = (r) => {
+      const s =
+        r?.status?.toLowerCase?.() ||
+        r?.paymentStatus?.toLowerCase?.() ||
+        r?.payment?.status?.toLowerCase?.() ||
+        "";
+      return (
+        r?.isPaid === true ||
+        r?.invoice?.paid === true ||
+        s === "paid" ||
+        s === "success" ||
+        s === "completed"
+      );
+    };
+    return list.filter(isPaid).length;
+  }, [registrations]);
+
+  function applyPlanToManual(plan) {
+    if (!plan) return;
+
+    // GROUP
+    if (plan.groups) {
+      setIncludeGroup(true);
+      if (Number(plan.groups.totalTeams || 0) > 0) {
+        setGroupCount(Number(plan.groups.count || 0));
+        setGroupTotal(Number(plan.groups.totalTeams || 0));
+        if (Array.isArray(plan.groups.groupSizes)) {
+          setManualRemainder(true);
+          setGroupExtras(() => {
+            const base = Math.floor((plan.groups.totalTeams || 0) / (plan.groups.count || 1));
+            return Array.from({ length: plan.groups.count || 0 }, (_, i) =>
+              Math.max(0, (Number(plan.groups.groupSizes[i]) || 0) - base)
+            );
+          });
+        } else {
+          setManualRemainder(false);
+        }
+      } else {
+        setGroupCount(Number(plan.groups.count || groupCount));
+        setGroupSize(Number(plan.groups.size || groupSize));
+        setGroupTotal(0);
+        setManualRemainder(false);
+      }
+      setGroupTopN(Number(plan.groups.qualifiersPerGroup || 1));
+      if (plan.groups.rules) setGroupRules(plan.groups.rules);
+    } else {
+      setIncludeGroup(false);
+      setGroupTotal(0);
+      setManualRemainder(false);
+    }
+
+    // PO
+    if (plan.po) {
+      setIncludePO(true);
+      setPoPlan({
+        drawSize: Number(plan.po.drawSize || 0),
+        maxRounds: Math.max(1, Number(plan.po.maxRounds || 1)),
+        seeds: Array.isArray(plan.po.seeds) ? plan.po.seeds : [],
+      });
+      if (plan.po.rules) setPoRules(plan.po.rules);
+    } else {
+      setIncludePO(false);
+      setPoPlan((p) => ({ ...p, seeds: [] }));
+    }
+
+    // KO
+    if (plan.ko) {
+      setKoPlan({
+        drawSize: Number(plan.ko.drawSize || 2),
+        seeds: Array.isArray(plan.ko.seeds) ? plan.ko.seeds : [],
+      });
+      if (plan.ko.rules) setKoRules(plan.ko.rules);
+      if (plan.ko.finalRules) {
+        setKoFinalOverride(true);
+        setKoFinalRules(plan.ko.finalRules);
+      } else {
+        setKoFinalOverride(false);
+      }
+    }
+  }
 
   useEffect(() => {
     if (!includeGroup) {
@@ -1185,33 +1280,81 @@ export default function TournamentBlueprintPage() {
     );
   };
 
-  const [planTournament] = usePlanTournamentMutation();
   const [commitTournamentPlan, { isLoading: committing }] = useCommitTournamentPlanMutation();
-
-  const autoSuggest = async () => {
+  const [aiPlan, setAiPlan] = useState(null);
+  // gọi OpenAI backend: /plan/suggest
+  const askOpenAI = async () => {
     try {
-      const body = {
-        expectedTeams: Number(tournament?.expected || 0),
-        allowGroup: includeGroup,
-        allowPO: includePO,
-        allowKO: true,
-        eventType: tournament?.eventType || "double",
-      };
-      const resp = await planTournament({ tournamentId, body }).unwrap();
-      toast.success("Đã tạo gợi ý sơ đồ");
-      if (resp?.groups && includeGroup) {
-        setGroupCount(resp.groups.count || groupCount);
-        setGroupSize(resp.groups.size || groupSize);
+      setAskingAI(true);
+      if (loadingRegs) {
+        toast.info("Đang lấy danh sách đội đã thanh toán…");
       }
-      if (resp?.po && includePO)
-        setPoPlan((p) => ({
-          drawSize: resp.po.drawSize,
-          maxRounds: Math.min(maxPoRoundsFor(resp.po.drawSize), p.maxRounds || 1),
-          seeds: resp.po.seeds || [],
-        }));
-      if (resp?.ko) setKoPlan({ drawSize: resp.ko.drawSize, seeds: resp.ko.seeds || [] });
+      if (regsError) {
+        toast.error("Không lấy được danh sách đăng ký.");
+        return;
+      }
+      const body = {
+        // chỉ cung cấp dữ liệu “sự thật” cho AI, còn lại để AI tự suy diễn
+        paidCount: Math.max(0, Number(paidCount) || 0),
+        modeHint: includeGroup ? "group" : includePO ? "po" : "auto", // hint, không bắt buộc
+        // KHÔNG gửi groupTargetSize / groupTopN — để AI tự quyết
+        // rules cũng để AI đề xuất, nếu bạn muốn giữ luật mặc định, có thể bổ sung sau khi nhận plan
+      };
+      const resp = await suggestTournamentPlan({ tournamentId, body }).unwrap();
+      const plan = resp?.plan ?? resp; // server có thể trả {plan} hoặc trả thẳng plan
+      setAiPlan(plan);
+      // đổ preview (manual tab logic) để xem ngay
+      applyPlanToManual(plan);
+      toast.success("Đã hỏi OpenAI và nhận đề xuất + seed!");
+      setTab("auto");
     } catch (e) {
-      toast.error("Gợi ý tự động lỗi – bạn có thể cấu hình tay ở tab bên cạnh");
+      toast.error(e.message || "Gợi ý tự động lỗi.");
+    } finally {
+      setAskingAI(false);
+    }
+  };
+
+  const commitAIPlan = async () => {
+    try {
+      if (!aiPlan?.ko && !aiPlan?.groups) {
+        toast.info("Chưa có đề xuất để tạo.");
+        return;
+      }
+      const payload = {
+        groups: aiPlan.groups
+          ? {
+              count: aiPlan.groups.count,
+              totalTeams: aiPlan.groups.totalTeams,
+              groupSizes: aiPlan.groups.groupSizes,
+              qualifiersPerGroup: aiPlan.groups.qualifiersPerGroup || groupTopN || 2,
+              rules: aiPlan.groups.rules || normalizeRulesForState(groupRules),
+            }
+          : null,
+        po: aiPlan.po
+          ? {
+              drawSize: aiPlan.po.drawSize,
+              maxRounds: Math.max(1, Number(aiPlan.po.maxRounds || 1)),
+              seeds: aiPlan.po.seeds || [],
+              rules: aiPlan.po.rules || normalizeRulesForState(poRules),
+            }
+          : null,
+        ko: {
+          drawSize: aiPlan.ko.drawSize,
+          seeds: aiPlan.ko.seeds || [],
+          rules: aiPlan.ko.rules || normalizeRulesForState(koRules),
+          finalRules:
+            aiPlan.ko.finalRules || (koFinalOverride ? normalizeRulesForState(koFinalRules) : null),
+        },
+        ...(allowOverwrite ? { force: true } : {}),
+      };
+
+      await commitTournamentPlan({ tournamentId, body: payload }).unwrap();
+      toast.success(
+        allowOverwrite ? "Đã ghi đè & tạo lại sơ đồ!" : "Đã tạo sơ đồ theo đề xuất AI!"
+      );
+      navigate(`/admin/tournaments/${tournamentId}/brackets`);
+    } catch (e) {
+      toast.error(e?.data?.message || e?.error || "Tạo sơ đồ thất bại.");
     }
   };
 
@@ -1978,6 +2121,15 @@ export default function TournamentBlueprintPage() {
     }
   };
 
+  function poMatchesForRoundLocal(n, r) {
+    const N = Math.max(0, Number(n) || 0);
+    const R = Math.max(1, Number(r) || 1);
+    if (R === 1) return Math.max(1, Math.ceil(N / 2));
+    let losersPool = Math.floor(N / 2);
+    for (let k = 2; k < R; k++) losersPool = Math.floor(losersPool / 2);
+    return Math.max(1, Math.ceil(losersPool / 2));
+  }
+
   if (isLoading || loadingBrackets) return <Box p={4}>Loading…</Box>;
   if (error || bracketsError) return <Box p={4}>Lỗi tải dữ liệu.</Box>;
 
@@ -2047,9 +2199,56 @@ export default function TournamentBlueprintPage() {
                   label="Có vòng PO (cắt bớt)"
                 />
               </Stack>
-              <Button variant="contained" onClick={autoSuggest} sx={{ width: 200 }}>
-                Gợi ý tự động
-              </Button>
+
+              {/* Số đội đã thanh toán (đầu vào duy nhất để AI nghĩ) */}
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Số đội đã thanh toán"
+                  value={paidCount}
+                  onChange={(e) => setPaidCount(parseInt(e.target.value || "0", 10))}
+                  sx={{ width: 240 }}
+                  helperText="AI chỉ dựa vào số lượng này, không gắn đội cụ thể"
+                />
+                {/* <TextField
+                  size="small"
+                  type="number"
+                  label="Mục tiêu đội/bảng"
+                  value={groupSize}
+                  onChange={(e) => setGroupSize(parseInt(e.target.value || "4", 10))}
+                  sx={{ width: 200 }}
+                />
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Top N/bảng"
+                  value={groupTopN}
+                  onChange={(e) => setGroupTopN(parseInt(e.target.value || "2", 10))} 
+                  sx={{ width: 200 }}
+                /> */}
+              </Stack>
+
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Button variant="contained" onClick={askOpenAI} disabled={askingAI}>
+                  {askingAI ? "Đang hỏi OpenAI…" : "Hỏi OpenAI (gợi ý + seed)"}
+                </Button>
+                <Button variant="outlined" onClick={commitAIPlan} disabled={!aiPlan}>
+                  Tạo sơ đồ theo đề xuất
+                </Button>
+              </Stack>
+
+              {/* Tùy chọn: hiện tóm tắt */}
+              {aiPlan && (
+                <Alert severity="success" variant="outlined">
+                  <AlertTitle>Đề xuất đã sẵn sàng</AlertTitle>
+                  {aiPlan.groups
+                    ? `Group x${aiPlan.groups.count} → KO ${aiPlan.ko.drawSize}`
+                    : aiPlan.po
+                    ? `PO ${aiPlan.po.drawSize} → KO ${aiPlan.ko.drawSize}`
+                    : `KO ${aiPlan.ko.drawSize}`}
+                </Alert>
+              )}
             </Stack>
           ) : (
             <Stack spacing={3}>
@@ -2404,62 +2603,55 @@ export default function TournamentBlueprintPage() {
                                 <Typography variant="subtitle2">{`Dự kiến ${sizeThis} đội • ${RR_MATCHES(
                                   sizeThis
                                 )} trận`}</Typography>
-                                <Stack
-                                  direction="row"
-                                  alignItems="center"
-                                  spacing={1}
-                                  sx={{ mb: 1 }}
-                                >
-                                  <Chip size="small" color="secondary" label={`B${g}`} />
-                                  <Typography variant="subtitle2">{`Dự kiến ${sizeThis} đội • ${RR_MATCHES(
-                                    sizeThis
-                                  )} trận`}</Typography>
-
-                                  {manualRemainder && (Number(groupTotal) || 0) > 0 && (
-                                    <Stack direction="row" spacing={0.5} alignItems="center">
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => {
-                                          setGroupExtras((prev) => {
-                                            const next = Array.from(
-                                              { length: groupCount },
-                                              (_, i) => prev[i] || 0
-                                            );
-                                            if (next[gi] > 0) next[gi] -= 1;
-                                            else toast.info("Nhóm này chưa nhận dư để bớt.");
-                                            return next;
-                                          });
-                                        }}
-                                      >
-                                        <RemoveIcon fontSize="small" />
-                                      </IconButton>
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => {
-                                          if (groupRemainder <= 0) {
-                                            toast.info("Hết số dư để phân bổ.");
-                                            return;
-                                          }
-                                          setGroupExtras((prev) => {
-                                            const next = Array.from(
-                                              { length: groupCount },
-                                              (_, i) => prev[i] || 0
-                                            );
-                                            next[gi] += 1;
-                                            return next;
-                                          });
-                                        }}
-                                      >
-                                        <AddIcon fontSize="small" />
-                                      </IconButton>
-                                      <Chip
-                                        size="small"
-                                        variant="outlined"
-                                        label={`+${groupExtras[gi] || 0}`}
-                                      />
-                                    </Stack>
-                                  )}
-                                </Stack>
+                                {manualRemainder && (Number(groupTotal) || 0) > 0 && (
+                                  <Stack
+                                    direction="row"
+                                    spacing={0.5}
+                                    alignItems="center"
+                                    sx={{ ml: 1 }}
+                                  >
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => {
+                                        setGroupExtras((prev) => {
+                                          const next = Array.from(
+                                            { length: groupCount },
+                                            (_, i) => prev[i] || 0
+                                          );
+                                          if (next[gi] > 0) next[gi] -= 1;
+                                          else toast.info("Nhóm này chưa nhận dư để bớt.");
+                                          return next;
+                                        });
+                                      }}
+                                    >
+                                      <RemoveIcon fontSize="small" />
+                                    </IconButton>
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => {
+                                        if (groupRemainder <= 0) {
+                                          toast.info("Hết số dư để phân bổ.");
+                                          return;
+                                        }
+                                        setGroupExtras((prev) => {
+                                          const next = Array.from(
+                                            { length: groupCount },
+                                            (_, i) => prev[i] || 0
+                                          );
+                                          next[gi] += 1;
+                                          return next;
+                                        });
+                                      }}
+                                    >
+                                      <AddIcon fontSize="small" />
+                                    </IconButton>
+                                    <Chip
+                                      size="small"
+                                      variant="outlined"
+                                      label={`+${groupExtras[gi] || 0}`}
+                                    />
+                                  </Stack>
+                                )}
                               </Stack>
                               <Stack direction="row" gap={1} flexWrap="wrap">
                                 {names.map((n) => (
