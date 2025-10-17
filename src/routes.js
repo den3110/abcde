@@ -48,6 +48,8 @@ import FilesManager from "layouts/FilesManager";
 import AdminMonitorPage from "layouts/AdminMonitorPage";
 import AdminSponsorsPage from "layouts/AdminSponsorsPage";
 import FbLiveConfigPage from "layouts/FbLiveConfigPage";
+import ConfigManager from "layouts/ConfigManager";
+import YouTubeLiveAdmin from "layouts/YouTubeLiveAdmin";
 
 // 🆕 FB Live Config (Admin UI - MUI + RTK Query)
 // Đổi đường dẫn import nếu bạn đặt file ở vị trí khác (vd: "pages/admin/FbLiveConfigPage")
@@ -448,6 +450,29 @@ const routes = [
     component: <SystemSettingsPage />,
     private: true,
     roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "System Config",
+    key: "system-config",
+    icon: <Icon fontSize="small">settings_suggest</Icon>,
+    route: "/admin/system-config",
+    component: <ConfigManager />,
+    private: true,
+    roles: ["admin"],
+    show: true, // hiện trên sidebar
+  },
+
+  {
+    type: "collapse",
+    name: "YouTube Live",
+    key: "admin-youtube-live",
+    icon: <Icon fontSize="small">smart_display</Icon>,
+    route: "/admin/youtube-live",
+    component: <YouTubeLiveAdmin />,
+    private: true,
+    roles: ["admin"],
+    show: true,
   },
   {
     type: "collapse",
