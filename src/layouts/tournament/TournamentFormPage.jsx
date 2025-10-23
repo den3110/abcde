@@ -15,7 +15,7 @@ import {
   RadioGroup,
   Radio,
   Skeleton,
-  InputAdornment, // NEW
+  InputAdornment,
 } from "@mui/material";
 
 // === MUI X Date Pickers v5 ===
@@ -25,6 +25,7 @@ import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
+import utc from "dayjs/plugin/utc";
 import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
 import PropTypes from "prop-types";
@@ -41,6 +42,7 @@ import Autocomplete from "@mui/material/Autocomplete";
 import Chip from "@mui/material/Chip";
 
 dayjs.extend(customParseFormat);
+dayjs.extend(utc);
 
 /* ===== 63 tỉnh/thành Việt Nam ===== */
 const VN_PROVINCES = [
@@ -168,11 +170,7 @@ export const SEPAY_BANKS = [
   { value: "COOPBANK", label: "COOPBANK - Ngân hàng Hợp tác xã Việt Nam" },
 ];
 
-/* ===== Danh sách ngân hàng theo SePay VietQR =====
- * value = shortName dùng cho param `bank=` của SePay
- * label = tên hiển thị đầy đủ
- */
-// NEW: alias viết tắt phổ biến để tìm nhanh
+/* ===== Danh sách ngân hàng theo SePay VietQR ===== */
 const BANK_ALIASES = {
   Vietcombank: ["VCB", "ngoai thuong"],
   VietinBank: ["CTG", "cong thuong"],
@@ -286,6 +284,14 @@ const YMDHMS = "YYYY-MM-DDTHH:mm:ss";
 const DMYHMS = "DD/MM/YYYY HH:mm:ss";
 const isValidYmdHms = (s) => !!s && dayjs(s, YMDHMS, true).isValid();
 
+// ⛔️ Khử cộng +7 khi server trả ISO có 'Z' / offset → convert sang chuỗi “naive”
+const fixZToNaive = (s) => {
+  if (!s) return "";
+  if (isValidYmdHms(s)) return s; // đã là naive
+  const d = dayjs(s);
+  return d.isValid() ? d.utc().format(YMDHMS) : "";
+};
+
 /* ---------- Skeleton block cho UI khi đang load ---------- */
 function FormSkeleton() {
   const Line = ({ w = "100%", h = 56, sx }) => (
@@ -294,7 +300,7 @@ function FormSkeleton() {
   Line.propTypes = {
     w: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
     h: PropTypes.number,
-    sx: PropTypes.any, // sx của MUI có thể là object/array/function
+    sx: PropTypes.any,
   };
   Line.defaultProps = {
     w: "100%",
@@ -506,8 +512,8 @@ export default function TournamentFormPage() {
     clipboard: { matchVisual: false },
   });
 
-  const contactModules = useMemo(() => makeQuillModules(contactQuillRef), []);
-  const contentModules = useMemo(() => makeQuillModules(contentQuillRef), []);
+  const contactModules = useMemo(() => makeQuillModules(contactQuillRef), []); // eslint-disable-line
+  const contentModules = useMemo(() => makeQuillModules(contentQuillRef), []); // eslint-disable-line
 
   const quillFormats = useMemo(
     () => [
@@ -530,7 +536,7 @@ export default function TournamentFormPage() {
     []
   );
 
-  // Map dữ liệu server -> state
+  // Map dữ liệu server -> state (KHỬ +7 nếu server trả ISO có Z/offset)
   useEffect(() => {
     if (!tour) return;
 
@@ -553,15 +559,11 @@ export default function TournamentFormPage() {
       groupId: Number(tour.groupId ?? 0),
       eventType: tour.eventType || "double",
 
-      // Datetime đầy đủ
-      regOpenDT: dayjs(tour.regOpenDate).isValid()
-        ? dayjs(tour.regOpenDate).format(YMDHMS)
-        : nowStr,
-      registrationDeadlineDT: dayjs(tour.registrationDeadline).isValid()
-        ? dayjs(tour.registrationDeadline).format(YMDHMS)
-        : nowStr,
-      startDT: dayjs(tour.startDate).isValid() ? dayjs(tour.startDate).format(YMDHMS) : nowStr,
-      endDT: dayjs(tour.endDate).isValid() ? dayjs(tour.endDate).format(YMDHMS) : nowStr,
+      // Datetime (naive, không +7)
+      regOpenDT: fixZToNaive(tour.regOpenDate) || nowStr,
+      registrationDeadlineDT: fixZToNaive(tour.registrationDeadline) || nowStr,
+      startDT: fixZToNaive(tour.startDate) || nowStr,
+      endDT: fixZToNaive(tour.endDate) || nowStr,
 
       scoreCap: Number(tour.scoreCap ?? 0),
       scoreGap: Number(tour.scoreGap ?? 0),
@@ -611,7 +613,7 @@ export default function TournamentFormPage() {
       groupId: Number(form.groupId) || 0,
       eventType: form.eventType,
 
-      // gửi dạng 'YYYY-MM-DDTHH:mm:ss'
+      // gửi dạng 'YYYY-MM-DDTHH:mm:ss' (naive)
       regOpenDate: regOpenDT,
       registrationDeadline: registrationDeadlineDT,
       startDate: startDT,
@@ -931,7 +933,7 @@ export default function TournamentFormPage() {
                       margin="normal"
                       value={form.bankAccountNumber}
                       onChange={onChangeBankAccountNumber}
-                      type="text" // giữ 0 ở đầu, tránh spinner của <input type="number">
+                      type="text"
                       inputProps={{ inputMode: "numeric", pattern: "[0-9]*", maxLength: 32 }}
                       helperText="Chỉ nhập số (0–9)."
                       required
@@ -948,7 +950,7 @@ export default function TournamentFormPage() {
                           ...p,
                           bankAccountName: (e.target.value || "").replace(/\s+/g, " ").trim(),
                         }))
-                      } // gọn tên (trim, gộp khoảng trắng)
+                      }
                       inputProps={{ maxLength: 64 }}
                       helperText="Tên người/đơn vị nhận tiền (có dấu hoặc không dấu đều được)"
                       required
@@ -959,9 +961,9 @@ export default function TournamentFormPage() {
                       label="Phí đăng ký (VND)"
                       fullWidth
                       margin="normal"
-                      value={formatMoney(form.registrationFee)} // <-- hiển thị có dấu phẩy
-                      onChange={onChangeRegistrationFee} // <-- luôn lưu digits
-                      type="text" // giữ caret & tránh spinner
+                      value={formatMoney(form.registrationFee)}
+                      onChange={onChangeRegistrationFee}
+                      type="text"
                       inputProps={{ inputMode: "numeric" }}
                       InputProps={{
                         endAdornment: <InputAdornment position="end">VND</InputAdornment>,
