@@ -149,6 +149,10 @@ export default function AutoRegistrationsPage() {
   const [randomSeed, setRandomSeed] = useState(Date.now());
   const [dryRun, setDryRun] = useState(true);
 
+  // ✅ NEW: lọc email @example.com & user chưa KYC
+  const [onlyExampleDomain, setOnlyExampleDomain] = useState(false);
+  const [onlyNotKyc, setOnlyNotKyc] = useState(false);
+
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
 
@@ -185,6 +189,17 @@ export default function AutoRegistrationsPage() {
         randomSeed: Number(randomSeed),
         dryRun: !!previewOnly,
       };
+
+      // ✅ NEW: chỉ email @example.com
+      if (onlyExampleDomain) {
+        // Gửi suffix KHÔNG có ký tự '@' để backend dễ parse
+        body.onlyEmailSuffix = "example.com";
+      }
+      // ✅ NEW: chỉ user chưa KYC
+      if (onlyNotKyc) {
+        body.onlyNotKyc = true;
+      }
+
       const res = await autoGenerate({ tourId: tournamentId, body }).unwrap();
       if (res?.dryRun) {
         const planned = isSingles ? res.singlesPlanned || 0 : res.pairsPlanned || 0;
@@ -383,6 +398,7 @@ export default function AutoRegistrationsPage() {
                       Giới hạn của giải: <b>{capsText}</b>
                     </Alert>
 
+                    {/* Tùy chọn lọc */}
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                       <FormControlLabel
                         control={
@@ -422,6 +438,28 @@ export default function AutoRegistrationsPage() {
                           />
                         }
                         label="Không dùng trùng số điện thoại"
+                      />
+                    </Stack>
+
+                    {/* ✅ NEW: Lọc email @example.com + chưa KYC */}
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={onlyExampleDomain}
+                            onChange={(e) => setOnlyExampleDomain(e.target.checked)}
+                          />
+                        }
+                        label="Chỉ lấy email @example.com"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={onlyNotKyc}
+                            onChange={(e) => setOnlyNotKyc(e.target.checked)}
+                          />
+                        }
+                        label="Chỉ lấy user chưa KYC"
                       />
                     </Stack>
                   </Stack>
