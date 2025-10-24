@@ -19,7 +19,7 @@ export const liveApiSlice = apiSlice.injectEndpoints({
      */
     adminListLiveSessions: builder.query({
       query: ({ status = "live" } = {}) => ({
-        url: `/admin/live-sessions?status=${encodeURIComponent(status)}`,
+        url: `/admin/l/live-sessions/all?status=${encodeURIComponent(status)}`,
         method: "GET",
       }),
       providesTags: (result) => [{ type: "LiveSessions", id: "LIST" }],
