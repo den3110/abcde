@@ -1,4 +1,4 @@
-// src/routes.js
+// src/routes.js — UPDATED: add AdminLiveSessionsPage route
 import Dashboard from "layouts/dashboard";
 import Tables from "layouts/tables";
 import Billing from "layouts/billing";
@@ -50,9 +50,9 @@ import AdminSponsorsPage from "layouts/AdminSponsorsPage";
 import FbLiveConfigPage from "layouts/FbLiveConfigPage";
 import ConfigManager from "layouts/ConfigManager";
 import YouTubeLiveAdmin from "layouts/YouTubeLiveAdmin";
+import AdminLiveSessionsPage from "layouts/AdminLiveSessionsPage";
 
-// 🆕 FB Live Config (Admin UI - MUI + RTK Query)
-// Đổi đường dẫn import nếu bạn đặt file ở vị trí khác (vd: "pages/admin/FbLiveConfigPage")
+// 🆕 Live đang phát (Admin)
 
 const routes = [
   // Dashboard
@@ -275,6 +275,19 @@ const routes = [
     show: true, // hiện trên sidebar
   },
 
+  // 🆕 Live đang phát (Admin) — MỤC MỚI
+  {
+    type: "collapse",
+    name: "Trận đang LIVE",
+    key: "admin-live-sessions",
+    icon: <Icon fontSize="small">online_prediction</Icon>, // hoặc 'live_tv'
+    route: "/admin/live-sessions",
+    component: <AdminLiveSessionsPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+
   // 🆕 Tạo user tự động (Admin)
   {
     type: "collapse",
@@ -465,7 +478,7 @@ const routes = [
 
   {
     type: "collapse",
-    name: "YouTube Live",
+    name: "YouTube Live + Token",
     key: "admin-youtube-live",
     icon: <Icon fontSize="small">smart_display</Icon>,
     route: "/admin/youtube-live",

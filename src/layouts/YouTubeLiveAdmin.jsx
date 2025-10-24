@@ -30,6 +30,7 @@ import { useGetConfigQuery, useYtRevokeMutation } from "slices/configApiSlice";
 import { useLazyYtInitQuery, useLazyYtGetStreamKeyQuery } from "slices/youtubeAdminApiSlice";
 
 import PropTypes from "prop-types";
+import FbLongUserTokenPage from "./FbLongUserTokenPage";
 
 function CopyField({ label, value }) {
   const [snack, setSnack] = React.useState(false);
@@ -334,6 +335,7 @@ export default function YouTubeLiveAdmin() {
           </Alert>
         </Snackbar>
       </Stack>
+      <FbLongUserTokenPage />
     </DashboardLayout>
   );
 }
