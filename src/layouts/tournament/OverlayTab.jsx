@@ -65,6 +65,9 @@ const DEFAULT_OVERLAY = {
   scoreScale: 1,
   customCss: "",
   logoUrl: "",
+  /* NEW */
+  webLogoUrl: "", // logo website (góc trên phải)
+  sponsors: [], // danh sách URL ảnh sponsor (góc dưới phải)F
 };
 
 /* ---------- Small helpers ---------- */
