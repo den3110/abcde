@@ -1,24 +1,25 @@
+// slices/bracketsApiSlice.js
 import { apiSlice } from "./apiSlice";
 
 export const bracketsApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    // Bracket detail (cần groups[], slotPlan[])
+    // lấy 1 bracket để biết nó là group hay po
     getOnlyBracket: builder.query({
       query: (bid) => `/brackets/${bid}`,
       providesTags: (res, err, bid) => [
         { type: "Bracket", id: bid },
         { type: "SlotPlan", id: bid },
+        { type: "PoPlan", id: bid },
       ],
     }),
 
-    // Danh sách Registration thuộc BRACKET/Tournament (tuỳ server)
-    // Mặc định: GET /brackets/:bid/registrations?status=Paid
-    listBracketRegistrations: builder.query({
-      query: (bid) => `/admin/brackets/${bid}/registrations?status=Paid`,
-      providesTags: (res, err, bid) => [{ type: "Registrations", id: bid }],
+    // đọc trạng thái draw hiện tại (để lấy reveals nếu BE có trả)
+    getDrawStatus: builder.query({
+      query: (bid) => `/draw/brackets/${bid}/draw/status`,
+      providesTags: (res, err, bid) => [{ type: "Draw", id: bid }],
     }),
 
-    // Bulk pre-assign theo payload { assignments, ... }
+    // ========== GROUP ==========
     bulkAssignSlotPlan: builder.mutation({
       query: ({ bid, body }) => ({
         url: `/admin/brackets/${bid}/slot-plan/bulk-assign`,
@@ -31,7 +32,6 @@ export const bracketsApiSlice = apiSlice.injectEndpoints({
       ],
     }),
 
-    // Bắt đầu draw mode=group (server sẽ tự ghim slotPlan đã lock)
     startGroupDraw: builder.mutation({
       query: ({ bid, body }) => ({
         url: `/draw/${bid}/start`,
@@ -41,13 +41,32 @@ export const bracketsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: (res, err, { bid }) => [{ type: "Draw", id: bid }],
     }),
 
-    // Trạng thái draw gần nhất
-    getDrawStatus: builder.query({
-      query: (bid) => `/draw/brackets/${bid}/draw/status`,
-      providesTags: (res, err, bid) => [{ type: "Draw", id: bid }],
+    // ========== PO / KNOCKOUT ==========
+    // cơ cấu PO theo BRACKET (chuẩn ý bạn: cơ cấu 1 lần, mọi phiên draw đều ăn)
+    bulkAssignPoPlan: builder.mutation({
+      query: ({ bid, body }) => ({
+        url: `/admin/brackets/${bid}/po-plan/bulk-assign`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (res, err, { bid }) => [
+        { type: "PoPlan", id: bid },
+        { type: "Bracket", id: bid },
+        { type: "Draw", id: bid },
+      ],
     }),
 
-    // (tuỳ chọn) Sinh trận round-robin tự động sau khi commit draw
+    // start PO cho bracket này
+    startPoDraw: builder.mutation({
+      query: ({ bid, body }) => ({
+        url: `/draw/${bid}/start`,
+        method: "POST",
+        body: { mode: "po", ...body },
+      }),
+      invalidatesTags: (res, err, { bid }) => [{ type: "Draw", id: bid }],
+    }),
+
+    // optional
     generateGroupMatches: builder.mutation({
       query: ({ bid, body }) => ({
         url: `/draw/brackets/${bid}/groups/generate-matches`,
@@ -60,9 +79,10 @@ export const bracketsApiSlice = apiSlice.injectEndpoints({
 
 export const {
   useGetOnlyBracketQuery,
-  useListBracketRegistrationsQuery,
-  useBulkAssignSlotPlanMutation,
-  useStartGroupDrawMutation,
   useGetDrawStatusQuery,
+  useBulkAssignSlotPlanMutation,
+  useBulkAssignPoPlanMutation, // 👈 FE cơ cấu PO gọi cái này
+  useStartGroupDrawMutation,
+  useStartPoDrawMutation,
   useGenerateGroupMatchesMutation,
 } = bracketsApiSlice;

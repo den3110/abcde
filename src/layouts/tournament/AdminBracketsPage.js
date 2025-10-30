@@ -1734,6 +1734,26 @@ export default function AdminBracketsPage() {
                         >
                           Auto fill từ stage trước
                         </Button>
+                        {/* ⭐ CHỈ roundElim mới có nút này */}
+                        {br.type === "roundElim" && (
+                          <Button
+                            size="small"
+                            startIcon={<TableChartIcon />}
+                            onClick={stop(() =>
+                              navigate(
+                                `/admin/brackets/${br._id}/preassign?t=${br.tournament?._id}`,
+                                {
+                                  state: {
+                                    bracketName: br.name,
+                                    tournamentName: br.tournament?.name,
+                                  },
+                                }
+                              )
+                            )}
+                          >
+                            Cấu hình vòng PO
+                          </Button>
+                        )}
                         {br.type === "group" && (
                           <Button
                             size="small"
