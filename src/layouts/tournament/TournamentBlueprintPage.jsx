@@ -33,12 +33,12 @@ import {
   usePlanTournamentMutation,
   useCommitTournamentPlanMutation,
   useGetTournamentBracketsQuery,
+  useSuggestTournamentPlanMutation,
+  useGetRegistrationsQuery,
 } from "slices/tournamentsApiSlice";
 import PropTypes from "prop-types";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import { useSuggestTournamentPlanMutation } from "slices/tournamentsApiSlice";
-import { useGetRegistrationsQuery } from "slices/tournamentsApiSlice";
 
 /* ===== Helpers ===== */
 const ceilPow2 = (n) => (n <= 1 ? 1 : 1 << Math.ceil(Math.log2(n)));
@@ -147,12 +147,21 @@ const DEFAULT_RULES = {
   winByTwo: true,
   cap: { mode: "none", points: null },
 };
-const normalizeRulesForState = (r = {}) => ({
-  bestOf: Number(r.bestOf ?? DEFAULT_RULES.bestOf),
-  pointsToWin: Number(r.pointsToWin ?? DEFAULT_RULES.pointsToWin),
-  winByTwo: !!(r.winByTwo ?? DEFAULT_RULES.winByTwo),
+
+// ✅ PO mặc định BO1
+const DEFAULT_PO_RULES = {
+  bestOf: 1,
+  pointsToWin: 11,
+  winByTwo: true,
+  cap: { mode: "none", points: null },
+};
+
+const normalizeRulesForState = (r = {}, fallback = DEFAULT_RULES) => ({
+  bestOf: Number(r.bestOf ?? fallback.bestOf),
+  pointsToWin: Number(r.pointsToWin ?? fallback.pointsToWin),
+  winByTwo: !!(r.winByTwo ?? fallback.winByTwo),
   cap: {
-    mode: String(r?.cap?.mode ?? "none"),
+    mode: String(r?.cap?.mode ?? fallback.cap.mode),
     points: r?.cap?.points === null || r?.cap?.points === undefined ? null : Number(r.cap.points),
   },
 });
@@ -358,7 +367,10 @@ function buildPoRoundsFromPlan(planPO, stageIndex = 1, baseRound = 1) {
       ],
     };
   });
-  rounds.push({ title: `PO • Vòng ${r1Display} (${r1Seeds.length} trận)`, seeds: r1Seeds });
+  rounds.push({
+    title: `PO • Vòng ${r1Display} (${r1Seeds.length} trận)`,
+    seeds: r1Seeds,
+  });
 
   // V>=2: losers cascade
   let losersPool = Math.floor(N / 2);
@@ -377,7 +389,10 @@ function buildPoRoundsFromPlan(planPO, stageIndex = 1, baseRound = 1) {
       return { id: `R${displayRound}-${i + 1}`, teams: [left, right] };
     });
 
-    rounds.push({ title: `PO • Vòng ${displayRound} (${pairs} trận)`, seeds });
+    rounds.push({
+      title: `PO • Vòng ${displayRound} (${pairs} trận)`,
+      seeds,
+    });
     losersPool = Math.floor(losersPool / 2);
     roundNum += 1;
   }
@@ -597,12 +612,20 @@ function arrangeLinearIntoKO(linearSeeds, firstPairs, method = "default", seedKe
   } else if (method === "random") {
     const shuffled = seededShuffle(pool, seedKey + "_rand");
     for (let i = 0; i < firstPairs; i++) {
-      pairs.push({ pair: i + 1, A: shuffled[2 * i] || BYE, B: shuffled[2 * i + 1] || BYE });
+      pairs.push({
+        pair: i + 1,
+        A: shuffled[2 * i] || BYE,
+        B: shuffled[2 * i + 1] || BYE,
+      });
     }
   } else {
     // default: (1 vs 2), (3 vs 4), ...
     for (let i = 0; i < firstPairs; i++) {
-      pairs.push({ pair: i + 1, A: pool[2 * i] || BYE, B: pool[2 * i + 1] || BYE });
+      pairs.push({
+        pair: i + 1,
+        A: pool[2 * i] || BYE,
+        B: pool[2 * i + 1] || BYE,
+      });
     }
   }
 
@@ -921,6 +944,58 @@ export default function TournamentBlueprintPage() {
     return list.filter(isPaid).length;
   }, [registrations]);
 
+  const [planTournament] = usePlanTournamentMutation();
+  const [commitTournamentPlan, { isLoading: committing }] = useCommitTournamentPlanMutation();
+  const [aiPlan, setAiPlan] = useState(null);
+
+  // PO defaults (non-2^n)
+  const [poPlan, setPoPlan] = useState({
+    drawSize: 8,
+    maxRounds: 1,
+    seeds: [],
+  });
+
+  // KO defaults
+  const [koPlan, setKoPlan] = useState({ drawSize: 16, seeds: [] });
+
+  // ===== Rules per stage (có CAP) =====
+  const [groupRules, setGroupRules] = useState(DEFAULT_RULES);
+
+  // ✅ PO: rule tổng + rule từng vòng
+  const [poRules, setPoRules] = useState(DEFAULT_PO_RULES);
+  const [poRoundRules, setPoRoundRules] = useState([DEFAULT_PO_RULES]);
+
+  const [koRules, setKoRules] = useState(DEFAULT_RULES);
+
+  // KO Final override
+  const [koFinalOverride, setKoFinalOverride] = useState(false);
+  const [koFinalRules, setKoFinalRules] = useState({
+    bestOf: 5,
+    pointsToWin: 11,
+    winByTwo: true,
+    cap: { mode: "none", points: null },
+  });
+
+  // Prefill flags
+  const [allowOverwrite, setAllowOverwrite] = useState(false);
+  const prefillOnceRef = useRef(false);
+
+  // Chọn kiểu đổ KO theo nguồn
+  const [group2KOMethod, setGroup2KOMethod] = useState("cross"); // default | cross | shift | random
+  const [po2KOMethod, setPo2KOMethod] = useState("default"); // default | cross | shift | random
+
+  // Khi đổi số vòng PO thì sync mảng rule
+  useEffect(() => {
+    setPoRoundRules((prev) => {
+      const need = Math.max(1, Number(poPlan.maxRounds || 1));
+      const next = [];
+      for (let i = 0; i < need; i++) {
+        next.push(normalizeRulesForState(prev[i] || poRules || DEFAULT_PO_RULES, DEFAULT_PO_RULES));
+      }
+      return next;
+    });
+  }, [poPlan.maxRounds, poRules]);
+
   function applyPlanToManual(plan) {
     if (!plan) return;
 
@@ -948,7 +1023,8 @@ export default function TournamentBlueprintPage() {
         setManualRemainder(false);
       }
       setGroupTopN(Number(plan.groups.qualifiersPerGroup || 1));
-      if (plan.groups.rules) setGroupRules(plan.groups.rules);
+      if (plan.groups.rules)
+        setGroupRules(normalizeRulesForState(plan.groups.rules, DEFAULT_RULES));
     } else {
       setIncludeGroup(false);
       setGroupTotal(0);
@@ -958,15 +1034,33 @@ export default function TournamentBlueprintPage() {
     // PO
     if (plan.po) {
       setIncludePO(true);
+      const ds = Number(plan.po.drawSize || 0);
+      const mr = Math.max(1, Number(plan.po.maxRounds || 1));
       setPoPlan({
-        drawSize: Number(plan.po.drawSize || 0),
-        maxRounds: Math.max(1, Number(plan.po.maxRounds || 1)),
+        drawSize: ds,
+        maxRounds: mr,
         seeds: Array.isArray(plan.po.seeds) ? plan.po.seeds : [],
       });
-      if (plan.po.rules) setPoRules(plan.po.rules);
+
+      // rule tổng
+      if (plan.po.rules) setPoRules(normalizeRulesForState(plan.po.rules, DEFAULT_PO_RULES));
+      else setPoRules(DEFAULT_PO_RULES);
+
+      // ✅ rule từng vòng nếu BE có
+      if (Array.isArray(plan.po.roundRules) && plan.po.roundRules.length) {
+        setPoRoundRules(plan.po.roundRules.map((r) => normalizeRulesForState(r, DEFAULT_PO_RULES)));
+      } else {
+        setPoRoundRules(
+          Array.from({ length: mr }, () =>
+            normalizeRulesForState(plan.po.rules || DEFAULT_PO_RULES, DEFAULT_PO_RULES)
+          )
+        );
+      }
     } else {
       setIncludePO(false);
       setPoPlan((p) => ({ ...p, seeds: [] }));
+      setPoRules(DEFAULT_PO_RULES);
+      setPoRoundRules([DEFAULT_PO_RULES]);
     }
 
     // KO
@@ -975,10 +1069,10 @@ export default function TournamentBlueprintPage() {
         drawSize: Number(plan.ko.drawSize || 2),
         seeds: Array.isArray(plan.ko.seeds) ? plan.ko.seeds : [],
       });
-      if (plan.ko.rules) setKoRules(plan.ko.rules);
+      if (plan.ko.rules) setKoRules(normalizeRulesForState(plan.ko.rules, DEFAULT_RULES));
       if (plan.ko.finalRules) {
         setKoFinalOverride(true);
-        setKoFinalRules(plan.ko.finalRules);
+        setKoFinalRules(normalizeRulesForState(plan.ko.finalRules, DEFAULT_RULES));
       } else {
         setKoFinalOverride(false);
       }
@@ -1010,34 +1104,6 @@ export default function TournamentBlueprintPage() {
     const used = (groupExtras || []).slice(0, groupCount).reduce((a, b) => a + (Number(b) || 0), 0);
     return Math.max(0, rem - used);
   }, [includeGroup, groupCount, groupTotal, groupExtras]);
-
-  // PO defaults (non-2^n)
-  const [poPlan, setPoPlan] = useState({ drawSize: 8, maxRounds: 1, seeds: [] });
-
-  // KO defaults
-  const [koPlan, setKoPlan] = useState({ drawSize: 16, seeds: [] });
-
-  // ===== Rules per stage (có CAP) =====
-  const [groupRules, setGroupRules] = useState(DEFAULT_RULES);
-  const [poRules, setPoRules] = useState(DEFAULT_RULES);
-  const [koRules, setKoRules] = useState(DEFAULT_RULES);
-
-  // KO Final override
-  const [koFinalOverride, setKoFinalOverride] = useState(false);
-  const [koFinalRules, setKoFinalRules] = useState({
-    bestOf: 5,
-    pointsToWin: 11,
-    winByTwo: true,
-    cap: { mode: "none", points: null },
-  });
-
-  // Prefill flags
-  const [allowOverwrite, setAllowOverwrite] = useState(false);
-  const prefillOnceRef = useRef(false);
-
-  // Chọn kiểu đổ KO theo nguồn
-  const [group2KOMethod, setGroup2KOMethod] = useState("cross"); // default | cross | shift | random
-  const [po2KOMethod, setPo2KOMethod] = useState("default"); // default | cross | shift | random
 
   // Tính groupSizes hiển thị (ưu tiên total)
   const groupSizes = useMemo(() => {
@@ -1105,7 +1171,12 @@ export default function TournamentBlueprintPage() {
         config: { ...poPlan },
       });
     }
-    arr.push({ id: makeStageId(arr.length), type: "ko", title: "Knockout", config: { ...koPlan } });
+    arr.push({
+      id: makeStageId(arr.length),
+      type: "ko",
+      title: "Knockout",
+      config: { ...koPlan },
+    });
     return arr;
   }, [includeGroup, includePO, groupCount, groupSize, groupSizes, poPlan, koPlan]);
 
@@ -1280,8 +1351,6 @@ export default function TournamentBlueprintPage() {
     );
   };
 
-  const [commitTournamentPlan, { isLoading: committing }] = useCommitTournamentPlanMutation();
-  const [aiPlan, setAiPlan] = useState(null);
   // gọi OpenAI backend: /plan/suggest
   const askOpenAI = async () => {
     try {
@@ -1294,18 +1363,17 @@ export default function TournamentBlueprintPage() {
         return;
       }
       const body = {
-        // chỉ cung cấp dữ liệu “sự thật” cho AI, còn lại để AI tự suy diễn
         paidCount: Math.max(0, Number(paidCount) || 0),
-        modeHint: includeGroup ? "group" : includePO ? "po" : "auto", // hint, không bắt buộc
-        // KHÔNG gửi groupTargetSize / groupTopN — để AI tự quyết
-        // rules cũng để AI đề xuất, nếu bạn muốn giữ luật mặc định, có thể bổ sung sau khi nhận plan
+        modeHint: includeGroup ? "group" : includePO ? "po" : "auto",
       };
-      const resp = await suggestTournamentPlan({ tournamentId, body }).unwrap();
-      const plan = resp?.plan ?? resp; // server có thể trả {plan} hoặc trả thẳng plan
+      const resp = await suggestTournamentPlan({
+        tournamentId,
+        body,
+      }).unwrap();
+      const plan = resp?.plan ?? resp;
       setAiPlan(plan);
-      // đổ preview (manual tab logic) để xem ngay
       applyPlanToManual(plan);
-      toast.success("Đã hỏi OpenAI và nhận đề xuất + seed!");
+      toast.success("Đã hỏi AI và nhận đề xuất + seed!");
       setTab("auto");
     } catch (e) {
       toast.error(e.message || "Gợi ý tự động lỗi.");
@@ -1335,7 +1403,11 @@ export default function TournamentBlueprintPage() {
               drawSize: aiPlan.po.drawSize,
               maxRounds: Math.max(1, Number(aiPlan.po.maxRounds || 1)),
               seeds: aiPlan.po.seeds || [],
-              rules: aiPlan.po.rules || normalizeRulesForState(poRules),
+              rules: aiPlan.po.rules || normalizeRulesForState(poRules, DEFAULT_PO_RULES),
+              // ✅ nếu AI trả roundRules thì gửi lên
+              roundRules: Array.isArray(aiPlan.po.roundRules)
+                ? aiPlan.po.roundRules.map((r) => normalizeRulesForState(r, DEFAULT_PO_RULES))
+                : undefined,
             }
           : null,
         ko: {
@@ -1348,7 +1420,10 @@ export default function TournamentBlueprintPage() {
         ...(allowOverwrite ? { force: true } : {}),
       };
 
-      await commitTournamentPlan({ tournamentId, body: payload }).unwrap();
+      await commitTournamentPlan({
+        tournamentId,
+        body: payload,
+      }).unwrap();
       toast.success(
         allowOverwrite ? "Đã ghi đè & tạo lại sơ đồ!" : "Đã tạo sơ đồ theo đề xuất AI!"
       );
@@ -1393,10 +1468,6 @@ export default function TournamentBlueprintPage() {
           }
 
         const pairs = buildPairsStrongWeakNoRematch(strong, weak, firstPairs, poN);
-        const nonByeCount = strong.length + weak.length;
-        // if (nonByeCount < firstPairs) {
-        //   toast.warning("Không đủ đội -> đã chèn BYE & dàn đều để tránh BYE–BYE.");
-        // }
         toast.success("Đã đổ seed: V1 vs V2+ (đầu–cuối, tránh tái đấu)");
         return { drawSize: size, seeds: pairs };
       }
@@ -1498,10 +1569,6 @@ export default function TournamentBlueprintPage() {
 
         const finalPairs = fixDoubleByes(resultPairs);
 
-        const used = Math.min(capacity, strong.length + weak.length);
-        // if (used < capacity) {
-        //   toast.warning("Không đủ đội → đã chèn BYE & dàn đều để tránh BYE–BYE.");
-        // }
         toast.success("Đã đổ seed: Ladder (giữ dáng + tránh tái đấu tối đa)");
         return { drawSize: size, seeds: finalPairs };
       }
@@ -1611,10 +1678,6 @@ export default function TournamentBlueprintPage() {
 
         const finalPairs = fixDoubleByes(resultPairs);
 
-        const used = Math.min(capacity, strong.length + weak.length);
-        // if (used < capacity) {
-        //   toast.warning("Không đủ đội → đã chèn BYE & dàn đều để tránh BYE–BYE.");
-        // }
         toast.success("Đã đổ seed: Ladder NGƯỢC (tránh tái đấu, ghép xa nhất)");
         return { drawSize: size, seeds: finalPairs };
       }
@@ -2025,7 +2088,10 @@ export default function TournamentBlueprintPage() {
       }
       setGroupTopN(Math.max(1, qualifiersPerGroup));
 
-      const rules = normalizeRulesForState(bGroup.rules || cfg.rules || DEFAULT_RULES);
+      const rules = normalizeRulesForState(
+        bGroup.rules || cfg.rules || DEFAULT_RULES,
+        DEFAULT_RULES
+      );
       setGroupRules(rules);
     } else {
       setIncludeGroup(false);
@@ -2039,11 +2105,27 @@ export default function TournamentBlueprintPage() {
       const seeds = Array.isArray(cfg.seeds) ? cfg.seeds : [];
       setIncludePO(true);
       setPoPlan({ drawSize, maxRounds, seeds });
-      const rules = normalizeRulesForState(bPO.rules || cfg.rules || DEFAULT_RULES);
+      const rules = normalizeRulesForState(
+        bPO.rules || cfg.rules || DEFAULT_PO_RULES,
+        DEFAULT_PO_RULES
+      );
       setPoRules(rules);
+
+      // ✅ nếu bracket có rule từng vòng
+      if (Array.isArray(bPO.roundRules) && bPO.roundRules.length) {
+        setPoRoundRules(bPO.roundRules.map((r) => normalizeRulesForState(r, DEFAULT_PO_RULES)));
+      } else {
+        setPoRoundRules(
+          Array.from({ length: maxRounds }, () =>
+            normalizeRulesForState(bPO.rules || cfg.rules || DEFAULT_PO_RULES, DEFAULT_PO_RULES)
+          )
+        );
+      }
     } else {
       setIncludePO(false);
       setPoPlan((p) => ({ ...p, seeds: [] }));
+      setPoRules(DEFAULT_PO_RULES);
+      setPoRoundRules([DEFAULT_PO_RULES]);
     }
 
     // KO
@@ -2053,13 +2135,13 @@ export default function TournamentBlueprintPage() {
       const seeds = Array.isArray(cfg.seeds) ? cfg.seeds : [];
       setKoPlan({ drawSize, seeds });
 
-      const rules = normalizeRulesForState(bKO.rules || cfg.rules || DEFAULT_RULES);
+      const rules = normalizeRulesForState(bKO.rules || cfg.rules || DEFAULT_RULES, DEFAULT_RULES);
       setKoRules(rules);
 
       const finalRules = bKO.finalRules || cfg.finalRules || null;
       if (finalRules) {
         setKoFinalOverride(true);
-        setKoFinalRules(normalizeRulesForState(finalRules));
+        setKoFinalRules(normalizeRulesForState(finalRules, DEFAULT_RULES));
       } else {
         setKoFinalOverride(false);
       }
@@ -2088,27 +2170,34 @@ export default function TournamentBlueprintPage() {
           ? {
               count: groupCount,
               totalTeams: total,
-              ...(manualRemainder ? { groupSizes: groupSizes } : {}), // ⟵ thêm dòng này
+              ...(manualRemainder ? { groupSizes: groupSizes } : {}),
               qualifiersPerGroup: qpg,
-              rules: normalizeRulesForState(groupRules),
+              rules: normalizeRulesForState(groupRules, DEFAULT_RULES),
             }
           : {
               count: groupCount,
               size: groupSize,
               qualifiersPerGroup: qpg,
-              rules: normalizeRulesForState(groupRules),
+              rules: normalizeRulesForState(groupRules, DEFAULT_RULES),
             }
         : null;
 
       const payload = {
         groups: groupsPayload,
         po: includePO
-          ? { ...normalizeSeedsPO(poPlan), rules: normalizeRulesForState(poRules) }
+          ? {
+              ...normalizeSeedsPO(poPlan),
+              rules: normalizeRulesForState(poRules, DEFAULT_PO_RULES),
+              // ✅ gửi thêm rule từng vòng
+              roundRules: (poRoundRules || []).map((r) =>
+                normalizeRulesForState(r, DEFAULT_PO_RULES)
+              ),
+            }
           : null,
         ko: {
           ...normalizeSeedsKO(koPlan),
-          rules: normalizeRulesForState(koRules),
-          finalRules: koFinalOverride ? normalizeRulesForState(koFinalRules) : null,
+          rules: normalizeRulesForState(koRules, DEFAULT_RULES),
+          finalRules: koFinalOverride ? normalizeRulesForState(koFinalRules, DEFAULT_RULES) : null,
         },
         ...(allowOverwrite ? { force: true } : {}),
       };
@@ -2207,31 +2296,16 @@ export default function TournamentBlueprintPage() {
                   type="number"
                   label="Số đội đã thanh toán"
                   value={paidCount}
-                  onChange={(e) => setPaidCount(parseInt(e.target.value || "0", 10))}
+                  // giữ nguyên như code gốc: nếu muốn chỉnh tay thì sau bạn đổi thành state khác
+                  onChange={() => toast.info("Dữ liệu thanh toán đang lấy từ API ạ.")}
                   sx={{ width: 240 }}
                   helperText="AI chỉ dựa vào số lượng này, không gắn đội cụ thể"
                 />
-                {/* <TextField
-                  size="small"
-                  type="number"
-                  label="Mục tiêu đội/bảng"
-                  value={groupSize}
-                  onChange={(e) => setGroupSize(parseInt(e.target.value || "4", 10))}
-                  sx={{ width: 200 }}
-                />
-                <TextField
-                  size="small"
-                  type="number"
-                  label="Top N/bảng"
-                  value={groupTopN}
-                  onChange={(e) => setGroupTopN(parseInt(e.target.value || "2", 10))} 
-                  sx={{ width: 200 }}
-                /> */}
               </Stack>
 
               <Stack direction="row" spacing={1} alignItems="center">
                 <Button variant="contained" onClick={askOpenAI} disabled={askingAI}>
-                  {askingAI ? "Đang hỏi OpenAI…" : "Hỏi OpenAI (gợi ý + seed)"}
+                  {askingAI ? "Đang hỏi AI" : "Hỏi AI (gợi ý + seed)"}
                 </Button>
                 <Button variant="outlined" onClick={commitAIPlan} disabled={!aiPlan}>
                   Tạo sơ đồ theo đề xuất
@@ -2422,11 +2496,16 @@ export default function TournamentBlueprintPage() {
                           }));
                         }}
                       >
-                        {Array.from({ length: maxPoRoundsFor(poPlan.drawSize) }, (_, i) => (
-                          <MenuItem key={i + 1} value={i + 1}>{`V${i + 1} (dừng sau vòng ${
-                            i + 1
-                          })`}</MenuItem>
-                        ))}
+                        {Array.from(
+                          {
+                            length: maxPoRoundsFor(poPlan.drawSize),
+                          },
+                          (_, i) => (
+                            <MenuItem key={i + 1} value={i + 1}>{`V${i + 1} (dừng sau vòng ${
+                              i + 1
+                            })`}</MenuItem>
+                          )
+                        )}
                       </Select>
                     </Stack>
 
@@ -2471,7 +2550,46 @@ export default function TournamentBlueprintPage() {
 
               {includePO && (
                 <Box sx={{ mt: 1 }}>
-                  <RulesEditor label="Luật (PO)" value={poRules} onChange={setPoRules} />
+                  {/* Luật tổng – mặc định BO1 */}
+                  <RulesEditor
+                    label="Luật (PO) – mặc định cho tất cả round"
+                    value={poRules}
+                    onChange={(val) => {
+                      setPoRules(val);
+                      // fill các round chưa có
+                      setPoRoundRules((prev) => {
+                        const need = Math.max(1, Number(poPlan.maxRounds || 1));
+                        const next = [];
+                        for (let i = 0; i < need; i++) {
+                          next.push(prev[i] ? prev[i] : val);
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+
+                  {/* Luật từng vòng PO */}
+                  <Stack spacing={1} sx={{ mt: 1 }}>
+                    {Array.from(
+                      {
+                        length: Math.max(1, Number(poPlan.maxRounds || 1)),
+                      },
+                      (_, idx) => (
+                        <RulesEditor
+                          key={idx}
+                          label={`Luật PO • V${idx + 1}`}
+                          value={poRoundRules[idx] || poRules || DEFAULT_PO_RULES}
+                          onChange={(val) =>
+                            setPoRoundRules((prev) => {
+                              const next = prev.slice();
+                              next[idx] = val;
+                              return next;
+                            })
+                          }
+                        />
+                      )
+                    )}
+                  </Stack>
                 </Box>
               )}
 
@@ -2483,7 +2601,10 @@ export default function TournamentBlueprintPage() {
                   label="KO drawSize"
                   value={koPlan.drawSize}
                   onChange={(e) =>
-                    setKoPlan((p) => ({ ...p, drawSize: parseInt(e.target.value || "2", 10) }))
+                    setKoPlan((p) => ({
+                      ...p,
+                      drawSize: parseInt(e.target.value || "2", 10),
+                    }))
                   }
                 />
                 <Chip
@@ -2543,29 +2664,50 @@ export default function TournamentBlueprintPage() {
                         <Chip
                           size="small"
                           variant="outlined"
-                          label={`Rule: ${ruleSummary(normalizeRulesForState(groupRules))}`}
+                          label={`Rule: ${ruleSummary(
+                            normalizeRulesForState(groupRules, DEFAULT_RULES)
+                          )}`}
                         />
                       )}
                       {stage.type === "po" && (
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          label={`Rule: ${ruleSummary(normalizeRulesForState(poRules))}`}
-                        />
+                        <Stack direction="row" spacing={1}>
+                          {Array.from(
+                            {
+                              length: Math.max(1, Number(poPlan.maxRounds || 1)),
+                            },
+                            (_, ri) => {
+                              const r = poRoundRules[ri] || poRules || DEFAULT_PO_RULES;
+                              return (
+                                <Chip
+                                  key={ri}
+                                  size="small"
+                                  variant="outlined"
+                                  label={`PO V${ri + 1}: ${ruleSummary(
+                                    normalizeRulesForState(r, DEFAULT_PO_RULES)
+                                  )}`}
+                                />
+                              );
+                            }
+                          )}
+                        </Stack>
                       )}
                       {stage.type === "ko" && (
                         <Stack direction="row" spacing={1}>
                           <Chip
                             size="small"
                             variant="outlined"
-                            label={`Rule: ${ruleSummary(normalizeRulesForState(koRules))}`}
+                            label={`Rule: ${ruleSummary(
+                              normalizeRulesForState(koRules, DEFAULT_RULES)
+                            )}`}
                           />
                           {koFinalOverride && (
                             <Chip
                               size="small"
                               color="secondary"
                               variant="outlined"
-                              label={`Final: ${ruleSummary(normalizeRulesForState(koFinalRules))}`}
+                              label={`Final: ${ruleSummary(
+                                normalizeRulesForState(koFinalRules, DEFAULT_RULES)
+                              )}`}
                             />
                           )}
                         </Stack>
@@ -2600,9 +2742,9 @@ export default function TournamentBlueprintPage() {
                             <Paper key={g} variant="outlined" sx={{ p: 1.5 }}>
                               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
                                 <Chip size="small" color="secondary" label={`B${g}`} />
-                                <Typography variant="subtitle2">{`Dự kiến ${sizeThis} đội • ${RR_MATCHES(
-                                  sizeThis
-                                )} trận`}</Typography>
+                                <Typography variant="subtitle2">
+                                  {`Dự kiến ${sizeThis} đội • ${RR_MATCHES(sizeThis)} trận`}
+                                </Typography>
                                 {manualRemainder && (Number(groupTotal) || 0) > 0 && (
                                   <Stack
                                     direction="row"
@@ -2615,7 +2757,9 @@ export default function TournamentBlueprintPage() {
                                       onClick={() => {
                                         setGroupExtras((prev) => {
                                           const next = Array.from(
-                                            { length: groupCount },
+                                            {
+                                              length: groupCount,
+                                            },
                                             (_, i) => prev[i] || 0
                                           );
                                           if (next[gi] > 0) next[gi] -= 1;
@@ -2635,7 +2779,9 @@ export default function TournamentBlueprintPage() {
                                         }
                                         setGroupExtras((prev) => {
                                           const next = Array.from(
-                                            { length: groupCount },
+                                            {
+                                              length: groupCount,
+                                            },
                                             (_, i) => prev[i] || 0
                                           );
                                           next[gi] += 1;
