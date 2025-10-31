@@ -104,79 +104,69 @@ const detectBracketKind = (br = {}) => {
  * - drawStatus (reveal/session)
  * - meta.expectedFirstRoundMatches
  */
+// chỉ sửa HÀM NÀY thôi
 const buildPoPlanAll = (bracket, drawStatus) => {
   const poPreplan = bracket?.poPreplan || {};
   const fixed = Array.isArray(poPreplan.fixed) ? poPreplan.fixed : [];
   const pools = Array.isArray(poPreplan.pools) ? poPreplan.pools : [];
 
+  const to1Based = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 1 ? n : null;
+  };
+
   let pairCount = 0;
 
-  const maxFixed = fixed.reduce((m, f) => {
-    const idx =
-      typeof f.pairIndex === "number" ? f.pairIndex : typeof f.pair === "number" ? f.pair - 1 : -1;
-    return idx >= 0 ? Math.max(m, idx + 1) : m;
-  }, 0);
-  pairCount = Math.max(pairCount, maxFixed);
-
-  const maxPools = pools.reduce((m, p) => {
-    const idx =
-      typeof p.pairIndex === "number" ? p.pairIndex : typeof p.pair === "number" ? p.pair - 1 : -1;
-    return idx >= 0 ? Math.max(m, idx + 1) : m;
-  }, 0);
-  pairCount = Math.max(pairCount, maxPools);
-
-  if (drawStatus?.mode === "po" && Array.isArray(drawStatus.reveals)) {
-    pairCount = Math.max(pairCount, drawStatus.reveals.length);
+  // 1) từ fixed FE gửi
+  for (const f of fixed) {
+    const idx = to1Based(f.pairIndex) ?? to1Based(f.pair);
+    if (idx) pairCount = Math.max(pairCount, idx);
   }
 
-  const sess = drawStatus?.session || drawStatus?.draw || null;
-  if (sess?.board?.pairs && Array.isArray(sess.board.pairs)) {
-    pairCount = Math.max(pairCount, sess.board.pairs.length);
+  // 2) từ pools FE gửi
+  for (const p of pools) {
+    const idx = to1Based(p.pairIndex) ?? to1Based(p.pair);
+    if (idx) pairCount = Math.max(pairCount, idx);
   }
 
-  if (
-    typeof bracket?.meta?.expectedFirstRoundMatches === "number" &&
-    bracket.meta.expectedFirstRoundMatches > 0
-  ) {
-    pairCount = Math.max(pairCount, bracket.meta.expectedFirstRoundMatches);
-  }
-
+  // 3) từ prefill.seeds (nếu có) → cũng là của bracket chứ không phải draw runtime
   if (Array.isArray(bracket?.prefill?.seeds) && bracket.prefill.seeds.length > 0) {
     pairCount = Math.max(pairCount, bracket.prefill.seeds.length);
   }
 
+  // 4) chỉ dùng meta.expectedFirstRoundMatches LÀM FALLBACK khi không có gì khác
+  const metaPairs = Number(bracket?.meta?.expectedFirstRoundMatches || 0);
+  if (!pairCount && metaPairs > 0) {
+    pairCount = metaPairs;
+  }
+
+  // 5) fallback cuối cùng
   if (!pairCount) pairCount = 8;
 
   const rows = [];
+
   for (let i = 0; i < pairCount; i += 1) {
+    const pairIndex = i + 1; // 1-based đúng ý bạn
     const row = {
-      pairIndex: i,
+      pairIndex,
       A: { displayName: null, fixed: null, fromBracket: false, candidates: [] },
       B: { displayName: null, fixed: null, fromBracket: false, candidates: [] },
     };
 
-    // từ drawStatus.reveals
-    if (drawStatus?.mode === "po" && Array.isArray(drawStatus.reveals) && drawStatus.reveals[i]) {
-      row.A.displayName = drawStatus.reveals[i].AName ?? null;
-      row.B.displayName = drawStatus.reveals[i].BName ?? null;
-    }
-
-    // từ bracket.poPreplan.fixed
+    // gán từ fixed
     const fxA =
-      fixed.find(
-        (f) => (f.pairIndex === i || f.pairIndex === i + 1 || f.pair === i + 1) && f.side === "A"
-      ) || null;
+      fixed.find((f) => (f.pairIndex === pairIndex || f.pair === pairIndex) && f.side === "A") ||
+      null;
     const fxB =
-      fixed.find(
-        (f) => (f.pairIndex === i || f.pairIndex === i + 1 || f.pair === i + 1) && f.side === "B"
-      ) || null;
+      fixed.find((f) => (f.pairIndex === pairIndex || f.pair === pairIndex) && f.side === "B") ||
+      null;
 
     if (fxA) {
       if (fxA.reg) {
         row.A.fixed = String(fxA.reg);
         row.A.candidates = [String(fxA.reg)];
       }
-      if (!row.A.displayName && fxA.label) row.A.displayName = fxA.label;
+      if (fxA.label && !row.A.displayName) row.A.displayName = fxA.label;
       row.A.fromBracket = true;
     }
     if (fxB) {
@@ -184,19 +174,17 @@ const buildPoPlanAll = (bracket, drawStatus) => {
         row.B.fixed = String(fxB.reg);
         row.B.candidates = [String(fxB.reg)];
       }
-      if (!row.B.displayName && fxB.label) row.B.displayName = fxB.label;
+      if (fxB.label && !row.B.displayName) row.B.displayName = fxB.label;
       row.B.fromBracket = true;
     }
 
-    // từ bracket.poPreplan.pools → gán vào candidates
+    // gán từ pools
     const poolA =
-      pools.find(
-        (p) => (p.pairIndex === i || p.pairIndex === i + 1 || p.pair === i + 1) && p.side === "A"
-      ) || null;
+      pools.find((p) => (p.pairIndex === pairIndex || p.pair === pairIndex) && p.side === "A") ||
+      null;
     const poolB =
-      pools.find(
-        (p) => (p.pairIndex === i || p.pairIndex === i + 1 || p.pair === i + 1) && p.side === "B"
-      ) || null;
+      pools.find((p) => (p.pairIndex === pairIndex || p.pair === pairIndex) && p.side === "B") ||
+      null;
 
     if (poolA && Array.isArray(poolA.candidates)) {
       row.A.candidates = poolA.candidates.map(String);
@@ -208,6 +196,25 @@ const buildPoPlanAll = (bracket, drawStatus) => {
     }
 
     rows.push(row);
+  }
+
+  // 6) PATCH từ drawStatus (nếu có) NHƯNG KHÔNG ĐƯỢC PHÉP TĂNG SỐ CẶP
+  if (drawStatus?.mode === "po" && Array.isArray(drawStatus.reveals)) {
+    drawStatus.reveals.forEach((rv, idx) => {
+      if (!rows[idx]) return; // 👈 nếu reveal nhiều hơn thì bỏ qua
+      if (rv.AName && !rows[idx].A.displayName) rows[idx].A.displayName = rv.AName;
+      if (rv.BName && !rows[idx].B.displayName) rows[idx].B.displayName = rv.BName;
+    });
+  }
+
+  // nếu session.board.pairs cũng vậy, chỉ patch thôi
+  const sess = drawStatus?.session || drawStatus?.draw || null;
+  if (sess?.board?.pairs && Array.isArray(sess.board.pairs)) {
+    sess.board.pairs.forEach((p, idx) => {
+      if (!rows[idx]) return;
+      if (p.AName && !rows[idx].A.displayName) rows[idx].A.displayName = p.AName;
+      if (p.BName && !rows[idx].B.displayName) rows[idx].B.displayName = p.BName;
+    });
   }
 
   return rows;
