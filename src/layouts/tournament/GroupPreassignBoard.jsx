@@ -751,8 +751,8 @@ export default function GroupPreassignBoard({ bid: bidProp }) {
                   <Grid item xs={12} md={6} lg={4} key={row.pairIndex}>
                     <Card>
                       <CardHeader
-                        title={`Cặp #${row.pairIndex + 1}`}
-                        subheader={`pairIndex = ${row.pairIndex + 1}`}
+                        title={`Cặp #${row.pairIndex}`}
+                        subheader={`pairIndex = ${row.pairIndex}`}
                       />
                       <CardContent>
                         <Stack spacing={2}>
