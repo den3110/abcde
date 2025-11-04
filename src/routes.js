@@ -51,6 +51,7 @@ import FbLiveConfigPage from "layouts/FbLiveConfigPage";
 import ConfigManager from "layouts/ConfigManager";
 import YouTubeLiveAdmin from "layouts/YouTubeLiveAdmin";
 import AdminLiveSessionsPage from "layouts/AdminLiveSessionsPage";
+import FbTokensPage from "layouts/FbTokensPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -273,6 +274,19 @@ const routes = [
     private: true,
     roles: ["admin"],
     show: true, // hiện trên sidebar
+  },
+
+  // 🆕 Facebook Page Tokens (Admin)
+  {
+    type: "collapse",
+    name: "FB Page Tokens",
+    key: "fb-page-tokens",
+    icon: <Icon fontSize="small">vpn_key</Icon>,
+    route: "/admin/fb-tokens",
+    component: <FbTokensPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
   },
 
   // 🆕 Live đang phát (Admin) — MỤC MỚI
