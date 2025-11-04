@@ -1,4 +1,4 @@
-// src/pages/TournamentFormPage.jsx
+/* eslint-disable react/prop-types */
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -16,6 +16,7 @@ import {
   Radio,
   Skeleton,
   InputAdornment,
+  Slider,
 } from "@mui/material";
 
 // === MUI X Date Pickers v5 ===
@@ -170,7 +171,7 @@ export const SEPAY_BANKS = [
   { value: "COOPBANK", label: "COOPBANK - Ngân hàng Hợp tác xã Việt Nam" },
 ];
 
-/* ===== Danh sách ngân hàng theo SePay VietQR ===== */
+/* ===== Alias để search ngân hàng ===== */
 const BANK_ALIASES = {
   Vietcombank: ["VCB", "ngoai thuong"],
   VietinBank: ["CTG", "cong thuong"],
@@ -220,29 +221,23 @@ const BANK_ALIASES = {
   COOPBANK: ["coopbank", "ngan hang hop tac"],
 };
 
-// NEW: format "1234567" -> "1,234,567"
+// helpers
 const formatMoney = (s = "") => (s || "").replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-
-// NEW: chỉ lấy digits từ input (giữ rỗng khi xoá hết)
 const onlyDigits = (s = "") => (s || "").replace(/\D/g, "");
-
-// NEW: bỏ dấu + chuẩn hoá để so khớp
 const normalizeVi = (s = "") =>
   s
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // bỏ dấu tiếng Việt
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-// NEW: build index tìm kiếm (gộp label + value + alias)
 const BANKS_INDEX = SEPAY_BANKS.map((b) => {
   const aliases = BANK_ALIASES[b.value] || [];
   const hay = normalizeVi([b.value, b.label, ...aliases].join(" "));
   return { ...b, _hay: hay, _aliases: aliases.map(normalizeVi) };
 });
 
-// NEW: thuật toán lọc & xếp hạng
 const filterBankOptions = (options, { inputValue }) => {
   const q = normalizeVi(inputValue);
   if (!q) return options.slice(0, 50);
@@ -252,25 +247,13 @@ const filterBankOptions = (options, { inputValue }) => {
     .map((opt) => {
       const hay = opt._hay;
       let score = 0;
-
-      // 1) Ưu tiên khớp theo shortName (value)
       const val = normalizeVi(opt.value);
-      if (val === q) score += 120; // trùng tuyệt đối
+      if (val === q) score += 120;
       if (val.startsWith(q)) score += 90;
-
-      // 2) Alias viết tắt (VCB, CTG, TCB…)
       if (opt._aliases.includes(q)) score += 100;
-
-      // 3) Khớp đủ các từ trong label/aliases
-      const allParts = parts.every((p) => hay.includes(p));
-      if (allParts) score += 70;
-
-      // 4) Prefix trên chuỗi tổng hợp
+      if (parts.every((p) => hay.includes(p))) score += 70;
       if (hay.startsWith(q)) score += 60;
-
-      // 5) Substring bình thường
       if (hay.includes(q)) score += 40;
-
       return { opt, score };
     })
     .filter((r) => r.score > 0 || q.length <= 1)
@@ -283,13 +266,25 @@ const MAX_IMG_SIZE = 10 * 1024 * 1024; // 10MB
 const YMDHMS = "YYYY-MM-DDTHH:mm:ss";
 const DMYHMS = "DD/MM/YYYY HH:mm:ss";
 const isValidYmdHms = (s) => !!s && dayjs(s, YMDHMS, true).isValid();
-
-// ⛔️ Khử cộng +7 khi server trả ISO có 'Z' / offset → convert sang chuỗi “naive”
 const fixZToNaive = (s) => {
   if (!s) return "";
-  if (isValidYmdHms(s)) return s; // đã là naive
+  if (isValidYmdHms(s)) return s;
   const d = dayjs(s);
   return d.isValid() ? d.utc().format(YMDHMS) : "";
+};
+
+const toInt = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.floor(n) : NaN;
+};
+const computeBirthYearRange = (startDT, minAge, maxAge) => {
+  if (!isValidYmdHms(startDT)) return null;
+  const year = dayjs(startDT, YMDHMS, true).year();
+  if (!Number.isFinite(minAge) || !Number.isFinite(maxAge)) return null;
+  return {
+    minBirthYear: year - maxAge,
+    maxBirthYear: year - minAge,
+  };
 };
 
 /* ---------- Skeleton block cho UI khi đang load ---------- */
@@ -302,11 +297,7 @@ function FormSkeleton() {
     h: PropTypes.number,
     sx: PropTypes.any,
   };
-  Line.defaultProps = {
-    w: "100%",
-    h: 56,
-    sx: undefined,
-  };
+  Line.defaultProps = { w: "100%", h: 56, sx: undefined };
 
   const Text = ({ w = 200, h = 36, sx }) => (
     <Skeleton variant="text" width={w} height={h} sx={sx} />
@@ -316,18 +307,12 @@ function FormSkeleton() {
     h: PropTypes.number,
     sx: PropTypes.any,
   };
-  Text.defaultProps = {
-    w: 200,
-    h: 36,
-    sx: undefined,
-  };
+  Text.defaultProps = { w: 200, h: 36, sx: undefined };
 
   return (
     <Box p={3} sx={{ backgroundColor: "#fff", borderRadius: 1 }}>
       <Text w={260} h={44} sx={{ mb: 2 }} />
-
       <Grid container spacing={3}>
-        {/* Col trái */}
         <Grid item xs={12} md={6}>
           <Line />
           <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
@@ -341,11 +326,9 @@ function FormSkeleton() {
             </Box>
             <Line />
           </Card>
-
           <Line sx={{ mt: 2 }} />
           <Line sx={{ mt: 2 }} />
           <Line sx={{ mt: 2 }} />
-
           <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
             <Text w={140} />
             <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
@@ -356,20 +339,16 @@ function FormSkeleton() {
             <Text w={260} sx={{ mt: 1 }} />
           </Card>
         </Grid>
-
-        {/* Col phải */}
         <Grid item xs={12} md={6}>
           <Line />
           <Line sx={{ mt: 2 }} />
           <Line sx={{ mt: 2 }} />
           <Line sx={{ mt: 2 }} />
-
           <Line sx={{ mt: 2 }} />
           <Line sx={{ mt: 2 }} />
           <Line sx={{ mt: 2 }} />
           <Line sx={{ mt: 2 }} />
         </Grid>
-
         <Grid item xs={12}>
           <Stack direction="row" spacing={2} alignItems="center">
             <Skeleton variant="circular" width={22} height={22} />
@@ -377,18 +356,15 @@ function FormSkeleton() {
           </Stack>
           <Text w={420} />
         </Grid>
-
         <Grid item xs={12}>
           <Text w={160} />
           <Skeleton variant="rounded" height={190} sx={{ borderRadius: 1 }} />
         </Grid>
-
         <Grid item xs={12}>
           <Text w={160} />
           <Skeleton variant="rounded" height={240} sx={{ borderRadius: 1 }} />
         </Grid>
       </Grid>
-
       <Stack direction="row" spacing={2} mt={3}>
         <Line w={140} h={40} />
         <Line w={100} h={40} />
@@ -413,7 +389,6 @@ export default function TournamentFormPage() {
   const nowStr = now.format(YMDHMS);
   const loading = isEdit && (!tour || isLoading || isFetching);
 
-  // ---- State submit ----
   const [form, setForm] = useState({
     name: "",
     image: "",
@@ -433,23 +408,28 @@ export default function TournamentFormPage() {
     maxPairs: 0,
     noRankDelta: false,
 
-    // NEW: Phạm vi chấm (đa tỉnh)
-    scoringScopeType: "national", // 'national' | 'provinces'
-    scoringProvinces: [], // string[]
-    // NEW: ngân hàng
-    bankShortName: "", // ví dụ "Vietcombank" (giá trị chuẩn SePay)
-    bankAccountNumber: "", // chỉ chữ & số, không dấu
+    // phạm vi chấm
+    scoringScopeType: "national",
+    scoringProvinces: [],
+
+    // ngân hàng
+    bankShortName: "",
+    bankAccountNumber: "",
     bankAccountName: "",
-    registrationFee: "", // lưu "500000" để dễ format
+    registrationFee: "",
+
+    // điều kiện
+    requireKyc: true,
+    ageRestricted: false,
+    ageMin: 0,
+    ageMax: 100,
   });
 
   const [uploading, setUploading] = useState(false);
 
-  // ====== Quill refs để chèn ảnh đúng editor ======
   const contactQuillRef = useRef(null);
   const contentQuillRef = useRef(null);
 
-  // ====== Image uploader dùng slice upload avatar ======
   const uploadImageAndGetUrl = async (file) => {
     if (!file) return null;
     if (!file.type?.startsWith("image/")) {
@@ -475,7 +455,6 @@ export default function TournamentFormPage() {
     }
   };
 
-  // ====== Handler chèn ảnh cho Quill ======
   const insertImageViaUpload = (quillRef) => {
     const input = document.createElement("input");
     input.type = "file";
@@ -484,7 +463,6 @@ export default function TournamentFormPage() {
       const file = input.files?.[0];
       const url = await uploadImageAndGetUrl(file);
       if (!url) return;
-
       const quill = quillRef.current?.getEditor?.();
       if (!quill) return;
       const range = quill.getSelection(true) || { index: quill.getLength(), length: 0 };
@@ -495,7 +473,6 @@ export default function TournamentFormPage() {
     input.click();
   };
 
-  // ====== Quill toolbar cấu hình + handler image ======
   const makeQuillModules = (targetRef) => ({
     toolbar: {
       container: [
@@ -536,21 +513,29 @@ export default function TournamentFormPage() {
     []
   );
 
-  // Map dữ liệu server -> state (KHỬ +7 nếu server trả ISO có Z/offset)
   useEffect(() => {
     if (!tour) return;
 
-    // Chuẩn hoá phạm vi chấm (hỗ trợ backward-compat)
     let scopeType = "national";
     let scopeProvinces = [];
     if (tour.scoringScope?.type === "provinces" && Array.isArray(tour.scoringScope?.provinces)) {
       scopeType = "provinces";
       scopeProvinces = tour.scoringScope.provinces.filter(Boolean);
     } else if (tour.scoringScope?.type === "province" && tour.scoringScope?.province) {
-      // convert cũ -> mới
       scopeType = "provinces";
       scopeProvinces = [tour.scoringScope.province];
     }
+
+    const requireKyc =
+      typeof tour.requireKyc === "boolean"
+        ? tour.requireKyc
+        : typeof tour.kycRequired === "boolean"
+        ? tour.kycRequired
+        : true;
+
+    const ageEnabled = !!(tour.ageRestriction?.enabled ?? tour.ageRestricted ?? false);
+    const ageMin = Number(tour.ageRestriction?.minAge ?? tour.ageMin ?? (ageEnabled ? 0 : 0));
+    const ageMax = Number(tour.ageRestriction?.maxAge ?? tour.ageMax ?? (ageEnabled ? 100 : 100));
 
     const nextForm = {
       name: tour.name || "",
@@ -559,7 +544,6 @@ export default function TournamentFormPage() {
       groupId: Number(tour.groupId ?? 0),
       eventType: tour.eventType || "double",
 
-      // Datetime (naive, không +7)
       regOpenDT: fixZToNaive(tour.regOpenDate) || nowStr,
       registrationDeadlineDT: fixZToNaive(tour.registrationDeadline) || nowStr,
       startDT: fixZToNaive(tour.startDate) || nowStr,
@@ -574,9 +558,9 @@ export default function TournamentFormPage() {
       contentHtml: tour.contentHtml || "",
       noRankDelta: !!tour.noRankDelta,
 
-      scoringScopeType: scopeType, // 'national' | 'provinces'
-      scoringProvinces: scopeProvinces, // []
-      // NEW: cố gắng đọc nhiều key cho tương thích ngược
+      scoringScopeType: scopeType,
+      scoringProvinces: scopeProvinces,
+
       bankShortName: tour.bankShortName || tour.bankName || tour.paymentBank || "",
       bankAccountNumber: tour.bankAccountNumber || tour.accountNumber || tour.paymentAccount || "",
       registrationFee:
@@ -589,13 +573,58 @@ export default function TournamentFormPage() {
         tour.paymentAccountName ||
         tour.beneficiaryName ||
         "",
+
+      requireKyc,
+      ageRestricted: ageEnabled,
+      ageMin: Number.isFinite(ageMin) ? ageMin : 0,
+      ageMax: Number.isFinite(ageMax) ? ageMax : 100,
     };
     setForm(nextForm);
   }, [tour]); // eslint-disable-line
 
   const onChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
-  // Helper build payload
+  const onChangeBankAccountNumber = (e) => {
+    const digitsOnly = (e.target.value || "").replace(/\D/g, "");
+    setForm((prev) => ({ ...prev, bankAccountNumber: digitsOnly }));
+  };
+  const onChangeRegistrationFee = (e) => {
+    const digits = onlyDigits(e.target.value);
+    setForm((prev) => ({ ...prev, registrationFee: digits }));
+  };
+
+  const baseYear = useMemo(() => {
+    return isValidYmdHms(form.startDT) ? dayjs(form.startDT, YMDHMS, true).year() : dayjs().year();
+  }, [form.startDT]);
+
+  const ageMarks = useMemo(
+    () => [
+      { value: 0, label: `0 tuổi` },
+      { value: 100, label: `100 tuổi` },
+    ],
+    [baseYear]
+  );
+
+  const ageRange = useMemo(() => {
+    let a = toInt(form.ageMin);
+    let b = toInt(form.ageMax);
+    if (!Number.isFinite(a)) a = 0;
+    if (!Number.isFinite(b)) b = 100;
+    a = Math.max(0, Math.min(100, a));
+    b = Math.max(0, Math.min(100, b));
+    if (a > b) [a, b] = [b, a];
+    return [a, b];
+  }, [form.ageMin, form.ageMax]);
+  const ageBirthHint = useMemo(() => {
+    const [a, b] = ageRange; // a = minAge, b = maxAge
+    const fromYear = baseYear - b; // người lớn tuổi hơn -> năm sinh sớm hơn
+    const toYear = baseYear - a;
+
+    return `Năm sinh từ ${fromYear} (${b} tuổi) đến ${toYear} (${a} tuổi)${
+      isValidYmdHms(form.startDT) ? ` ` : ""
+    }`;
+  }, [ageRange, baseYear, form.startDT]);
+
   const buildPayload = () => {
     const {
       scoringScopeType,
@@ -604,7 +633,11 @@ export default function TournamentFormPage() {
       registrationDeadlineDT,
       startDT,
       endDT,
+      ageRestricted,
     } = form;
+
+    const [mn, mx] = ageRange;
+    const yob = computeBirthYearRange(startDT, mn, mx);
 
     return {
       name: (form.name || "").trim(),
@@ -613,7 +646,6 @@ export default function TournamentFormPage() {
       groupId: Number(form.groupId) || 0,
       eventType: form.eventType,
 
-      // gửi dạng 'YYYY-MM-DDTHH:mm:ss' (naive)
       regOpenDate: regOpenDT,
       registrationDeadline: registrationDeadlineDT,
       startDate: startDT,
@@ -628,35 +660,34 @@ export default function TournamentFormPage() {
       maxPairs: Number(form.maxPairs) || 0,
       noRankDelta: !!form.noRankDelta,
 
-      // NEW: phạm vi chấm đa tỉnh
       scoringScope: {
-        type: scoringScopeType, // 'national' | 'provinces'
+        type: scoringScopeType,
         provinces: scoringScopeType === "provinces" ? scoringProvinces : [],
       },
-      // NEW: ngân hàng theo SePay
+
       bankShortName: form.bankShortName || "",
       bankAccountNumber: (form.bankAccountNumber || "").trim(),
-      bankAccountName: (form.bankAccountName || "").trim(), // NEW
-      registrationFee: Number(form.registrationFee) || 0, // NEW
+      bankAccountName: (form.bankAccountName || "").trim(),
+      registrationFee: Number(form.registrationFee) || 0,
+
+      requireKyc: !!form.requireKyc,
+      ageRestriction: {
+        enabled: !!ageRestricted,
+        minAge: mn,
+        maxAge: mx,
+        ...(yob ? { minBirthYear: yob.minBirthYear, maxBirthYear: yob.maxBirthYear } : {}),
+      },
+
+      // backward keys (nếu BE cũ còn đọc)
+      ageRestricted: !!ageRestricted,
+      ageMin: mn,
+      ageMax: mx,
     };
-  };
-
-  // REPLACE old handler
-  const onChangeBankAccountNumber = (e) => {
-    const digitsOnly = (e.target.value || "").replace(/\D/g, "");
-    setForm((prev) => ({ ...prev, bankAccountNumber: digitsOnly }));
-  };
-
-  // NEW: handler cho phí → luôn lưu digits, UI hiển thị có dấu phẩy
-  const onChangeRegistrationFee = (e) => {
-    const digits = onlyDigits(e.target.value);
-    setForm((prev) => ({ ...prev, registrationFee: digits }));
   };
 
   const submit = async (e) => {
     e.preventDefault();
 
-    // Validate datetime
     const fields = [
       ["regOpenDT", "Ngày mở đăng ký"],
       ["registrationDeadlineDT", "Hạn chót đăng ký"],
@@ -670,16 +701,21 @@ export default function TournamentFormPage() {
       }
     }
 
-    // bank bắt buộc là 1 trong danh sách
     if (!SEPAY_BANKS.some((b) => b.value === form.bankShortName)) {
       toast.error("Vui lòng chọn ngân hàng hợp lệ.");
       return;
     }
-    if (form.bankAccountNumber && !/^[A-Za-z0-9]{4,32}$/.test(form.bankAccountNumber)) {
-      toast.error("Số tài khoản không hợp lệ (4–32 ký tự chữ/số).");
+    if (
+      !/^\d*$/.test(form.bankAccountNumber) ||
+      (form.bankAccountNumber && form.bankAccountNumber.length < 4)
+    ) {
+      toast.error("Số tài khoản chỉ gồm số và tối thiểu 4 chữ số.");
       return;
     }
-    // không âm
+    if ((form.bankShortName || form.bankAccountNumber) && !form.bankAccountName.trim()) {
+      toast.error("Vui lòng nhập Tên chủ tài khoản.");
+      return;
+    }
     if (
       form.registrationFee !== "" &&
       (Number.isNaN(Number(form.registrationFee)) || Number(form.registrationFee) < 0)
@@ -687,14 +723,12 @@ export default function TournamentFormPage() {
       toast.error("Phí đăng ký không hợp lệ (không được âm).");
       return;
     }
-    // Validate phạm vi chấm
     if (form.scoringScopeType === "provinces") {
       const list = (form.scoringProvinces || []).filter(Boolean);
       if (!list.length) {
         toast.error("Vui lòng chọn ít nhất 1 tỉnh/thành.");
         return;
       }
-      // lọc lại cho chắc
       const invalid = list.find((p) => !VN_PROVINCES.includes(p));
       if (invalid) {
         toast.error(`Tỉnh/thành không hợp lệ: ${invalid}`);
@@ -702,16 +736,16 @@ export default function TournamentFormPage() {
       }
     }
 
-    // STK chỉ chứa số
-    if (!/^\d+$/.test(form.bankAccountNumber)) {
-      toast.error("Số tài khoản chỉ được chứa số (0–9).");
-      return;
-    }
-
-    // NEW: tên chủ tài khoản bắt buộc nếu đã chọn ngân hàng & có STK
-    if ((form.bankShortName || form.bankAccountNumber) && !form.bankAccountName.trim()) {
-      toast.error("Vui lòng nhập Tên chủ tài khoản.");
-      return;
+    if (form.ageRestricted) {
+      const [mn, mx] = ageRange;
+      if (mn < 0 || mx < 0 || mn > 100 || mx > 100) {
+        toast.error("Độ tuổi phải nằm trong khoảng 0–100.");
+        return;
+      }
+      if (mn > mx) {
+        toast.error("Tuổi tối thiểu không được lớn hơn tuổi tối đa.");
+        return;
+      }
     }
 
     const body = buildPayload();
@@ -730,7 +764,6 @@ export default function TournamentFormPage() {
   };
 
   const pickFile = () => fileInputRef.current?.click();
-
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -741,10 +774,8 @@ export default function TournamentFormPage() {
     }
     e.target.value = "";
   };
-
   const clearImage = () => setForm((prev) => ({ ...prev, image: "" }));
 
-  // --- DateTimePicker v5 renderer ---
   const renderDateTime = (name, label) => (
     <DateTimePicker
       label={`${label} (dd/mm/yyyy hh:mm:ss)`}
@@ -767,8 +798,6 @@ export default function TournamentFormPage() {
   return (
     <DashboardLayout>
       <DashboardNavbar />
-
-      {/* Khi sửa & chưa có dữ liệu → hiển thị skeleton */}
       {loading ? (
         <FormSkeleton />
       ) : (
@@ -798,12 +827,10 @@ export default function TournamentFormPage() {
                     margin="normal"
                   />
 
-                  {/* Upload ảnh từ máy + preview */}
                   <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
                     <Typography variant="subtitle2" gutterBottom>
                       Ảnh đại diện giải
                     </Typography>
-
                     {form.image ? (
                       <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
                         <img
@@ -842,8 +869,6 @@ export default function TournamentFormPage() {
                         </Typography>
                       </Stack>
                     )}
-
-                    {/* file input ẩn */}
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -851,8 +876,6 @@ export default function TournamentFormPage() {
                       onChange={handleFileChange}
                       style={{ display: "none" }}
                     />
-
-                    {/* Nhập URL thủ công nếu muốn */}
                     <TextField
                       name="image"
                       label="Ảnh (URL)"
@@ -901,7 +924,8 @@ export default function TournamentFormPage() {
                     fullWidth
                     margin="normal"
                   />
-                  {/* NEW: Autocomplete ngân hàng (có thuật toán tìm kiếm) */}
+
+                  {/* Thông tin chuyển khoản */}
                   <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
                     <Typography variant="subtitle2" gutterBottom>
                       Thông tin chuyển khoản (SePay VietQR)
@@ -955,7 +979,6 @@ export default function TournamentFormPage() {
                       helperText="Tên người/đơn vị nhận tiền (có dấu hoặc không dấu đều được)"
                       required
                     />
-
                     <TextField
                       name="registrationFee"
                       label="Phí đăng ký (VND)"
@@ -972,7 +995,7 @@ export default function TournamentFormPage() {
                     />
                   </Card>
 
-                  {/* NEW: Phạm vi chấm (đa tỉnh) */}
+                  {/* Phạm vi giải đấu */}
                   <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
                     <Typography variant="subtitle2" gutterBottom>
                       Phạm vi giải đấu
@@ -983,7 +1006,7 @@ export default function TournamentFormPage() {
                       onChange={(e) =>
                         setForm((p) => ({
                           ...p,
-                          scoringScopeType: e.target.value, // 'national' | 'provinces'
+                          scoringScopeType: e.target.value,
                           scoringProvinces: e.target.value === "national" ? [] : p.scoringProvinces,
                         }))
                       }
@@ -1028,8 +1051,89 @@ export default function TournamentFormPage() {
                     )}
                     <Typography variant="caption" color="text.secondary">
                       Toàn quốc: không giới hạn tỉnh. Giới hạn theo tỉnh: chỉ cho phép VĐV thuộc các
-                      tỉnh đã chọn được tính điểm/đủ điều kiện .
+                      tỉnh đã chọn được tính điểm/đủ điều kiện.
                     </Typography>
+                  </Card>
+
+                  {/* Điều kiện tham gia */}
+                  <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Điều kiện tham gia
+                    </Typography>
+
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={!!form.requireKyc}
+                          onChange={(e) => setForm((p) => ({ ...p, requireKyc: e.target.checked }))}
+                        />
+                      }
+                      label="Yêu cầu KYC khi đăng ký"
+                    />
+
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={!!form.ageRestricted}
+                          onChange={(e) =>
+                            setForm((p) => ({
+                              ...p,
+                              ageRestricted: e.target.checked,
+                              ...(e.target.checked ? { ageMin: 0, ageMax: 100 } : {}),
+                            }))
+                          }
+                        />
+                      }
+                      label="Giới hạn độ tuổi"
+                    />
+
+                    {form.ageRestricted && (
+                      <Box sx={{ mt: 1, overflow: "visible" }}>
+                        <Slider
+                          value={ageRange}
+                          onChange={(_, v) =>
+                            setForm((p) => ({ ...p, ageMin: v[0], ageMax: v[1] }))
+                          }
+                          min={0}
+                          max={100}
+                          step={1}
+                          marks={ageMarks}
+                          disableSwap
+                          valueLabelDisplay="auto"
+                          valueLabelFormat={(v) => `${v} tuổi`}
+                          sx={{
+                            mx: 1,
+                            // Nhãn bubble (value label) gọn & không xuống dòng
+                            "& .MuiSlider-valueLabel": {
+                              whiteSpace: "nowrap",
+                              fontSize: 12,
+                              lineHeight: 1.2,
+                              px: 1,
+                              py: 0.5,
+                            },
+                            // Nhãn mốc (marks) không tràn và thu nhỏ chữ
+                            "& .MuiSlider-markLabel": {
+                              whiteSpace: "nowrap",
+                              fontSize: 12,
+                            },
+                            // Căn 2 nhãn đầu/cuối vào trong để không “thò” ra mép
+                            "& .MuiSlider-markLabel:first-of-type": {
+                              transform: "translateX(0%)",
+                            },
+                            "& .MuiSlider-markLabel:last-of-type": {
+                              transform: "translateX(-100%)",
+                            },
+                          }}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ mt: 0.5, display: "block" }}
+                        >
+                          {ageBirthHint} {/* vẫn hiển thị dải năm sinh đầy đủ bên dưới */}
+                        </Typography>
+                      </Box>
+                    )}
                   </Card>
                 </Grid>
 
@@ -1075,7 +1179,7 @@ export default function TournamentFormPage() {
                   </Typography>
                 </Grid>
 
-                {/* ==== ReactQuill Editors (có nút chèn ảnh) ==== */}
+                {/* Editors */}
                 <Grid item xs={12}>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
                     Thông tin liên hệ
