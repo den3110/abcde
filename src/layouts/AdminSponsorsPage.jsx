@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useRef, useEffect } from "react";
+/* eslint-disable react/prop-types */
+import React, { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import {
   Box,
   Stack,
@@ -20,6 +21,8 @@ import {
   DialogContent,
   DialogActions,
   LinearProgress,
+  Autocomplete,
+  Checkbox,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
@@ -32,6 +35,9 @@ import {
   ArrowDownward,
   Upload as UploadIcon,
   Image as ImageIcon,
+  CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon,
+  CheckBox as CheckBoxIcon,
+  Clear as ClearIcon,
 } from "@mui/icons-material";
 import {
   useGetSponsorsQuery,
@@ -39,12 +45,15 @@ import {
   useUpdateSponsorMutation,
   useDeleteSponsorMutation,
 } from "slices/sponsorsApiSlice";
-import { useUploadAvatarMutation } from "slices/uploadApiSlice"; // ⬅️ dùng api slice upload có sẵn
+import { useGetTournamentsQuery } from "slices/tournamentsApiSlice";
+import { useUploadAvatarMutation } from "slices/uploadApiSlice";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import PropTypes from "prop-types";
 
 const TIERS = ["Platinum", "Gold", "Silver", "Bronze", "Partner", "Media", "Other"];
+const ICON_UNCHECK = <CheckBoxOutlineBlankIcon fontSize="small" />;
+const ICON_CHECKED = <CheckBoxIcon fontSize="small" />;
 
 // Ô logo nhỏ 16:9 cho DataGrid
 function LogoCell({ src }) {
@@ -52,7 +61,7 @@ function LogoCell({ src }) {
     <Box
       sx={{
         width: 90,
-        height: 50, // gần 16:9
+        height: 50,
         borderRadius: 1,
         overflow: "hidden",
         bgcolor: "background.default",
@@ -71,17 +80,18 @@ function LogoCell({ src }) {
     </Box>
   );
 }
-
-LogoCell.propTypes = {
-  src: PropTypes.string,
-};
+LogoCell.propTypes = { src: PropTypes.string };
 
 export default function AdminSponsorsPage() {
-  // Filters & pagination
+  // ===== Filters & pagination =====
   const [search, setSearch] = useState("");
   const [tier, setTier] = useState("");
   const [featuredOnly, setFeaturedOnly] = useState(false);
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 20 });
+
+  // ⬇️ filter theo giải
+  const [tournamentFilter, setTournamentFilter] = useState(null); // { _id, name }
+  const [tSearch, setTSearch] = useState("");
 
   const queryArgs = useMemo(
     () => ({
@@ -91,8 +101,9 @@ export default function AdminSponsorsPage() {
       tier: tier || undefined,
       featured: featuredOnly ? 1 : undefined,
       sort: "weight:desc,createdAt:desc",
+      tournamentId: tournamentFilter?._id,
     }),
-    [paginationModel, search, tier, featuredOnly]
+    [paginationModel, search, tier, featuredOnly, tournamentFilter]
   );
 
   const { data, isFetching, refetch } = useGetSponsorsQuery(queryArgs, {
@@ -101,13 +112,19 @@ export default function AdminSponsorsPage() {
   const rows = (data?.items || []).map((r) => ({ id: r._id, ...r }));
   const rowCount = data?.total || 0;
 
-  // Mutations
+  // tournaments options – slice trả { tournaments: [...] }
+  const { data: tRes, isFetching: tLoading } = useGetTournamentsQuery({
+    q: tSearch || "",
+  });
+  const tournamentOptions = useMemo(() => tRes?.tournaments || [], [tRes]);
+
+  // ===== Mutations =====
   const [createSponsor, { isLoading: creating }] = useCreateSponsorMutation();
   const [updateSponsor, { isLoading: updating }] = useUpdateSponsorMutation();
   const [deleteSponsor, { isLoading: deleting }] = useDeleteSponsorMutation();
   const [uploadAvatar, { isLoading: uploading }] = useUploadAvatarMutation();
 
-  // Dialog form state (single-file)
+  // ===== Dialog form =====
   const [formOpen, setFormOpen] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({
@@ -120,14 +137,16 @@ export default function AdminSponsorsPage() {
     description: "",
     featured: false,
     weight: 0,
+    tournamentIds: [],
   });
+  const [selectedTournaments, setSelectedTournaments] = useState([]); // objects
 
-  // Preview tạm bằng blob URL khi vừa chọn file
+  // Preview
   const [previewUrl, setPreviewUrl] = useState("");
   const fileInputRef = useRef(null);
   useEffect(() => () => previewUrl && URL.revokeObjectURL(previewUrl), [previewUrl]);
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditItem(null);
     setForm({
       name: "",
@@ -139,12 +158,17 @@ export default function AdminSponsorsPage() {
       description: "",
       featured: false,
       weight: 0,
+      tournamentIds: [],
     });
+    setSelectedTournaments([]);
     setPreviewUrl("");
     setFormOpen(true);
-  };
-  const openEdit = (row) => {
+  }, []);
+
+  const openEdit = useCallback((row) => {
     setEditItem(row);
+    const ts = Array.isArray(row.tournaments) ? row.tournaments.filter(Boolean) : [];
+    setSelectedTournaments(ts);
     setForm({
       name: row.name || "",
       slug: row.slug || "",
@@ -155,58 +179,76 @@ export default function AdminSponsorsPage() {
       description: row.description || "",
       featured: !!row.featured,
       weight: row.weight ?? 0,
+      tournamentIds: ts.map((x) => x?._id).filter(Boolean),
     });
     setPreviewUrl("");
     setFormOpen(true);
-  };
+  }, []);
 
   const [snack, setSnack] = useState({ open: false, message: "", severity: "success" });
-  const toast = (message, severity = "success") => setSnack({ open: true, message, severity });
+  const toast = useCallback(
+    (message, severity = "success") => setSnack({ open: true, message, severity }),
+    []
+  );
 
-  const submitForm = async () => {
+  const submitForm = useCallback(async () => {
     try {
+      const payload = { ...form, tournamentIds: form.tournamentIds || [] };
       if (editItem?.id) {
-        await updateSponsor({ id: editItem.id, ...form }).unwrap();
+        await updateSponsor({ id: editItem.id, ...payload }).unwrap();
         toast("Đã cập nhật");
       } else {
-        await createSponsor(form).unwrap();
+        await createSponsor(payload).unwrap();
         toast("Đã tạo mới");
       }
       setFormOpen(false);
+      refetch();
     } catch (e) {
       toast(e?.data?.message || e?.message || "Lỗi lưu dữ liệu", "error");
     }
-  };
+  }, [form, editItem, updateSponsor, createSponsor, toast, refetch]);
 
-  const handleDelete = async (row) => {
-    if (!confirm(`Xoá nhà tài trợ \"${row.name}\"?`)) return;
-    try {
-      await deleteSponsor(row.id).unwrap();
-      toast("Đã xoá");
-    } catch (e) {
-      toast(e?.data?.message || e?.message || "Lỗi xoá", "error");
-    }
-  };
+  const handleDelete = useCallback(
+    async (row) => {
+      if (!confirm(`Xoá nhà tài trợ "${row.name}"?`)) return;
+      try {
+        await deleteSponsor(row.id).unwrap();
+        toast("Đã xoá");
+        refetch();
+      } catch (e) {
+        toast(e?.data?.message || e?.message || "Lỗi xoá", "error");
+      }
+    },
+    [deleteSponsor, toast, refetch]
+  );
 
-  const toggleFeatured = async (row) => {
-    try {
-      await updateSponsor({ id: row.id, featured: !row.featured }).unwrap();
-    } catch (e) {
-      toast(e?.data?.message || e?.message || "Lỗi cập nhật", "error");
-    }
-  };
+  const toggleFeatured = useCallback(
+    async (row) => {
+      try {
+        await updateSponsor({ id: row.id, featured: !row.featured }).unwrap();
+        refetch();
+      } catch (e) {
+        toast(e?.data?.message || e?.message || "Lỗi cập nhật", "error");
+      }
+    },
+    [updateSponsor, toast, refetch]
+  );
 
-  const bumpWeight = async (row, delta) => {
-    const newW = (row.weight || 0) + delta;
-    try {
-      await updateSponsor({ id: row.id, weight: newW }).unwrap();
-      toast("Đã cập nhật weight");
-    } catch (e) {
-      toast(e?.data?.message || e?.message || "Lỗi cập nhật", "error");
-    }
-  };
+  const bumpWeight = useCallback(
+    async (row, delta) => {
+      const newW = (row.weight || 0) + delta;
+      try {
+        await updateSponsor({ id: row.id, weight: newW }).unwrap();
+        toast("Đã cập nhật weight");
+        refetch();
+      } catch (e) {
+        toast(e?.data?.message || e?.message || "Lỗi cập nhật", "error");
+      }
+    },
+    [updateSponsor, toast, refetch]
+  );
 
-  // Upload handler (dùng RTK Query uploadAvatar)
+  // Upload handler
   const onPickFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -231,12 +273,86 @@ export default function AdminSponsorsPage() {
         sortable: false,
         renderCell: (p) => <LogoCell src={p.row.logoUrl} />,
       },
-      { field: "name", headerName: "Tên", flex: 1, minWidth: 160 },
+      {
+        field: "name",
+        headerName: "Tên",
+        flex: 1,
+        minWidth: 160,
+        renderCell: (p) => (
+          <Tooltip title={p.row.name || ""}>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {p.row.name}
+            </span>
+          </Tooltip>
+        ),
+      },
       {
         field: "tier",
         headerName: "Tier",
         width: 120,
         renderCell: (p) => <Chip size="small" label={p.value || "Other"} />,
+      },
+      {
+        field: "tournaments",
+        headerName: "Giải đấu",
+        flex: 1.2,
+        minWidth: 260,
+        sortable: false,
+        renderCell: (p) => {
+          const ts = Array.isArray(p.row.tournaments) ? p.row.tournaments.filter(Boolean) : [];
+          const visible = ts.slice(0, 2);
+          const hidden = ts.slice(2);
+          const more = hidden.length;
+
+          return (
+            <Stack direction="row" spacing={0.5} sx={{ overflow: "hidden", alignItems: "center" }}>
+              {visible.map((t) => (
+                <Chip
+                  key={t._id}
+                  size="small"
+                  label={t.name}
+                  sx={{
+                    maxWidth: 160,
+                    "& .MuiChip-label": {
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      maxWidth: 140,
+                    },
+                  }}
+                  title={t.name}
+                />
+              ))}
+
+              {more > 0 && (
+                <Tooltip
+                  arrow
+                  placement="top"
+                  title={
+                    <Box sx={{ p: 0.5 }}>
+                      <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                        Các giải khác:
+                      </Typography>
+                      <Stack sx={{ mt: 0.5, maxWidth: 320 }}>
+                        {hidden.map((t) => (
+                          <Typography
+                            key={t._id}
+                            variant="body2"
+                            sx={{ lineHeight: 1.3, wordBreak: "break-word" }}
+                          >
+                            • {t.name}
+                          </Typography>
+                        ))}
+                      </Stack>
+                    </Box>
+                  }
+                >
+                  <Chip size="small" label={`+${more}`} />
+                </Tooltip>
+              )}
+            </Stack>
+          );
+        },
       },
       {
         field: "featured",
@@ -276,7 +392,7 @@ export default function AdminSponsorsPage() {
       {
         field: "actions",
         headerName: "Actions",
-        width: 160,
+        width: 180,
         sortable: false,
         renderCell: (p) => (
           <Stack direction="row" spacing={0.5}>
@@ -304,7 +420,7 @@ export default function AdminSponsorsPage() {
         ),
       },
     ],
-    []
+    [toggleFeatured, bumpWeight, openEdit, handleDelete]
   );
 
   const saving = creating || updating || deleting;
@@ -356,7 +472,37 @@ export default function AdminSponsorsPage() {
                   </MenuItem>
                 ))}
               </TextField>
+
+              {/* filter theo Giải đấu */}
+              <Autocomplete
+                sx={{ minWidth: 260 }}
+                size="small"
+                options={tournamentOptions}
+                loading={tLoading}
+                value={tournamentFilter}
+                onChange={(_, v) => setTournamentFilter(v)}
+                inputValue={tSearch}
+                onInputChange={(_, v) => setTSearch(v)}
+                filterOptions={(x) => x} // không lọc client, giữ nguyên list từ server
+                openOnFocus
+                isOptionEqualToValue={(o, v) => o?._id === v?._id}
+                getOptionLabel={(o) => o?.name || ""}
+                noOptionsText={tLoading ? "Đang tải..." : "Không có giải nào"}
+                renderInput={(params) => <TextField {...params} label="Lọc theo giải đấu" />}
+              />
+              {tournamentFilter && (
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<ClearIcon />}
+                  onClick={() => setTournamentFilter(null)}
+                >
+                  Bỏ lọc
+                </Button>
+              )}
+
               <FormControlLabel
+                sx={{ ml: { xs: 0, sm: "auto" } }}
                 control={
                   <Switch
                     checked={featuredOnly}
@@ -366,6 +512,7 @@ export default function AdminSponsorsPage() {
                 label="Featured only"
               />
             </Stack>
+
             <Divider sx={{ my: 2 }} />
             <div style={{ width: "100%" }}>
               <DataGrid
@@ -386,7 +533,7 @@ export default function AdminSponsorsPage() {
           </Paper>
         </Stack>
 
-        {/* SINGLE-FILE FORM DIALOG */}
+        {/* FORM DIALOG */}
         <Dialog open={formOpen} onClose={() => setFormOpen(false)} fullWidth maxWidth="sm">
           <DialogTitle>{editItem ? "Cập nhật nhà tài trợ" : "Thêm nhà tài trợ"}</DialogTitle>
           <DialogContent dividers>
@@ -428,7 +575,7 @@ export default function AdminSponsorsPage() {
                 </Box>
               </Box>
 
-              {/* Upload & URL controls */}
+              {/* Upload & URL */}
               <Stack
                 direction={{ xs: "column", sm: "row" }}
                 spacing={1.5}
@@ -505,6 +652,49 @@ export default function AdminSponsorsPage() {
                 minRows={3}
                 fullWidth
               />
+
+              {/* CHỌN NHIỀU GIẢI ĐẤU */}
+              <Autocomplete
+                multiple
+                disableCloseOnSelect
+                options={tournamentOptions}
+                loading={tLoading}
+                value={selectedTournaments}
+                onChange={(_, list) => {
+                  setSelectedTournaments(list);
+                  setForm((s) => ({
+                    ...s,
+                    tournamentIds: list.map((o) => o?._id).filter(Boolean),
+                  }));
+                }}
+                getOptionLabel={(o) => o?.name || ""}
+                isOptionEqualToValue={(o, v) => o?._id === v?._id}
+                renderOption={(props, option, { selected }) => (
+                  <li {...props}>
+                    <Checkbox icon={ICON_UNCHECK} checkedIcon={ICON_CHECKED} checked={selected} />
+                    {option.name}
+                  </li>
+                )}
+                renderInput={(params) => <TextField {...params} label="Áp dụng cho giải đấu" />}
+              />
+
+              {/* Chips đã chọn (xoá nhanh) */}
+              {!!selectedTournaments.length && (
+                <Stack direction="row" spacing={1} flexWrap="wrap">
+                  {selectedTournaments.map((t) => (
+                    <Chip
+                      key={t._id}
+                      label={t.name}
+                      onDelete={() => {
+                        const list = selectedTournaments.filter((x) => x._id !== t._id);
+                        setSelectedTournaments(list);
+                        setForm((s) => ({ ...s, tournamentIds: list.map((o) => o._id) }));
+                      }}
+                    />
+                  ))}
+                </Stack>
+              )}
+
               <Stack direction="row" spacing={2}>
                 <FormControlLabel
                   control={
