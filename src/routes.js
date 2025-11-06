@@ -52,6 +52,9 @@ import ConfigManager from "layouts/ConfigManager";
 import YouTubeLiveAdmin from "layouts/YouTubeLiveAdmin";
 import AdminLiveSessionsPage from "layouts/AdminLiveSessionsPage";
 import FbTokensPage from "layouts/FbTokensPage";
+import NewsAdminPage from "layouts/NewsAdminPage";
+import NewsListPage from "layouts/NewsListPage";
+import NewsDetailPage from "layouts/NewsDetailPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -81,6 +84,38 @@ const routes = [
     show: true, // hiện trên sidebar
   },
 
+  // 🆕 Tin tức (AI) (Admin)
+  {
+    type: "collapse",
+    name: "Tin tức (AI)",
+    key: "admin-news",
+    icon: <Icon fontSize="small">article</Icon>, // có thể đổi thành 'feed' | 'newspaper'
+    route: "/admin/news",
+    component: <NewsAdminPage />,
+    private: true,
+    roles: ["admin"],
+    show: true, // hiện trên sidebar
+  },
+
+  {
+    type: "collapse",
+    name: "Tin tức PickleTour",
+    key: "news-list",
+    icon: <Icon fontSize="small">article</Icon>,
+    route: "/news",
+    component: <NewsListPage />,
+    private: false, // cho public xem cũng được
+    show: true,
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Chi tiết tin",
+    key: "news-detail",
+    route: "/news/:slug",
+    component: <NewsDetailPage />,
+    private: false,
+  },
   // Xác thực (ẩn)
   {
     show: false,
