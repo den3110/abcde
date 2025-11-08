@@ -12,7 +12,7 @@ import {
   Alert,
   CircularProgress,
   Tooltip,
-  Skeleton, // ✅ thêm Skeleton
+  Skeleton,
 } from "@mui/material";
 import {
   useGetSystemSettingsQuery,
@@ -42,7 +42,6 @@ const Section = ({ title, children, desc }) => (
   </Paper>
 );
 
-// ⬇️ giữ prop-types như cũ
 Section.propTypes = {
   title: PropTypes.node.isRequired,
   children: PropTypes.node,
@@ -98,7 +97,10 @@ export default function SystemSettingsPage() {
       const next = structuredClone(prev);
       const seg = path.split(".");
       let obj = next;
-      for (let i = 0; i < seg.length - 1; i++) obj = obj[seg[i]];
+      for (let i = 0; i < seg.length - 1; i++) {
+        if (!obj[seg[i]]) obj[seg[i]] = {};
+        obj = obj[seg[i]];
+      }
       obj[seg.at(-1)] = val;
       return next;
     });
@@ -110,7 +112,10 @@ export default function SystemSettingsPage() {
       const next = structuredClone(prev);
       const seg = path.split(".");
       let obj = next;
-      for (let i = 0; i < seg.length - 1; i++) obj = obj[seg[i]];
+      for (let i = 0; i < seg.length - 1; i++) {
+        if (!obj[seg[i]]) obj[seg[i]] = {};
+        obj = obj[seg[i]];
+      }
       obj[seg.at(-1)] = val;
       return next;
     });
@@ -130,7 +135,10 @@ export default function SystemSettingsPage() {
         const next = structuredClone(prev);
         const seg = path.split(".");
         let obj = next;
-        for (let i = 0; i < seg.length - 1; i++) obj = obj[seg[i]];
+        for (let i = 0; i < seg.length - 1; i++) {
+          if (!obj[seg[i]]) obj[seg[i]] = {};
+          obj = obj[seg[i]];
+        }
         obj[seg.at(-1)] = num;
         return next;
       });
@@ -146,14 +154,18 @@ export default function SystemSettingsPage() {
         registration: { open: form.registration?.open },
         kyc: {
           enabled: form.kyc?.enabled,
-          autoApprove: form.kyc?.autoApprove, // ⬅️ switch auto-approve
+          autoApprove: form.kyc?.autoApprove,
           faceMatchThreshold: form.kyc?.faceMatchThreshold,
         },
         security: {
           enforce2FAForAdmins: form.security?.enforce2FAForAdmins,
           sessionTTLHours: form.security?.sessionTTLHours,
         },
-        uploads: { maxAvatarSizeMB: form.uploads?.maxAvatarSizeMB },
+        uploads: {
+          maxAvatarSizeMB: form.uploads?.maxAvatarSizeMB,
+          // 👇 flag bật/tắt chèn logo avatar
+          avatarLogoEnabled: !!form.uploads?.avatarLogoEnabled,
+        },
         notifications: {
           telegramEnabled: form.notifications?.telegramEnabled,
           telegramComplaintChatId: form.notifications?.telegramComplaintChatId ?? "",
@@ -176,7 +188,6 @@ export default function SystemSettingsPage() {
     );
   }
 
-  // ===== Loading: hiển thị skeleton + giữ spinner nhỏ ở góc
   if (isLoading || !form) {
     return (
       <DashboardLayout>
@@ -197,7 +208,6 @@ export default function SystemSettingsPage() {
             <SectionSkeleton lines={1} />
           </Stack>
 
-          {/* giữ nguyên spinner cũ nhưng thu nhỏ & đặt góc phải */}
           <Box sx={{ position: "absolute", top: 12, right: 12 }}>
             <Tooltip title="Đang tải cài đặt">
               <CircularProgress size={20} />
@@ -244,7 +254,11 @@ export default function SystemSettingsPage() {
                 type="number"
                 inputProps={{ step: 0.01, min: 0, max: 1 }}
                 value={form.kyc?.faceMatchThreshold ?? 0.78}
-                onChange={onNumber("kyc.faceMatchThreshold", { min: 0, max: 1, step: 0.01 })}
+                onChange={onNumber("kyc.faceMatchThreshold", {
+                  min: 0,
+                  max: 1,
+                  step: 0.01,
+                })}
                 helperText="0.00–1.00 (đề xuất: 0.75–0.85)"
                 fullWidth
               />
@@ -291,18 +305,35 @@ export default function SystemSettingsPage() {
               type="number"
               inputProps={{ min: 1, max: 720 }}
               value={form.security?.sessionTTLHours ?? 72}
-              onChange={onNumber("security.sessionTTLHours", { min: 1, max: 720 })}
+              onChange={onNumber("security.sessionTTLHours", {
+                min: 1,
+                max: 720,
+              })}
               fullWidth
             />
           </Section>
 
           <Section title="Upload">
+            {/* Bật / tắt chèn logo avatar */}
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Tooltip title="Khi bật, hệ thống sẽ tự động chèn logo lên ảnh đại diện người dùng (nếu logo được cấu hình trên server).">
+                <Typography>Chèn logo vào ảnh đại diện</Typography>
+              </Tooltip>
+              <Switch
+                checked={!!form.uploads?.avatarLogoEnabled}
+                onChange={onToggle("uploads.avatarLogoEnabled")}
+              />
+            </Stack>
+
             <TextField
               label="Giới hạn ảnh đại diện (MB)"
               type="number"
               inputProps={{ min: 1, max: 50 }}
               value={form.uploads?.maxAvatarSizeMB ?? 5}
-              onChange={onNumber("uploads.maxAvatarSizeMB", { min: 1, max: 50 })}
+              onChange={onNumber("uploads.maxAvatarSizeMB", {
+                min: 1,
+                max: 50,
+              })}
               fullWidth
             />
           </Section>

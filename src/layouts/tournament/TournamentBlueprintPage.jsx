@@ -35,6 +35,8 @@ import {
   useGetTournamentBracketsQuery,
   useSuggestTournamentPlanMutation,
   useGetRegistrationsQuery,
+  useGetTournamentPlanQuery,
+  useUpdateTournamentPlanMutation,
 } from "slices/tournamentsApiSlice";
 import PropTypes from "prop-types";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -895,12 +897,24 @@ export default function TournamentBlueprintPage() {
 
   // Lấy danh sách brackets đã tạo
   const {
-    data: existingBrackets = [],
+    data: existingBracketsRaw = [],
     isLoading: loadingBrackets,
     isError: bracketsError,
   } = useGetTournamentBracketsQuery(tournamentId);
 
-  const [tab, setTab] = useState("auto");
+  const existingBrackets = Array.isArray(existingBracketsRaw)
+    ? existingBracketsRaw
+    : existingBracketsRaw?.items || existingBracketsRaw?.data || [];
+  // Lấy plan đã lưu (nếu có)
+  const {
+    data: savedPlan,
+    isLoading: loadingPlan,
+    isError: planError,
+  } = useGetTournamentPlanQuery(tournamentId);
+
+  // Cập nhật plan (PUT /plan)
+  const [updateTournamentPlan] = useUpdateTournamentPlanMutation();
+  const [tab, setTab] = useState("manual");
 
   // ===== Auto (OpenAI) =====
   const [askingAI, setAskingAI] = useState(false);
@@ -1384,11 +1398,11 @@ export default function TournamentBlueprintPage() {
 
   const commitAIPlan = async () => {
     try {
-      if (!aiPlan?.ko && !aiPlan?.groups) {
+      if (!aiPlan?.ko && !aiPlan?.groups && !aiPlan?.po) {
         toast.info("Chưa có đề xuất để tạo.");
         return;
       }
-      const payload = {
+      const planPayload = {
         groups: aiPlan.groups
           ? {
               count: aiPlan.groups.count,
@@ -1410,20 +1424,33 @@ export default function TournamentBlueprintPage() {
                 : undefined,
             }
           : null,
-        ko: {
-          drawSize: aiPlan.ko.drawSize,
-          seeds: aiPlan.ko.seeds || [],
-          rules: aiPlan.ko.rules || normalizeRulesForState(koRules),
-          finalRules:
-            aiPlan.ko.finalRules || (koFinalOverride ? normalizeRulesForState(koFinalRules) : null),
-        },
-        ...(allowOverwrite ? { force: true } : {}),
+        ko: aiPlan.ko
+          ? {
+              drawSize: aiPlan.ko.drawSize,
+              seeds: aiPlan.ko.seeds || [],
+              rules: aiPlan.ko.rules || normalizeRulesForState(koRules),
+              finalRules:
+                aiPlan.ko.finalRules ||
+                (koFinalOverride ? normalizeRulesForState(koFinalRules) : null),
+            }
+          : null,
       };
 
+      // 1) Lưu plan server-side (để quay lại trang vẫn có cấu hình)
+      await updateTournamentPlan({
+        tournamentId,
+        body: planPayload,
+      }).unwrap();
+
+      // 2) Commit brackets (gửi kèm planPayload để tương thích BE cũ)
       await commitTournamentPlan({
         tournamentId,
-        body: payload,
+        body: {
+          ...planPayload,
+          ...(allowOverwrite ? { force: true } : {}),
+        },
       }).unwrap();
+
       toast.success(
         allowOverwrite ? "Đã ghi đè & tạo lại sơ đồ!" : "Đã tạo sơ đồ theo đề xuất AI!"
       );
@@ -2026,6 +2053,114 @@ export default function TournamentBlueprintPage() {
         }
         linear.push(...remR);
         linear.push(...othersFlat);
+      } else if (method === "strongWeakSpread") {
+        // Mạnh–Yếu toàn cục:
+        // - Ưu tiên rank nhỏ hơn (Top1 > Top2 > Top3 > ...)
+        // - Nếu cùng rank: bảng số nhỏ hơn mạnh hơn (B1 > B2 > ... > Bn)
+        // - Ghép: mạnh nhất vs yếu nhất, dần vào giữa, cố tránh cùng bảng.
+
+        const all = ranks.flat();
+
+        if (!all.length) {
+          toast.info("Không có seed từ vòng bảng để đổ.");
+          return { drawSize: size, seeds: [] };
+        }
+
+        const parseGroupIndex = (g) => {
+          if (g === undefined || g === null || g === "") return 999;
+          const m = String(g).match(/\d+/);
+          return m ? parseInt(m[0], 10) || 999 : 999;
+        };
+
+        // sort mạnh -> yếu
+        const strongOrder = [...all].sort((a, b) => {
+          const ra = a.__rank || a.ref?.rank || 999;
+          const rb = b.__rank || b.ref?.rank || 999;
+          if (ra !== rb) return ra - rb;
+          const ga = parseGroupIndex(a.__group ?? a.ref?.groupCode);
+          const gb = parseGroupIndex(b.__group ?? b.ref?.groupCode);
+          return ga - gb;
+        });
+
+        // sort yếu -> mạnh
+        const weakOrder = [...all].sort((a, b) => {
+          const ra = a.__rank || a.ref?.rank || 999;
+          const rb = b.__rank || b.ref?.rank || 999;
+          if (ra !== rb) return rb - ra;
+          const ga = parseGroupIndex(a.__group ?? a.ref?.groupCode);
+          const gb = parseGroupIndex(b.__group ?? b.ref?.groupCode);
+          return gb - ga;
+        });
+
+        const used = new Set();
+        const linearSW = [];
+
+        const takeStrong = () => {
+          for (const q of strongOrder) {
+            if (!used.has(q)) return q;
+          }
+          return null;
+        };
+
+        const takeWeak = (avoidGroup) => {
+          let fallback = null;
+          for (const q of weakOrder) {
+            if (used.has(q)) continue;
+            const g = q.__group ?? q.ref?.groupCode;
+            if (avoidGroup && g === avoidGroup) {
+              if (!fallback) fallback = q; // giữ lại nếu bắt buộc
+              continue;
+            }
+            return q; // khác bảng -> ưu tiên
+          }
+          return fallback;
+        };
+
+        // Ghép mạnh nhất vs yếu nhất, lần lượt tới khi hết slot KO
+        while (linearSW.length + 1 < capacity) {
+          const s = takeStrong();
+          if (!s) break;
+
+          const sGroup = s.__group ?? s.ref?.groupCode;
+          const w = takeWeak(sGroup);
+
+          used.add(s);
+          linearSW.push(s);
+
+          if (w && linearSW.length < capacity) {
+            used.add(w);
+            linearSW.push(w);
+          } else {
+            // không còn đối thủ phù hợp: dừng (sẽ fill sau)
+            break;
+          }
+        }
+
+        // Nếu còn slot trống, nhét phần còn lại theo thứ tự mạnh→yếu rồi yếu→mạnh
+        for (const q of strongOrder) {
+          if (linearSW.length >= capacity) break;
+          if (!used.has(q)) {
+            used.add(q);
+            linearSW.push(q);
+          }
+        }
+        for (const q of weakOrder) {
+          if (linearSW.length >= capacity) break;
+          if (!used.has(q)) {
+            used.add(q);
+            linearSW.push(q);
+          }
+        }
+
+        const pairs = arrangeLinearIntoKO(linearSW, firstPairs, "default", seedKey);
+        const usedCount = Math.min(capacity, linearSW.length);
+
+        toast.success(
+          `Đã đổ ${usedCount}/${
+            groups.length * N
+          } seed từ Vòng bảng sang KO • Kiểu: Mạnh–Yếu xa nhất`
+        );
+        return { drawSize: size, seeds: pairs };
       } else {
         // default – theo khối hạng
         linear = ranks.flat();
@@ -2150,6 +2285,18 @@ export default function TournamentBlueprintPage() {
     setTab("manual");
   };
 
+  // Prefill từ plan đã lưu (ưu tiên hơn việc đoán từ brackets)
+  useEffect(() => {
+    if (loadingPlan || !savedPlan) return;
+
+    // cho phép BE trả { plan: {...} } hoặc trả thẳng {...}
+    const plan = savedPlan?.plan ?? savedPlan;
+    if (plan && (plan.groups || plan.po || plan.ko)) {
+      applyPlanToManual(plan);
+      prefillOnceRef.current = true;
+    }
+  }, [loadingPlan, savedPlan]);
+
   // chạy prefill 1 lần khi có dữ liệu brackets
   useEffect(() => {
     if (prefillOnceRef.current) return;
@@ -2182,7 +2329,7 @@ export default function TournamentBlueprintPage() {
             }
         : null;
 
-      const payload = {
+      const planPayload = {
         groups: groupsPayload,
         po: includePO
           ? {
@@ -2199,10 +2346,23 @@ export default function TournamentBlueprintPage() {
           rules: normalizeRulesForState(koRules, DEFAULT_RULES),
           finalRules: koFinalOverride ? normalizeRulesForState(koFinalRules, DEFAULT_RULES) : null,
         },
-        ...(allowOverwrite ? { force: true } : {}),
       };
 
-      await commitTournamentPlan({ tournamentId, body: payload }).unwrap();
+      // 1) Lưu plan để lần sau vào vẫn có cấu hình
+      await updateTournamentPlan({
+        tournamentId,
+        body: planPayload,
+      }).unwrap();
+
+      // 2) Commit brackets; gửi kèm planPayload để tương thích BE hiện tại
+      await commitTournamentPlan({
+        tournamentId,
+        body: {
+          ...planPayload,
+          ...(hasExisting && allowOverwrite ? { force: true } : {}),
+        },
+      }).unwrap();
+
       toast.success(allowOverwrite ? "Đã ghi đè & tạo lại sơ đồ!" : "Đã tạo sơ đồ/khung giải!");
       navigate(`/admin/tournaments/${tournamentId}/brackets`);
     } catch (e) {
@@ -2219,9 +2379,12 @@ export default function TournamentBlueprintPage() {
     return Math.max(1, Math.ceil(losersPool / 2));
   }
 
-  if (isLoading || loadingBrackets) return <Box p={4}>Loading…</Box>;
-  if (error || bracketsError) return <Box p={4}>Lỗi tải dữ liệu.</Box>;
-
+  if (isLoading || loadingBrackets || loadingPlan) {
+    return <Box p={4}>Loading…</Box>;
+  }
+  if (error || bracketsError || planError) {
+    return <Box p={4}>Lỗi tải dữ liệu.</Box>;
+  }
   const hasExisting = Array.isArray(existingBrackets) && existingBrackets.length > 0;
 
   return (
@@ -2404,6 +2567,9 @@ export default function TournamentBlueprintPage() {
                         <MenuItem value="antiSameGroup">Tránh cùng bảng tối đa</MenuItem>
                         <MenuItem value="strongWeak">
                           Mạnh–Yếu (Top1 vs Top2; tránh cùng bảng & gặp sớm)
+                        </MenuItem>
+                        <MenuItem value="strongWeakSpread">
+                          Mạnh–Yếu xa nhất (1 mạnh nhất vs yếu nhất, dần vào giữa)
                         </MenuItem>
                       </TextField>
 

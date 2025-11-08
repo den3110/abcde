@@ -649,6 +649,18 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         body,
       }),
     }),
+
+    getTournamentPlan: builder.query({
+      query: (tournamentId) => `/admin/tournaments/${tournamentId}/plan`,
+    }),
+
+    updateTournamentPlan: builder.mutation({
+      query: ({ tournamentId, body }) => ({
+        url: `/admin/tournaments/${tournamentId}/plan`,
+        method: "PUT",
+        body,
+      }),
+    }),
   }),
 });
 
@@ -716,4 +728,6 @@ export const {
   useInsertRegIntoGroupSlotMutation,
   useGenerateGroupMatchesForTeamMutation,
   useSuggestTournamentPlanMutation,
+  useGetTournamentPlanQuery,
+  useUpdateTournamentPlanMutation,
 } = tournamentsApiSlice;
