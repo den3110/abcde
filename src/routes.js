@@ -104,7 +104,8 @@ const routes = [
     icon: <Icon fontSize="small">article</Icon>,
     route: "/news",
     component: <NewsListPage />,
-    private: false, // cho public xem cũng được
+    private: true, // cho public xem cũng được
+    roles: ["admin"],
     show: true,
   },
   {
