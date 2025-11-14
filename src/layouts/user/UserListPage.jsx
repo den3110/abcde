@@ -34,6 +34,7 @@ import VerifiedIcon from "@mui/icons-material/HowToReg";
 import CancelIcon from "@mui/icons-material/Cancel";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
+
 import { useDispatch, useSelector } from "react-redux";
 
 import MDBox from "components/MDBox";
@@ -52,10 +53,11 @@ import {
   useChangeUserPasswordMutation,
   usePromoteToEvaluatorMutation,
   useDemoteEvaluatorMutation,
-  // ✅ thêm lại API xoá
   useDeleteUserMutation,
 } from "slices/adminApiSlice";
+
 import { setPage, setKeyword, setRole } from "slices/adminUiSlice";
+import CccdAiBackfillCard from "./CccdAiBackfillCard";
 
 /* ================== Consts ================== */
 const GENDER_OPTIONS = [
@@ -177,8 +179,7 @@ export default function UserManagement() {
   const [changePasswordMut, { isLoading: changingPass }] = useChangeUserPasswordMutation();
   const [promoteEvaluatorMut] = usePromoteToEvaluatorMutation();
   const [demoteEvaluatorMut] = useDemoteEvaluatorMutation();
-  const [deleteUserMut] = useDeleteUserMutation(); // ✅ xoá user
-
+  const [deleteUserMut] = useDeleteUserMutation();
   const [score, setScore] = useState(null);
 
   const { data, isFetching, refetch } = useGetUsersQuery(
@@ -190,7 +191,7 @@ export default function UserManagement() {
   const [edit, setEdit] = useState(null);
   const [kyc, setKyc] = useState(null);
   const [zoom, setZoom] = useState(null);
-  const [del, setDel] = useState(null); // ✅ dialog xoá
+  const [del, setDel] = useState(null);
 
   // Snackbar
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
@@ -209,11 +210,11 @@ export default function UserManagement() {
     return () => clearTimeout(t);
   }, [search, keyword, dispatch]);
 
-  // ✅ Optimistic map: { [userId]: boolean } → true nếu FULL tỉnh (admin chấm trình)
+  // Optimistic map: { [userId]: boolean } → true nếu FULL tỉnh (admin chấm trình)
   const [optimisticFull, setOptimisticFull] = useState({});
   const isFullEvaluator = (u) => optimisticFull[u._id] ?? getIsFullEvaluator(u);
 
-  // ✅ helper chuẩn: trả về promise để .then() được
+  // helper chuẩn: trả về promise để .then() được
   const handle = async (promise, successMsg) => {
     try {
       const res = await promise;
@@ -343,7 +344,7 @@ export default function UserManagement() {
                 <EditIcon fontSize="inherit" />
               </IconButton>
             </Tooltip>
-            {/* ✅ THÊM LẠI: Xoá user */}
+            {/* Xoá user */}
             <Tooltip title="Xoá">
               <IconButton size="small" color="error" onClick={() => setDel(u)}>
                 <DeleteIcon fontSize="inherit" />
@@ -461,6 +462,7 @@ export default function UserManagement() {
         </Stack>
       </MDBox>
 
+      {/* Bảng user */}
       <MDBox pt={3} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
@@ -493,6 +495,10 @@ export default function UserManagement() {
           </Grid>
         </Grid>
       </MDBox>
+
+      {/* Backfill CCCD bằng AI - component riêng */}
+      <CccdAiBackfillCard showSnack={showSnack} onRefetch={refetch} />
+
       <Footer />
 
       {/* Snackbar */}
@@ -583,7 +589,14 @@ export default function UserManagement() {
                     </Box>
 
                     {kyc.note && (
-                      <Box sx={{ mt: 1.5, p: 1.25, bgcolor: "grey.50", borderRadius: 1 }}>
+                      <Box
+                        sx={{
+                          mt: 1.5,
+                          p: 1.25,
+                          bgcolor: "grey.50",
+                          borderRadius: 1,
+                        }}
+                      >
                         <MDTypography variant="caption" color="text.secondary">
                           Ghi chú
                         </MDTypography>
@@ -667,7 +680,11 @@ export default function UserManagement() {
                     cccd: e.target.value.replace(/\D/g, "").slice(0, 12),
                   })
                 }
-                inputProps={{ inputMode: "numeric", maxLength: 12, pattern: "\\d{12}" }}
+                inputProps={{
+                  inputMode: "numeric",
+                  maxLength: 12,
+                  pattern: "\\d{12}",
+                }}
                 helperText="Nhập đúng 12 chữ số"
               />
 
@@ -732,7 +749,14 @@ export default function UserManagement() {
                 />
 
                 {changePass && (
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 2,
+                      mt: 1,
+                    }}
+                  >
                     <TextField
                       label="Mật khẩu mới"
                       type={showNew ? "text" : "password"}
@@ -776,7 +800,13 @@ export default function UserManagement() {
                       }}
                     />
 
-                    <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        gap: 1,
+                        justifyContent: "flex-end",
+                      }}
+                    >
                       <Button
                         variant="outlined"
                         onClick={() => {
@@ -848,7 +878,7 @@ export default function UserManagement() {
         )}
       </Dialog>
 
-      {/* ✅ Delete dialog */}
+      {/* Delete dialog */}
       <Dialog open={!!del} onClose={() => setDel(null)}>
         <DialogTitle>Xoá người dùng?</DialogTitle>
         <DialogContent>

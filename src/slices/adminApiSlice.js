@@ -111,6 +111,22 @@ export const adminApiSlice = apiSlice.injectEndpoints({
         body, // { newPassword: string }
       }),
     }),
+    backfillCccd: builder.mutation({
+      query: ({ limit = 10, dryRun = true } = {}) => ({
+        // Nếu router backend là: app.use("/api/users", userRoutes);
+        // và route là: router.post("/admin/cccd-backfill", ...);
+        url: `/admin/users/cccd-backfill?limit=${limit}&dryRun=${dryRun ? 1 : 0}`,
+        method: "POST",
+      }),
+    }),
+    // === NEW: auto-fill CCCD cho từng user ===
+    fillCccdForUser: builder.mutation({
+      query: ({ id, dryRun = false, overwrite = false }) => ({
+        url: `/admin/users/${id}/ai-cccd`,
+        method: "POST",
+        body: { dryRun, overwrite },
+      }),
+    }),
   }),
 });
 
@@ -129,4 +145,6 @@ export const {
   usePromoteToEvaluatorMutation,
   useDemoteEvaluatorMutation,
   useChangeUserPasswordMutation,
+  useBackfillCccdMutation,
+  useFillCccdForUserMutation,
 } = adminApiSlice;

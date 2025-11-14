@@ -990,6 +990,15 @@ export default function TournamentBlueprintPage() {
     cap: { mode: "none", points: null },
   });
 
+  // ✅ NEW: KO Semi-final override
+  const [koSemiOverride, setKoSemiOverride] = useState(false);
+  const [koSemiRules, setKoSemiRules] = useState({
+    bestOf: 3,
+    pointsToWin: 11,
+    winByTwo: true,
+    cap: { mode: "none", points: null },
+  });
+
   // Prefill flags
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const prefillOnceRef = useRef(false);
@@ -1084,6 +1093,13 @@ export default function TournamentBlueprintPage() {
         seeds: Array.isArray(plan.ko.seeds) ? plan.ko.seeds : [],
       });
       if (plan.ko.rules) setKoRules(normalizeRulesForState(plan.ko.rules, DEFAULT_RULES));
+      // NEW: semi-final rules
+      if (plan.ko.semiRules) {
+        setKoSemiOverride(true);
+        setKoSemiRules(normalizeRulesForState(plan.ko.semiRules, DEFAULT_RULES));
+      } else {
+        setKoSemiOverride(false);
+      }
       if (plan.ko.finalRules) {
         setKoFinalOverride(true);
         setKoFinalRules(normalizeRulesForState(plan.ko.finalRules, DEFAULT_RULES));
@@ -1428,10 +1444,13 @@ export default function TournamentBlueprintPage() {
           ? {
               drawSize: aiPlan.ko.drawSize,
               seeds: aiPlan.ko.seeds || [],
-              rules: aiPlan.ko.rules || normalizeRulesForState(koRules),
+              rules: aiPlan.ko.rules || normalizeRulesForState(koRules, DEFAULT_RULES),
+              semiRules:
+                aiPlan.ko.semiRules ||
+                (koSemiOverride ? normalizeRulesForState(koSemiRules, DEFAULT_RULES) : null),
               finalRules:
                 aiPlan.ko.finalRules ||
-                (koFinalOverride ? normalizeRulesForState(koFinalRules) : null),
+                (koFinalOverride ? normalizeRulesForState(koFinalRules, DEFAULT_RULES) : null),
             }
           : null,
       };
@@ -2280,6 +2299,15 @@ export default function TournamentBlueprintPage() {
       } else {
         setKoFinalOverride(false);
       }
+
+      // ✅ NEW: semiRules
+      const semiRules = bKO.semiRules || cfg.semiRules || null;
+      if (semiRules) {
+        setKoSemiOverride(true);
+        setKoSemiRules(normalizeRulesForState(semiRules, DEFAULT_RULES));
+      } else {
+        setKoSemiOverride(false);
+      }
     }
 
     setTab("manual");
@@ -2344,6 +2372,7 @@ export default function TournamentBlueprintPage() {
         ko: {
           ...normalizeSeedsKO(koPlan),
           rules: normalizeRulesForState(koRules, DEFAULT_RULES),
+          semiRules: koSemiOverride ? normalizeRulesForState(koSemiRules, DEFAULT_RULES) : null,
           finalRules: koFinalOverride ? normalizeRulesForState(koFinalRules, DEFAULT_RULES) : null,
         },
       };
@@ -2782,28 +2811,63 @@ export default function TournamentBlueprintPage() {
               <Box sx={{ mt: 1 }}>
                 <RulesEditor label="Luật (KO)" value={koRules} onChange={setKoRules} />
 
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  spacing={2}
-                  alignItems="center"
-                  sx={{ mt: 1 }}
-                >
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={koFinalOverride}
-                        onChange={(e) => setKoFinalOverride(e.target.checked)}
-                      />
-                    }
-                    label="Dùng Rule riêng cho trận Chung kết (KO)"
-                  />
-                  {koFinalOverride && (
-                    <RulesEditor
-                      label="Luật Chung kết (KO)"
-                      value={koFinalRules}
-                      onChange={setKoFinalRules}
+                {/* Mỗi override một dòng riêng */}
+                <Stack spacing={2} sx={{ mt: 1 }}>
+                  {/* Row: Bán kết */}
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={2}
+                    alignItems="flex-start"
+                  >
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={koSemiOverride}
+                          onChange={(e) => setKoSemiOverride(e.target.checked)}
+                        />
+                      }
+                      label="Dùng Rule riêng cho trận Bán kết (KO)"
+                      sx={{ minWidth: 240 }}
                     />
-                  )}
+
+                    {koSemiOverride && (
+                      <Box sx={{ flexGrow: 1 }}>
+                        <RulesEditor
+                          label="Luật Bán kết (KO)"
+                          value={koSemiRules}
+                          onChange={setKoSemiRules}
+                        />
+                      </Box>
+                    )}
+                  </Stack>
+
+                  {/* Row: Chung kết */}
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={2}
+                    alignItems="flex-start"
+                  >
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={koFinalOverride}
+                          onChange={(e) => setKoFinalOverride(e.target.checked)}
+                        />
+                      }
+                      label="Dùng Rule riêng cho trận Chung kết (KO)"
+                      sx={{ minWidth: 240 }}
+                    />
+
+                    {koFinalOverride && (
+                      <Box sx={{ flexGrow: 1 }}>
+                        <RulesEditor
+                          label="Luật Chung kết (KO)"
+                          value={koFinalRules}
+                          onChange={setKoFinalRules}
+                        />
+                      </Box>
+                    )}
+                  </Stack>
                 </Stack>
               </Box>
 
@@ -2866,12 +2930,24 @@ export default function TournamentBlueprintPage() {
                               normalizeRulesForState(koRules, DEFAULT_RULES)
                             )}`}
                           />
+
+                          {koSemiOverride && (
+                            <Chip
+                              size="small"
+                              color="secondary"
+                              variant="outlined"
+                              label={`Bán kết: ${ruleSummary(
+                                normalizeRulesForState(koSemiRules, DEFAULT_RULES)
+                              )}`}
+                            />
+                          )}
+
                           {koFinalOverride && (
                             <Chip
                               size="small"
                               color="secondary"
                               variant="outlined"
-                              label={`Final: ${ruleSummary(
+                              label={`Chung kết: ${ruleSummary(
                                 normalizeRulesForState(koFinalRules, DEFAULT_RULES)
                               )}`}
                             />
