@@ -170,6 +170,10 @@ export default function SystemSettingsPage() {
           telegramEnabled: form.notifications?.telegramEnabled,
           telegramComplaintChatId: form.notifications?.telegramComplaintChatId ?? "",
         },
+        // 👇 NEW: link hướng dẫn
+        links: {
+          guideUrl: form.links?.guideUrl ?? "",
+        },
       };
       await updateSettings(payload).unwrap();
       toast.success("Đã lưu cài đặt hệ thống");
@@ -354,6 +358,20 @@ export default function SystemSettingsPage() {
               value={form.notifications?.telegramComplaintChatId ?? ""}
               onChange={onChange("notifications.telegramComplaintChatId")}
               placeholder="-1001234567890"
+              fullWidth
+            />
+          </Section>
+
+          {/* 👇 NEW: Link hướng dẫn */}
+          <Section
+            title="Link hướng dẫn"
+            desc="Đường dẫn tới trang hướng dẫn sử dụng / FAQ / docs."
+          >
+            <TextField
+              label="URL hướng dẫn"
+              value={form.links?.guideUrl ?? ""}
+              onChange={onChange("links.guideUrl")}
+              placeholder="https://docs.pickletour.vn/huong-dan"
               fullWidth
             />
           </Section>
