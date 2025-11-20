@@ -14,6 +14,10 @@ import {
   CircularProgress,
   Tooltip,
   IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SaveIcon from "@mui/icons-material/Save";
@@ -23,6 +27,7 @@ import DoneAllIcon from "@mui/icons-material/DoneAll";
 import BlockIcon from "@mui/icons-material/Block";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { toast } from "react-toastify";
 
 import {
@@ -100,6 +105,14 @@ export default function NewsAdminPage() {
   const [runNewsSync, { isLoading: isRunningSync }] = useRunNewsSyncMutation();
 
   const [form, setForm] = useState(null);
+
+  // dialog xem lý do skip/failed
+  const [reasonDialog, setReasonDialog] = useState({
+    open: false,
+    candidate: null,
+  });
+
+  const selectedCand = reasonDialog.candidate;
 
   // init form
   useEffect(() => {
@@ -182,6 +195,15 @@ export default function NewsAdminPage() {
       toast.error(err?.data?.message || err?.error || "Chạy đồng bộ tin tức thất bại.");
     }
   }, [runNewsSync, refetchCandidates]);
+
+  const handleOpenReason = useCallback((candidate) => {
+    if (!candidate) return;
+    setReasonDialog({ open: true, candidate });
+  }, []);
+
+  const handleCloseReason = useCallback(() => {
+    setReasonDialog({ open: false, candidate: null });
+  }, []);
 
   const loading = settingsLoading || !form;
 
@@ -429,24 +451,39 @@ export default function NewsAdminPage() {
                       }}
                     >
                       <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
-                        <Chip
-                          size="small"
-                          label={c.status || "pending"}
-                          color={statusColorMap[c.status] || "default"}
-                          icon={statusIconMap[c.status] || <PendingIcon fontSize="small" />}
-                        />
-                        <Chip
-                          size="small"
-                          label={`score: ${c.score != null ? c.score.toFixed(2) : "n/a"}`}
-                          color="info"
-                          variant="outlined"
-                        />
-                        {c.publishedAt && (
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          sx={{ flexGrow: 1, minWidth: 0 }}
+                        >
                           <Chip
                             size="small"
-                            label={new Date(c.publishedAt).toLocaleString()}
+                            label={c.status || "pending"}
+                            color={statusColorMap[c.status] || "default"}
+                            icon={statusIconMap[c.status] || <PendingIcon fontSize="small" />}
+                          />
+                          <Chip
+                            size="small"
+                            label={`score: ${c.score != null ? c.score.toFixed(2) : "n/a"}`}
+                            color="info"
                             variant="outlined"
                           />
+                          {c.publishedAt && (
+                            <Chip
+                              size="small"
+                              label={new Date(c.publishedAt).toLocaleString()}
+                              variant="outlined"
+                            />
+                          )}
+                        </Stack>
+
+                        {(c.lastError || c.lastErrorCode || c.reason) && (
+                          <Tooltip title="Xem lý do xử lý link">
+                            <IconButton size="small" onClick={() => handleOpenReason(c)}>
+                              <InfoOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         )}
                       </Stack>
 
@@ -501,6 +538,75 @@ export default function NewsAdminPage() {
           </Stack>
         </Stack>
       </Box>
+
+      {/* Dialog lý do skip/failed */}
+      <Dialog open={reasonDialog.open} onClose={handleCloseReason} maxWidth="sm" fullWidth>
+        <DialogTitle>Lý do xử lý link</DialogTitle>
+        <DialogContent dividers>
+          {selectedCand ? (
+            <Stack spacing={1}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Chip
+                  size="small"
+                  label={selectedCand.status || "pending"}
+                  color={statusColorMap[selectedCand.status] || "default"}
+                  icon={statusIconMap[selectedCand.status] || <PendingIcon fontSize="small" />}
+                />
+                {selectedCand.score != null && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`score: ${selectedCand.score.toFixed(2)}`}
+                  />
+                )}
+              </Stack>
+
+              {selectedCand.lastErrorCode && (
+                <Typography variant="body2">
+                  <strong>Mã lỗi:</strong> {selectedCand.lastErrorCode}
+                </Typography>
+              )}
+
+              {selectedCand.lastError && (
+                <Typography variant="body2" sx={{ whiteSpace: "pre-line" }}>
+                  <strong>Chi tiết:</strong> {selectedCand.lastError}
+                </Typography>
+              )}
+
+              {!selectedCand.lastError && !selectedCand.lastErrorCode && (
+                <Typography variant="body2">
+                  Không có mã lỗi từ engine crawl. Dưới đây là ghi chú từ AI (nếu có).
+                </Typography>
+              )}
+
+              {selectedCand.reason && (
+                <Box mt={1}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Ghi chú từ AI:
+                  </Typography>
+                  <Typography variant="body2">{selectedCand.reason}</Typography>
+                </Box>
+              )}
+
+              {selectedCand.url && (
+                <Box mt={1}>
+                  <Typography variant="body2">
+                    URL:{" "}
+                    <a href={selectedCand.url} target="_blank" rel="noopener noreferrer">
+                      {selectedCand.url}
+                    </a>
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+          ) : (
+            <Typography variant="body2">Không có dữ liệu lý do.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseReason}>Đóng</Button>
+        </DialogActions>
+      </Dialog>
     </DashboardLayout>
   );
 }

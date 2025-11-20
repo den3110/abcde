@@ -31,7 +31,7 @@ export const newsAdminApiSlice = apiSlice.injectEndpoints({
     // 🆕 Chạy sync thủ công
     runNewsSync: builder.mutation({
       query: () => ({
-        url: "/admin/news/run",
+        url: "/admin/news/run/v2",
         method: "POST",
       }),
       invalidatesTags: ["NewsCandidates"],
