@@ -999,6 +999,9 @@ export default function TournamentBlueprintPage() {
     cap: { mode: "none", points: null },
   });
 
+  // ✅ NEW: có trận tranh hạng 3–4 (thua 2 trận bán kết)
+  const [koThirdPlace, setKoThirdPlace] = useState(false);
+
   // Prefill flags
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const prefillOnceRef = useRef(false);
@@ -1087,12 +1090,17 @@ export default function TournamentBlueprintPage() {
     }
 
     // KO
+    // KO
     if (plan.ko) {
       setKoPlan({
         drawSize: Number(plan.ko.drawSize || 2),
         seeds: Array.isArray(plan.ko.seeds) ? plan.ko.seeds : [],
       });
       if (plan.ko.rules) setKoRules(normalizeRulesForState(plan.ko.rules, DEFAULT_RULES));
+
+      // ✅ NEW: third-place flag
+      setKoThirdPlace(!!plan.ko.thirdPlace);
+
       // NEW: semi-final rules
       if (plan.ko.semiRules) {
         setKoSemiOverride(true);
@@ -1205,7 +1213,7 @@ export default function TournamentBlueprintPage() {
       id: makeStageId(arr.length),
       type: "ko",
       title: "Knockout",
-      config: { ...koPlan },
+      config: { ...koPlan, thirdPlace: koThirdPlace },
     });
     return arr;
   }, [includeGroup, includePO, groupCount, groupSize, groupSizes, poPlan, koPlan]);
@@ -1451,6 +1459,7 @@ export default function TournamentBlueprintPage() {
               finalRules:
                 aiPlan.ko.finalRules ||
                 (koFinalOverride ? normalizeRulesForState(koFinalRules, DEFAULT_RULES) : null),
+              thirdPlace: aiPlan.ko.thirdPlace ?? koThirdPlace,
             }
           : null,
       };
@@ -2292,6 +2301,10 @@ export default function TournamentBlueprintPage() {
       const rules = normalizeRulesForState(bKO.rules || cfg.rules || DEFAULT_RULES, DEFAULT_RULES);
       setKoRules(rules);
 
+      // ✅ NEW: third-place từ bracket/config
+      const thirdPlace = bKO.thirdPlace ?? cfg.thirdPlace ?? false;
+      setKoThirdPlace(!!thirdPlace);
+
       const finalRules = bKO.finalRules || cfg.finalRules || null;
       if (finalRules) {
         setKoFinalOverride(true);
@@ -2374,6 +2387,8 @@ export default function TournamentBlueprintPage() {
           rules: normalizeRulesForState(koRules, DEFAULT_RULES),
           semiRules: koSemiOverride ? normalizeRulesForState(koSemiRules, DEFAULT_RULES) : null,
           finalRules: koFinalOverride ? normalizeRulesForState(koFinalRules, DEFAULT_RULES) : null,
+
+          thirdPlace: koThirdPlace,
         },
       };
 
@@ -2806,6 +2821,17 @@ export default function TournamentBlueprintPage() {
                   size="small"
                   label={`KO R1: ${Math.max(1, nextPow2(koPlan.drawSize) / 2)} cặp`}
                 />
+
+                {/* ✅ NEW: toggle third-place */}
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={koThirdPlace}
+                      onChange={(e) => setKoThirdPlace(e.target.checked)}
+                    />
+                  }
+                  label="Có trận tranh hạng 3–4 (hai đội thua Bán kết)"
+                />
               </Stack>
 
               <Box sx={{ mt: 1 }}>
@@ -2951,6 +2977,10 @@ export default function TournamentBlueprintPage() {
                                 normalizeRulesForState(koFinalRules, DEFAULT_RULES)
                               )}`}
                             />
+                          )}
+
+                          {koThirdPlace && (
+                            <Chip size="small" color="secondary" label="Có trận tranh hạng 3–4" />
                           )}
                         </Stack>
                       )}

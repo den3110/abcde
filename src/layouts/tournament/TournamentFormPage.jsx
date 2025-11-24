@@ -266,11 +266,16 @@ const MAX_IMG_SIZE = 10 * 1024 * 1024; // 10MB
 const YMDHMS = "YYYY-MM-DDTHH:mm:ss";
 const DMYHMS = "DD/MM/YYYY HH:mm:ss";
 const isValidYmdHms = (s) => !!s && dayjs(s, YMDHMS, true).isValid();
+
 const fixZToNaive = (s) => {
   if (!s) return "";
+  // Nếu đã đúng dạng YYYY-MM-DDTHH:mm:ss thì giữ nguyên
   if (isValidYmdHms(s)) return s;
+
+  // Parse ISO (có .000+07:00, hoặc Z, hoặc offset khác),
+  // rồi format lại thành "YYYY-MM-DDTHH:mm:ss" theo local time
   const d = dayjs(s);
-  return d.isValid() ? d.utc().format(YMDHMS) : "";
+  return d.isValid() ? d.format(YMDHMS) : "";
 };
 
 const toInt = (v) => {
