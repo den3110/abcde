@@ -232,6 +232,28 @@ const normalizeVi = (s = "") =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+const autoGenerateTournamentCodeFromName = (name = "") => {
+  if (!name) return "";
+  // Lấy phần trước dấu '-'
+  const base = String(name).split("-")[0] || "";
+  const tokens = base
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  if (!tokens.length) return "";
+
+  const code = tokens
+    .map((token) => {
+      // Lấy ký tự chữ / số đầu tiên
+      const m = token.match(/[A-Za-z0-9]/u);
+      return m ? m[0].toUpperCase() : "";
+    })
+    .join("");
+
+  return code.length >= 3 ? code : "";
+};
+
 const BANKS_INDEX = SEPAY_BANKS.map((b) => {
   const aliases = BANK_ALIASES[b.value] || [];
   const hay = normalizeVi([b.value, b.label, ...aliases].join(" "));
@@ -396,6 +418,7 @@ export default function TournamentFormPage() {
 
   const [form, setForm] = useState({
     name: "",
+    code: "",
     image: "",
     sportType: 1,
     groupId: 0,
@@ -429,6 +452,8 @@ export default function TournamentFormPage() {
     ageMin: 0,
     ageMax: 100,
   });
+
+  const autoCodePreview = useMemo(() => autoGenerateTournamentCodeFromName(form.name), [form.name]);
 
   const [uploading, setUploading] = useState(false);
 
@@ -544,6 +569,7 @@ export default function TournamentFormPage() {
 
     const nextForm = {
       name: tour.name || "",
+      code: tour.code || "", // NEW
       image: tour.image || "",
       sportType: 1,
       groupId: Number(tour.groupId ?? 0),
@@ -587,7 +613,14 @@ export default function TournamentFormPage() {
     setForm(nextForm);
   }, [tour]); // eslint-disable-line
 
-  const onChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const onChange = (e) => {
+    const { name, value } = e.target;
+    if (name === "code") {
+      setForm((prev) => ({ ...prev, code: value.toUpperCase() }));
+    } else {
+      setForm((prev) => ({ ...prev, [name]: value }));
+    }
+  };
 
   const onChangeBankAccountNumber = (e) => {
     const digitsOnly = (e.target.value || "").replace(/\D/g, "");
@@ -643,8 +676,9 @@ export default function TournamentFormPage() {
 
     const [mn, mx] = ageRange;
     const yob = computeBirthYearRange(startDT, mn, mx);
+    const code = (form.code || "").trim().toUpperCase();
 
-    return {
+    const payload = {
       name: (form.name || "").trim(),
       image: form.image || "",
       sportType: 1,
@@ -688,6 +722,13 @@ export default function TournamentFormPage() {
       ageMin: mn,
       ageMax: mx,
     };
+
+    // Chỉ gửi lên nếu có mã (để trống thì BE tự generate)
+    if (code) {
+      payload.code = code;
+    }
+
+    return payload;
   };
 
   const submit = async (e) => {
@@ -751,6 +792,12 @@ export default function TournamentFormPage() {
         toast.error("Tuổi tối thiểu không được lớn hơn tuổi tối đa.");
         return;
       }
+    }
+
+    const rawCode = (form.code || "").trim();
+    if (rawCode && rawCode.length < 3) {
+      toast.error("Mã giải tối thiểu 3 ký tự.");
+      return;
     }
 
     const body = buildPayload();
@@ -831,7 +878,24 @@ export default function TournamentFormPage() {
                     required
                     margin="normal"
                   />
-
+                  {/* NEW: Mã giải */}
+                  <TextField
+                    name="code"
+                    label="Mã giải (tối thiểu 3 ký tự)"
+                    value={form.code}
+                    onChange={onChange}
+                    fullWidth
+                    margin="normal"
+                    inputProps={{
+                      maxLength: 32,
+                      style: { textTransform: "uppercase" },
+                    }}
+                    helperText={
+                      autoCodePreview
+                        ? `Nếu để trống sẽ tự sinh từ tên giải: "${form.name}" → "${autoCodePreview}".`
+                        : "Nếu để trống, hệ thống sẽ tự sinh mã từ tên giải."
+                    }
+                  />
                   <Card variant="outlined" sx={{ p: 2, mt: 2, display: "grid", gap: 1 }}>
                     <Typography variant="subtitle2" gutterBottom>
                       Ảnh đại diện giải
