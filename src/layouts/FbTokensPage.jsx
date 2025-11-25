@@ -26,6 +26,8 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import WarningIcon from "@mui/icons-material/Warning";
 import LinkIcon from "@mui/icons-material/Link";
+import ToggleOnIcon from "@mui/icons-material/ToggleOn";
+import ToggleOffIcon from "@mui/icons-material/ToggleOff";
 import { DataGrid, GridToolbar } from "@mui/x-data-grid";
 
 import dayjs from "dayjs";
@@ -38,6 +40,8 @@ import {
   useCheckAllFbTokensMutation,
   useMarkNeedsReauthMutation,
   useClearBusyFlagMutation,
+  useDisableFbTokenMutation,
+  useEnableFbTokenMutation,
 } from "slices/fbTokensApiSlice";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -55,6 +59,7 @@ function StatusChip({ code }) {
     NEEDS_REAUTH: { color: "error", label: "Cần reauth" },
     MISSING_PAGE_TOKEN: { color: "error", label: "Thiếu page token" },
     ISSUE: { color: "warning", label: "Có vấn đề" },
+    DISABLED: { color: "default", label: "Disabled" }, // ➕ NEW
   };
   const m = map[code] || map.UNKNOWN;
   return <Chip size="small" color={m.color} label={m.label} />;
@@ -62,17 +67,24 @@ function StatusChip({ code }) {
 
 export default function FbTokensPage() {
   const [q, setQ] = useState("");
-  const [filters, setFilters] = useState({ busy: "", status: "" });
-  const [liveDlg, setLiveDlg] = useState({ open: false, row: null, res: null, loading: false });
+  const [filters, setFilters] = useState({ busy: "", status: "", enabled: "" });
+  const [liveDlg, setLiveDlg] = useState({
+    open: false,
+    row: null,
+    res: null,
+    loading: false,
+  });
 
   const { data, isFetching, refetch } = useListFbTokensQuery({ q, ...filters });
   const [checkOne, { isLoading: checkingOne }] = useCheckOneFbTokenMutation();
   const [checkAll, { isLoading: checkingAll }] = useCheckAllFbTokensMutation();
   const [markReauth] = useMarkNeedsReauthMutation();
   const [clearBusy] = useClearBusyFlagMutation();
+  const [disablePage, { isLoading: disabling }] = useDisableFbTokenMutation();
+  const [enablePage, { isLoading: enabling }] = useEnableFbTokenMutation();
 
   const rows = data?.rows || [];
-  const loading = isFetching || checkingOne || checkingAll;
+  const loading = isFetching || checkingOne || checkingAll || disabling || enabling;
 
   const copy = useCallback((text) => navigator.clipboard?.writeText(String(text)), []);
 
@@ -126,7 +138,15 @@ export default function FbTokensPage() {
         minWidth: 220,
         renderCell: ({ row }) => (
           <Stack direction="row" spacing={1} alignItems="center" sx={{ overflow: "visible" }}>
-            <Typography fontWeight={700} sx={{ whiteSpace: "normal", lineHeight: 1.2 }}>
+            <Typography
+              fontWeight={700}
+              sx={{
+                whiteSpace: "normal",
+                lineHeight: 1.2,
+                textDecoration: row.disabled ? "line-through" : "none",
+                opacity: row.disabled ? 0.8 : 1,
+              }}
+            >
               {row.pageName || "(no name)"}
             </Typography>
             <IconButton size="small" onClick={() => copy(row.pageName || "")}>
@@ -232,6 +252,20 @@ export default function FbTokensPage() {
         valueGetter: ({ row }) =>
           row.longUserExpiresAt ? dayjs(row.longUserExpiresAt).fromNow() : "—",
       },
+      // ➕ NEW: trạng thái Enabled/Disabled
+      {
+        field: "disabled",
+        headerName: "Enabled",
+        flex: 0.7,
+        minWidth: 130,
+        renderCell: ({ row }) =>
+          row.disabled ? (
+            <Chip size="small" label="Disabled" color="default" />
+          ) : (
+            <Chip size="small" label="Enabled" color="success" />
+          ),
+        sortable: false,
+      },
       {
         field: "busy",
         headerName: "Busy",
@@ -251,12 +285,37 @@ export default function FbTokensPage() {
       {
         field: "actions",
         headerName: "Actions",
-        minWidth: 220,
+        minWidth: 260,
         flex: 1.0,
         sortable: false,
         filterable: false,
         renderCell: ({ row }) => (
           <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+            {/* toggle enable/disable */}
+            <Tooltip title={row.disabled ? "Enable page" : "Disable page"}>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={loading}
+                  onClick={() => {
+                    const fn = row.disabled ? enablePage : disablePage;
+                    fn(row._id)
+                      .unwrap()
+                      .then(() => refetch());
+                  }}
+                >
+                  {row.disabled ? (
+                    // ❌ đang disable → switch off
+                    <ToggleOffIcon fontSize="inherit" sx={{ opacity: 0.8 }} />
+                  ) : (
+                    // ✅ đang enable → switch on (màu xanh)
+                    <ToggleOnIcon fontSize="inherit" color="success" />
+                  )}
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            {/* phần còn lại giữ nguyên */}
             <Tooltip title="Check now">
               <span>
                 <IconButton
@@ -319,6 +378,8 @@ export default function FbTokensPage() {
       clearBusy,
       refetch,
       handleTestLive,
+      disablePage,
+      enablePage,
     ]
   );
 
@@ -389,6 +450,31 @@ export default function FbTokensPage() {
                 variant={filters.status === "NEEDS_REAUTH" ? "filled" : "outlined"}
                 size="small"
               />
+              {/* ➕ NEW: filter theo enabled/disabled */}
+              <Chip
+                label="Enabled only"
+                color={filters.enabled === "1" ? "primary" : "default"}
+                onClick={() =>
+                  setFilters((s) => ({
+                    ...s,
+                    enabled: s.enabled === "1" ? "" : "1",
+                  }))
+                }
+                variant={filters.enabled === "1" ? "filled" : "outlined"}
+                size="small"
+              />
+              <Chip
+                label="Disabled only"
+                color={filters.enabled === "0" ? "primary" : "default"}
+                onClick={() =>
+                  setFilters((s) => ({
+                    ...s,
+                    enabled: s.enabled === "0" ? "" : "0",
+                  }))
+                }
+                variant={filters.enabled === "0" ? "filled" : "outlined"}
+                size="small"
+              />
             </Stack>
           </Stack>
           <Divider />
@@ -414,6 +500,9 @@ export default function FbTokensPage() {
                 initialState={{
                   pagination: { paginationModel: { pageSize: 25, page: 0 } },
                 }}
+                getRowClassName={(params) =>
+                  params?.row?.disabled ? "fb-token-row--disabled" : ""
+                }
                 slots={{ toolbar: GridToolbar }}
                 slotProps={{
                   toolbar: { showQuickFilter: true, quickFilterProps: { debounceMs: 300 } },
@@ -421,8 +510,14 @@ export default function FbTokensPage() {
                 sx={{
                   "& .MuiDataGrid-cell": { alignItems: "flex-start", py: 1 },
                   "& .MuiDataGrid-row": { maxHeight: "fit-content !important" },
-                  "& .MuiDataGrid-cellContent": { overflow: "visible", whiteSpace: "normal" },
+                  "& .MuiDataGrid-cellContent": {
+                    overflow: "visible",
+                    whiteSpace: "normal",
+                  },
                   "& .MuiDataGrid-columnHeaders": { fontWeight: 700 },
+                  "& .fb-token-row--disabled": {
+                    opacity: 0.6,
+                  },
                 }}
               />
             </Box>

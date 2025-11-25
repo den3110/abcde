@@ -20,6 +20,19 @@ export const fbTokensApi = apiSlice.injectEndpoints({
     clearBusyFlag: builder.mutation({
       query: (id) => ({ url: `/fb-tokens/${id}/clear-busy`, method: "POST" }),
     }),
+    // ➕ NEW:
+    disableFbToken: builder.mutation({
+      query: (id) => ({
+        url: `/fb-tokens/${id}/disable`,
+        method: "POST",
+      }),
+    }),
+    enableFbToken: builder.mutation({
+      query: (id) => ({
+        url: `/fb-tokens/${id}/enable`,
+        method: "POST",
+      }),
+    }),
   }),
 });
 
@@ -29,4 +42,6 @@ export const {
   useCheckAllFbTokensMutation,
   useMarkNeedsReauthMutation,
   useClearBusyFlagMutation,
+  useDisableFbTokenMutation,
+  useEnableFbTokenMutation,
 } = fbTokensApi;
