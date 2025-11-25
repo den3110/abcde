@@ -55,6 +55,7 @@ import FbTokensPage from "layouts/FbTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
 import NewsListPage from "layouts/NewsListPage";
 import NewsDetailPage from "layouts/NewsDetailPage";
+import AdminSystemPage from "layouts/AdminSystemPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -537,6 +538,18 @@ const routes = [
     roles: ["admin"],
     show: true,
   },
+  {
+    type: "collapse",
+    name: "Server Monitor",
+    key: "admin-system-monitor",
+    icon: <Icon fontSize="small">dns</Icon>, // hoặc 'storage' | 'memory'
+    route: "/admin/system-monitor",
+    component: <AdminSystemPage />,
+    private: true,
+    roles: ["admin"],
+    show: true, // hiện trên sidebar
+  },
+
   {
     type: "collapse",
     name: "Theo dõi realtime",
