@@ -16,19 +16,46 @@ export const uploadApiSlice = apiSlice.injectEndpoints({
      * - KHÔNG set 'Content-Type' để browser tự gắn boundary
      * - Trả về { url, raw } (url đã chuẩn hoá)
      */
-    uploadAvatar: builder.mutation({
-      // file: File | Blob | FormData
-      query: (file) => {
-        const form =
-          file instanceof FormData
-            ? file
-            : (() => {
-                const fd = new FormData();
-                fd.append("avatar", file);
-                return fd;
-              })();
+    uploadV2: builder.mutation({
+      // arg: File | Blob | FormData | { file, format?, width?, height?, quality? }
+      query: (arg) => {
+        let form;
+        let url = "/upload/sponsors"; // hoặc /upload/:id nếu bạn đổi sau
+
+        const params = new URLSearchParams();
+
+        // 1) Nếu đã là FormData => dùng luôn (tự chịu trách nhiệm field bên ngoài)
+        if (arg instanceof FormData) {
+          form = arg;
+        }
+        // 2) Nếu là File/Blob => behavior cũ, chỉ gửi mỗi file
+        else if (arg instanceof File || arg instanceof Blob) {
+          form = new FormData();
+          form.append("image", arg); // field cho backend: single("image")
+        }
+        // 3) Nếu là object có options
+        else {
+          const { file, format, width, height, quality } = arg || {};
+          form = new FormData();
+
+          if (file) {
+            form.append("image", file);
+          }
+
+          // 🔽 Mấy cái này chuyển sang query thay vì FormData
+          if (format) params.set("format", String(format));
+          if (width) params.set("width", String(width));
+          if (height) params.set("height", String(height));
+          if (quality) params.set("quality", String(quality));
+        }
+
+        const qs = params.toString();
+        if (qs) {
+          url += `?${qs}`;
+        }
+
         return {
-          url: "/upload/avatar", // -> '/api/upload/avatar' theo baseUrl ở apiSlice
+          url,
           method: "POST",
           body: form,
         };
@@ -61,6 +88,6 @@ export const uploadApiSlice = apiSlice.injectEndpoints({
 });
 
 export const {
-  useUploadAvatarMutation,
+  useUploadV2Mutation,
   useUploadImageMutation, // optional
 } = uploadApiSlice;

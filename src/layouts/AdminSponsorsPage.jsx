@@ -46,7 +46,7 @@ import {
   useDeleteSponsorMutation,
 } from "slices/sponsorsApiSlice";
 import { useGetTournamentsQuery } from "slices/tournamentsApiSlice";
-import { useUploadAvatarMutation } from "slices/uploadApiSlice";
+import { useUploadV2Mutation } from "slices/uploadApiSlice";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import PropTypes from "prop-types";
@@ -54,6 +54,11 @@ import PropTypes from "prop-types";
 const TIERS = ["Platinum", "Gold", "Silver", "Bronze", "Partner", "Media", "Other"];
 const ICON_UNCHECK = <CheckBoxOutlineBlankIcon fontSize="small" />;
 const ICON_CHECKED = <CheckBoxIcon fontSize="small" />;
+
+// ⚙️ cấu hình riêng cho logo nhà tài trợ dùng trên live overlay
+const SPONSOR_LOGO_MAX_W = 100;
+const SPONSOR_LOGO_MAX_H = 80;
+const SPONSOR_LOGO_QUALITY = 80;
 
 // Ô logo nhỏ 16:9 cho DataGrid
 function LogoCell({ src }) {
@@ -122,7 +127,7 @@ export default function AdminSponsorsPage() {
   const [createSponsor, { isLoading: creating }] = useCreateSponsorMutation();
   const [updateSponsor, { isLoading: updating }] = useUpdateSponsorMutation();
   const [deleteSponsor, { isLoading: deleting }] = useDeleteSponsorMutation();
-  const [uploadAvatar, { isLoading: uploading }] = useUploadAvatarMutation();
+  const [uploadV2, { isLoading: uploading }] = useUploadV2Mutation();
 
   // ===== Dialog form =====
   const [formOpen, setFormOpen] = useState(false);
@@ -210,6 +215,7 @@ export default function AdminSponsorsPage() {
 
   const handleDelete = useCallback(
     async (row) => {
+      // eslint-disable-next-line no-alert
       if (!confirm(`Xoá nhà tài trợ "${row.name}"?`)) return;
       try {
         await deleteSponsor(row.id).unwrap();
@@ -248,17 +254,29 @@ export default function AdminSponsorsPage() {
     [updateSponsor, toast, refetch]
   );
 
-  // Upload handler
+  // Upload handler – ép logo sponsor nhỏ lại cho overlay (webp 640x360)
   const onPickFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const blobUrl = URL.createObjectURL(file);
     setPreviewUrl(blobUrl);
+
     try {
-      const res = await uploadAvatar(file).unwrap();
+      const res = await uploadV2({
+        file,
+        format: "webp",
+        width: SPONSOR_LOGO_MAX_W,
+        height: SPONSOR_LOGO_MAX_H,
+        quality: SPONSOR_LOGO_QUALITY,
+      }).unwrap();
+
       const url = res?.url || res?.secure_url || res?.path || res?.data?.url || res?.data?.path;
-      if (url) setForm((s) => ({ ...s, logoUrl: url }));
-      else toast("Upload thành công nhưng không nhận được URL", "warning");
+      if (url) {
+        setForm((s) => ({ ...s, logoUrl: url }));
+      } else {
+        toast("Upload thành công nhưng không nhận được URL", "warning");
+      }
     } catch (err) {
       toast(err?.data?.message || err?.message || "Upload thất bại", "error");
     }
@@ -541,7 +559,8 @@ export default function AdminSponsorsPage() {
               {/* Preview 16:9 */}
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  Logo 16:9 (preview)
+                  Logo 16:9 (preview) – sẽ được nén về {SPONSOR_LOGO_MAX_W}×{SPONSOR_LOGO_MAX_H}{" "}
+                  WebP để dùng trên live
                 </Typography>
                 <Box
                   sx={{

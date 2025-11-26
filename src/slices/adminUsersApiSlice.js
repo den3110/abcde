@@ -28,8 +28,14 @@ export const adminUsersApiSlice = apiSlice.injectEndpoints({
       // Nhớ thêm 'User' trong tagTypes của apiSlice nếu muốn invalidate list
       invalidatesTags: (result, error) => (error ? [] : [{ type: "User", id: "LIST" }]),
     }),
+    searchUsers: builder.query({
+      query: ({ q, limit = 10 }) => ({
+        url: "/users/search",
+        params: { q, limit }, // fetchBaseQuery sẽ tự serialize
+      }),
+    }),
   }),
   overrideExisting: false,
 });
 
-export const { useAdminCreateUserMutation } = adminUsersApiSlice;
+export const { useAdminCreateUserMutation, useLazySearchUsersQuery } = adminUsersApiSlice;

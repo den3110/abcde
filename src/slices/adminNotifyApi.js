@@ -11,7 +11,15 @@ export const adminNotifyApi = apiSlice.injectEndpoints({
         body,
       }),
     }),
+    // 👇 thêm endpoint này
+    userBroadcast: builder.mutation({
+      query: (payload) => ({
+        url: "/events/user/broadcast", // backend bạn đọc req.body.userId
+        method: "POST",
+        body: payload,
+      }),
+    }),
   }),
 });
 
-export const { useGlobalBroadcastMutation } = adminNotifyApi;
+export const { useGlobalBroadcastMutation, useUserBroadcastMutation } = adminNotifyApi;

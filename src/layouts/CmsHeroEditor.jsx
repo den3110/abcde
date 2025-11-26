@@ -19,6 +19,7 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useUploadAvatarMutation } from "slices/tournamentsApiSlice";
 import { useGetHeroContentQuery, useUpdateHeroContentMutation } from "slices/cmsApiSlice";
 import PropTypes from "prop-types";
+import { useUploadV2Mutation } from "slices/uploadApiSlice";
 
 const MAX_IMG_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -33,6 +34,7 @@ export default function CmsHeroEditor() {
   const { data, isFetching, error, refetch } = useGetHeroContentQuery();
   const [updateHero, { isLoading: saving }] = useUpdateHeroContentMutation();
   const [uploadAvatar] = useUploadAvatarMutation();
+  const [uploadV2] = useUploadV2Mutation();
 
   // ✅ thêm overlayLogoUrl / overlayLogoAlt
   const [form, setForm] = useState({
@@ -146,7 +148,13 @@ export default function CmsHeroEditor() {
 
     try {
       setOverlayUploading(true);
-      const res = await uploadAvatar(file).unwrap();
+      const res = await uploadV2({
+        file,
+        format: "webp",
+        width: 75,
+        height: 75,
+        quality: 80,
+      }).unwrap();
       const url =
         res?.url || res?.path || res?.secure_url || res?.data?.url || res?.data?.path || "";
       if (!url) throw new Error("Không tìm thấy URL ảnh từ server");
