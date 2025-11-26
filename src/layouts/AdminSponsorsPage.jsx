@@ -58,7 +58,7 @@ const ICON_CHECKED = <CheckBoxIcon fontSize="small" />;
 // ⚙️ cấu hình riêng cho logo nhà tài trợ dùng trên live overlay
 const SPONSOR_LOGO_MAX_W = 100;
 const SPONSOR_LOGO_MAX_H = 80;
-const SPONSOR_LOGO_QUALITY = 80;
+const SPONSOR_LOGO_QUALITY = 100;
 
 // Ô logo nhỏ 16:9 cho DataGrid
 function LogoCell({ src }) {
