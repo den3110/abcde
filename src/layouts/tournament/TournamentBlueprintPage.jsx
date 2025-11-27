@@ -144,7 +144,7 @@ const seedLabel = (seed) => {
 
 /* ====== Rules Editor + CAP ====== */
 const DEFAULT_RULES = {
-  bestOf: 3,
+  bestOf: 1,
   pointsToWin: 11,
   winByTwo: true,
   cap: { mode: "none", points: null },
@@ -194,7 +194,7 @@ function RulesEditor({ label = "Luật trận", value, onChange }) {
         size="small"
         label="Best of"
         value={v.bestOf}
-        onChange={(e) => set({ bestOf: parseInt(e.target.value || "3", 10) })}
+        onChange={(e) => set({ bestOf: parseInt(e.target.value || "1", 10) })}
         sx={{ width: 140 }}
       >
         {[1, 3, 5].map((n) => (
@@ -984,7 +984,7 @@ export default function TournamentBlueprintPage() {
   // KO Final override
   const [koFinalOverride, setKoFinalOverride] = useState(false);
   const [koFinalRules, setKoFinalRules] = useState({
-    bestOf: 5,
+    bestOf: 3,
     pointsToWin: 11,
     winByTwo: true,
     cap: { mode: "none", points: null },

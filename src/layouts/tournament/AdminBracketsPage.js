@@ -466,7 +466,7 @@ export default function AdminBracketsPage() {
   const [emOrder, setEmOrder] = useState(0);
   const [emPairA, setEmPairA] = useState("");
   const [emPairB, setEmPairB] = useState("");
-  const [emRules, setEmRules] = useState({ bestOf: 3, pointsToWin: 11, winByTwo: true });
+  const [emRules, setEmRules] = useState({ bestOf: 1, pointsToWin: 11, winByTwo: true });
   const [emStatus, setEmStatus] = useState("scheduled");
   const [emWinner, setEmWinner] = useState("");
   const [emOldStatus, setEmOldStatus] = useState("scheduled");

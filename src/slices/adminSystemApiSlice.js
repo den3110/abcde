@@ -50,6 +50,21 @@ export const adminSystemApiSlice = apiSlice.injectEndpoints({
         body: { cmdKey },
       }),
     }),
+    killProcess: builder.mutation({
+      query: ({ pid, signal = "SIGTERM" }) => ({
+        url: `/admin/system/processes/${pid}/kill`,
+        method: "POST",
+        body: { signal },
+      }),
+    }),
+
+    serviceAction: builder.mutation({
+      query: ({ name, action }) => ({
+        url: `/admin/system/services/${encodeURIComponent(name)}/action`,
+        method: "POST",
+        body: { action },
+      }),
+    }),
   }),
 });
 
@@ -64,4 +79,6 @@ export const {
   useGetLogTailQuery,
   useGetSafeCommandsQuery,
   useExecSafeCommandMutation,
+  useKillProcessMutation,
+  useServiceActionMutation,
 } = adminSystemApiSlice;
