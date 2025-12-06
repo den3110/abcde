@@ -151,7 +151,11 @@ export default function SystemSettingsPage() {
           enabled: form.maintenance?.enabled,
           message: form.maintenance?.message ?? "",
         },
-        registration: { open: form.registration?.open },
+        registration: {
+          open: form.registration?.open,
+          // 👇 NEW: map sang server để điều khiển requireOptional ở app
+          requireOptionalProfileFields: !!form.registration?.requireOptionalProfileFields,
+        },
         kyc: {
           enabled: form.kyc?.enabled,
           autoApprove: form.kyc?.autoApprove,
@@ -292,6 +296,17 @@ export default function SystemSettingsPage() {
               <Switch
                 checked={!!form.registration?.open}
                 onChange={onToggle("registration.open")}
+              />
+            </Stack>
+
+            {/* 👇 NEW: toggle cho requireOptional (SĐT, giới tính, tỉnh, DOB) */}
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Tooltip title="Khi bật, các trường SĐT, giới tính, tỉnh/thành, ngày sinh sẽ bắt buộc khi đăng ký. Khi tắt, các trường này trở thành tùy chọn.">
+                <Typography>Bắt buộc thông tin hồ sơ mở rộng</Typography>
+              </Tooltip>
+              <Switch
+                checked={!!form.registration?.requireOptionalProfileFields}
+                onChange={onToggle("registration.requireOptionalProfileFields")}
               />
             </Stack>
           </Section>
