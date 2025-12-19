@@ -56,6 +56,7 @@ import NewsAdminPage from "layouts/NewsAdminPage";
 import NewsListPage from "layouts/NewsListPage";
 import NewsDetailPage from "layouts/NewsDetailPage";
 import AdminSystemPage from "layouts/AdminSystemPage";
+import AuditLogsPage from "layouts/AuditLogsPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -560,6 +561,18 @@ const routes = [
     private: true,
     roles: ["admin"],
     show: true, // hiện trên sidebar
+  },
+  // 🆕 Audit Logs (Admin) — nhóm theo User
+  {
+    type: "collapse",
+    name: "Audit Logs",
+    key: "admin-audit-logs",
+    icon: <Icon fontSize="small">history</Icon>,
+    route: "/admin/audit-logs",
+    component: <AuditLogsPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
   },
 ];
 

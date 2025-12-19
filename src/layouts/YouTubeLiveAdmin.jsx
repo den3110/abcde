@@ -31,6 +31,7 @@ import { useLazyYtInitQuery, useLazyYtGetStreamKeyQuery } from "slices/youtubeAd
 
 import PropTypes from "prop-types";
 import FbLongUserTokenPage from "./FbLongUserTokenPage";
+import FbPageInfoBulk from "./FbPageInfoBulk";
 
 function CopyField({ label, value }) {
   const [snack, setSnack] = React.useState(false);
@@ -336,6 +337,7 @@ export default function YouTubeLiveAdmin() {
         </Snackbar>
       </Stack>
       <FbLongUserTokenPage />
+      <FbPageInfoBulk />
     </DashboardLayout>
   );
 }

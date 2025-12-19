@@ -127,6 +127,40 @@ export const adminApiSlice = apiSlice.injectEndpoints({
         body: { dryRun, overwrite },
       }),
     }),
+
+    // ✅ Audit: summary nhóm theo user
+    getAuditUsersSummary: builder.query({
+      query: ({ page = 1, limit = 20, q, action, from, to, category, actorId }) => {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("limit", String(limit));
+        if (q) params.set("q", q);
+        if (action) params.set("action", action);
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+        if (category) params.set("category", category);
+        if (actorId) params.set("actorId", actorId);
+
+        return { url: `/audit/users/summary?${params.toString()}`, method: "GET" };
+      },
+    }),
+
+    // ✅ Audit: list log của 1 user (mở rộng filter)
+    getUserAudit: builder.query({
+      query: ({ userId, page = 1, limit = 20, action, from, to, category, actorId, field }) => {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("limit", String(limit));
+        if (action) params.set("action", action);
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+        if (category) params.set("category", category);
+        if (actorId) params.set("actorId", actorId);
+        if (field) params.set("field", field);
+
+        return { url: `/audit/users/${userId}?${params.toString()}`, method: "GET" };
+      },
+    }),
   }),
 });
 
@@ -147,4 +181,6 @@ export const {
   useChangeUserPasswordMutation,
   useBackfillCccdMutation,
   useFillCccdForUserMutation,
+  useGetAuditUsersSummaryQuery,
+  useGetUserAuditQuery,
 } = adminApiSlice;
