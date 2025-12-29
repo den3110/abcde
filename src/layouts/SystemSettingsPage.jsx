@@ -1,5 +1,6 @@
 // src/pages/admin/SystemSettingsPage.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
+import PropTypes from "prop-types";
 import {
   Box,
   Stack,
@@ -21,7 +22,6 @@ import {
 import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import PropTypes from "prop-types";
 
 const Section = ({ title, children, desc }) => (
   <Paper variant="outlined" sx={{ p: 2 }}>
@@ -76,7 +76,6 @@ function SectionSkeleton({ lines = 3 }) {
 SectionSkeleton.propTypes = {
   lines: PropTypes.number,
 };
-
 SectionSkeleton.defaultProps = {
   lines: 3,
 };
@@ -124,13 +123,14 @@ export default function SystemSettingsPage() {
   const onNumber =
     (path, { min, max, step = 1 } = {}) =>
     (e) => {
-      let v = e.target.value;
+      const v = e.target.value;
       if (v === "") return; // allow empty while typing
       let num = Number(v);
       if (!Number.isFinite(num)) return;
       if (min != null) num = Math.max(min, num);
       if (max != null) num = Math.min(max, num);
       num = Math.round(num / step) * step;
+
       setForm((prev) => {
         const next = structuredClone(prev);
         const seg = path.split(".");
@@ -148,37 +148,41 @@ export default function SystemSettingsPage() {
     try {
       const payload = {
         maintenance: {
-          enabled: form.maintenance?.enabled,
+          enabled: !!form.maintenance?.enabled,
           message: form.maintenance?.message ?? "",
         },
         registration: {
-          open: form.registration?.open,
-          // 👇 NEW: map sang server để điều khiển requireOptional ở app
+          open: !!form.registration?.open,
+          // 👇 điều khiển requireOptional ở app
           requireOptionalProfileFields: !!form.registration?.requireOptionalProfileFields,
         },
         kyc: {
-          enabled: form.kyc?.enabled,
-          autoApprove: form.kyc?.autoApprove,
-          faceMatchThreshold: form.kyc?.faceMatchThreshold,
+          enabled: !!form.kyc?.enabled,
+          autoApprove: !!form.kyc?.autoApprove,
+          faceMatchThreshold: form.kyc?.faceMatchThreshold ?? 0.78,
         },
         security: {
-          enforce2FAForAdmins: form.security?.enforce2FAForAdmins,
-          sessionTTLHours: form.security?.sessionTTLHours,
+          enforce2FAForAdmins: !!form.security?.enforce2FAForAdmins,
+          sessionTTLHours: form.security?.sessionTTLHours ?? 72,
         },
         uploads: {
-          maxAvatarSizeMB: form.uploads?.maxAvatarSizeMB,
-          // 👇 flag bật/tắt chèn logo avatar
+          maxAvatarSizeMB: form.uploads?.maxAvatarSizeMB ?? 5,
           avatarLogoEnabled: !!form.uploads?.avatarLogoEnabled,
         },
         notifications: {
-          telegramEnabled: form.notifications?.telegramEnabled,
+          telegramEnabled: !!form.notifications?.telegramEnabled,
           telegramComplaintChatId: form.notifications?.telegramComplaintChatId ?? "",
         },
-        // 👇 NEW: link hướng dẫn
         links: {
           guideUrl: form.links?.guideUrl ?? "",
         },
+
+        // 👇 NEW: OTA - bật thì app bị chặn (force update)
+        ota: {
+          forceUpdateEnabled: !!form.ota?.forceUpdateEnabled,
+        },
       };
+
       await updateSettings(payload).unwrap();
       toast.success("Đã lưu cài đặt hệ thống");
       refetch();
@@ -209,6 +213,7 @@ export default function SystemSettingsPage() {
 
           <Stack spacing={2}>
             <SectionSkeleton lines={3} />
+            <SectionSkeleton lines={2} />
             <SectionSkeleton lines={2} />
             <SectionSkeleton lines={1} />
             <SectionSkeleton lines={2} />
@@ -290,6 +295,22 @@ export default function SystemSettingsPage() {
             />
           </Section>
 
+          {/* ✅ NEW: OTA */}
+          <Section
+            title="OTA"
+            desc="Bật để chặn app và bắt buộc người dùng cập nhật OTA trước khi vào."
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Tooltip title="Khi bật: backend trả allowed=false ⇒ app sẽ bị chặn và yêu cầu cập nhật.">
+                <Typography>Bắt buộc cập nhật OTA</Typography>
+              </Tooltip>
+              <Switch
+                checked={!!form.ota?.forceUpdateEnabled}
+                onChange={onToggle("ota.forceUpdateEnabled")}
+              />
+            </Stack>
+          </Section>
+
           <Section title="Đăng ký tài khoản" desc="Mở/đóng đăng ký người dùng mới.">
             <Stack direction="row" alignItems="center" justifyContent="space-between">
               <Typography>Cho phép đăng ký mới</Typography>
@@ -299,7 +320,6 @@ export default function SystemSettingsPage() {
               />
             </Stack>
 
-            {/* 👇 NEW: toggle cho requireOptional (SĐT, giới tính, tỉnh, DOB) */}
             <Stack direction="row" alignItems="center" justifyContent="space-between">
               <Tooltip title="Khi bật, các trường SĐT, giới tính, tỉnh/thành, ngày sinh sẽ bắt buộc khi đăng ký. Khi tắt, các trường này trở thành tùy chọn.">
                 <Typography>Bắt buộc thông tin hồ sơ mở rộng</Typography>
@@ -324,16 +344,12 @@ export default function SystemSettingsPage() {
               type="number"
               inputProps={{ min: 1, max: 720 }}
               value={form.security?.sessionTTLHours ?? 72}
-              onChange={onNumber("security.sessionTTLHours", {
-                min: 1,
-                max: 720,
-              })}
+              onChange={onNumber("security.sessionTTLHours", { min: 1, max: 720 })}
               fullWidth
             />
           </Section>
 
           <Section title="Upload">
-            {/* Bật / tắt chèn logo avatar */}
             <Stack direction="row" alignItems="center" justifyContent="space-between">
               <Tooltip title="Khi bật, hệ thống sẽ tự động chèn logo lên ảnh đại diện người dùng (nếu logo được cấu hình trên server).">
                 <Typography>Chèn logo vào ảnh đại diện</Typography>
@@ -349,10 +365,7 @@ export default function SystemSettingsPage() {
               type="number"
               inputProps={{ min: 1, max: 50 }}
               value={form.uploads?.maxAvatarSizeMB ?? 5}
-              onChange={onNumber("uploads.maxAvatarSizeMB", {
-                min: 1,
-                max: 50,
-              })}
+              onChange={onNumber("uploads.maxAvatarSizeMB", { min: 1, max: 50 })}
               fullWidth
             />
           </Section>
@@ -377,7 +390,6 @@ export default function SystemSettingsPage() {
             />
           </Section>
 
-          {/* 👇 NEW: Link hướng dẫn */}
           <Section
             title="Link hướng dẫn"
             desc="Đường dẫn tới trang hướng dẫn sử dụng / FAQ / docs."
