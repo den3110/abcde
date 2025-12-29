@@ -1,0 +1,83 @@
+// pages/admin/components/AnalyticsChart.jsx
+import React, { useMemo } from "react";
+import { Box, Paper, Typography, Skeleton, ToggleButton, ToggleButtonGroup } from "@mui/material";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+import { useGetOtaAnalyticsQuery } from "../../../slices/otaApiSlice";
+
+export default function AnalyticsChart({ platform, days, onDaysChange }) {
+  const { data: analytics, isLoading } = useGetOtaAnalyticsQuery({ platform, days });
+
+  const chartData = useMemo(() => {
+    if (!analytics?.dailyStats) return [];
+
+    const dateMap = {};
+    analytics.dailyStats.forEach((item) => {
+      const date = item._id.date;
+      if (!dateMap[date]) {
+        dateMap[date] = { date, success: 0, failed: 0, checking: 0, downloading: 0 };
+      }
+      dateMap[date][item._id.status] = item.count;
+    });
+
+    return Object.values(dateMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [analytics]);
+
+  const handleDaysChange = (_, newDays) => {
+    if (newDays) onDaysChange(newDays);
+  };
+
+  if (isLoading) {
+    return <Skeleton variant="rounded" height={300} />;
+  }
+
+  return (
+    <Paper sx={{ p: 2 }}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Typography variant="h6">Thống kê Update</Typography>
+        <ToggleButtonGroup value={days} exclusive onChange={handleDaysChange} size="small">
+          <ToggleButton value={7}>7 ngày</ToggleButton>
+          <ToggleButton value={14}>14 ngày</ToggleButton>
+          <ToggleButton value={30}>30 ngày</ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+
+      {chartData.length === 0 ? (
+        <Box display="flex" alignItems="center" justifyContent="center" height={250}>
+          <Typography color="text.secondary">Chưa có dữ liệu thống kê</Typography>
+        </Box>
+      ) : (
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 12 }}
+              tickFormatter={(value) => {
+                const date = new Date(value);
+                return `${date.getDate()}/${date.getMonth() + 1}`;
+              }}
+            />
+            <YAxis tick={{ fontSize: 12 }} />
+            <Tooltip
+              labelFormatter={(value) => new Date(value).toLocaleDateString("vi-VN")}
+              contentStyle={{ backgroundColor: "rgba(0,0,0,0.8)", border: "none", borderRadius: 8 }}
+            />
+            <Legend />
+            <Bar dataKey="success" name="Thành công" fill="#4caf50" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="failed" name="Thất bại" fill="#f44336" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="downloading" name="Đang tải" fill="#2196f3" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </Paper>
+  );
+}
