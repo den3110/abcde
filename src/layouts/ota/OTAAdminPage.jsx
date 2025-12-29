@@ -1,5 +1,6 @@
 // pages/admin/OTAAdminPage.jsx
 import React, { useState } from "react";
+import PropTypes from "prop-types";
 import {
   Box,
   Container,
@@ -10,12 +11,6 @@ import {
   Button,
   ToggleButton,
   ToggleButtonGroup,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Paper,
   Chip,
   IconButton,
@@ -25,9 +20,9 @@ import {
   ListItemText,
   Skeleton,
   Alert,
-  Tooltip,
   LinearProgress,
 } from "@mui/material";
+import { DataGrid } from "@mui/x-data-grid";
 import {
   CloudUpload,
   Android,
@@ -52,6 +47,8 @@ import UploadBundleModal from "./components/UploadBundleModal";
 import TestUpdateModal from "./components/TestUpdateModal";
 import AnalyticsChart from "./components/AnalyticsChart";
 import FailedUpdatesTable from "./components/FailedUpdatesTable";
+import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 // Utils
 const formatBytes = (bytes) => {
@@ -117,14 +114,23 @@ const StatsCard = ({ title, value, icon, color = "primary", subtitle }) => (
   </Card>
 );
 
-// Version Row Component
-const VersionRow = ({ version, onRollback, onDeactivate, isLoading }) => {
+StatsCard.propTypes = {
+  title: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  icon: PropTypes.node,
+  color: PropTypes.string,
+  subtitle: PropTypes.string,
+};
+
+// Version Actions Component
+const VersionActions = ({ version, onRollback, onDeactivate, isLoading }) => {
   const [anchorEl, setAnchorEl] = useState(null);
 
   const handleMenuOpen = (event) => {
     event.stopPropagation();
     setAnchorEl(event.currentTarget);
   };
+
   const handleMenuClose = () => setAnchorEl(null);
 
   const handleRollback = () => {
@@ -137,87 +143,40 @@ const VersionRow = ({ version, onRollback, onDeactivate, isLoading }) => {
     onDeactivate(version.version);
   };
 
-  const successRate =
-    version.stats?.successfulUpdates + version.stats?.failedUpdates > 0
-      ? (
-          (version.stats.successfulUpdates /
-            (version.stats.successfulUpdates + version.stats.failedUpdates)) *
-          100
-        ).toFixed(1)
-      : null;
-
   return (
-    <TableRow
-      sx={{
-        "&:hover": { bgcolor: "action.hover" },
-        opacity: isLoading ? 0.5 : 1,
-      }}
-    >
-      <TableCell>
-        <Box display="flex" alignItems="center" gap={1}>
-          <Typography fontWeight="medium">{version.version}</Typography>
-          {version.isLatest && (
-            <Chip label="Latest" size="small" color="success" sx={{ fontWeight: "bold" }} />
-          )}
-          {version.mandatory && (
-            <Chip label="Bắt buộc" size="small" color="error" variant="outlined" />
-          )}
-        </Box>
-      </TableCell>
-      <TableCell>
-        <Typography variant="body2" color="text.secondary">
-          {version.description || "-"}
-        </Typography>
-      </TableCell>
-      <TableCell>
-        <Chip label={`≥ ${version.minAppVersion}`} size="small" variant="outlined" />
-      </TableCell>
-      <TableCell>{formatBytes(version.size)}</TableCell>
-      <TableCell>
-        <Tooltip title="Downloads">
-          <Box display="flex" alignItems="center" gap={0.5}>
-            <Download fontSize="small" color="action" />
-            {formatNumber(version.stats?.downloads)}
-          </Box>
-        </Tooltip>
-      </TableCell>
-      <TableCell>
-        {successRate !== null ? (
-          <Box display="flex" alignItems="center" gap={1}>
-            <Box sx={{ width: 60 }}>
-              <LinearProgress
-                variant="determinate"
-                value={parseFloat(successRate)}
-                color={parseFloat(successRate) >= 90 ? "success" : "warning"}
-                sx={{ height: 6, borderRadius: 3 }}
-              />
-            </Box>
-            <Typography variant="body2">{successRate}%</Typography>
-          </Box>
-        ) : (
-          <Typography variant="body2" color="text.secondary">-</Typography>
-        )}
-      </TableCell>
-      <TableCell>{formatDate(version.createdAt)}</TableCell>
-      <TableCell>
-        <IconButton size="small" onClick={handleMenuOpen} disabled={isLoading}>
-          <MoreVert />
-        </IconButton>
-        <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
-          {!version.isLatest && (
-            <MenuItem onClick={handleRollback}>
-              <ListItemIcon><Restore fontSize="small" /></ListItemIcon>
-              <ListItemText>Rollback về version này</ListItemText>
-            </MenuItem>
-          )}
-          <MenuItem onClick={handleDeactivate} sx={{ color: "error.main" }} disabled={version.isLatest}>
-            <ListItemIcon><Delete fontSize="small" color="error" /></ListItemIcon>
-            <ListItemText>Vô hiệu hóa</ListItemText>
+    <>
+      <IconButton size="small" onClick={handleMenuOpen} disabled={isLoading}>
+        <MoreVert />
+      </IconButton>
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+        {!version.isLatest && (
+          <MenuItem onClick={handleRollback}>
+            <ListItemIcon>
+              <Restore fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Rollback về version này</ListItemText>
           </MenuItem>
-        </Menu>
-      </TableCell>
-    </TableRow>
+        )}
+        <MenuItem
+          onClick={handleDeactivate}
+          sx={{ color: "error.main" }}
+          disabled={version.isLatest}
+        >
+          <ListItemIcon>
+            <Delete fontSize="small" color="error" />
+          </ListItemIcon>
+          <ListItemText>Vô hiệu hóa</ListItemText>
+        </MenuItem>
+      </Menu>
+    </>
   );
+};
+
+VersionActions.propTypes = {
+  version: PropTypes.object.isRequired,
+  onRollback: PropTypes.func.isRequired,
+  onDeactivate: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool,
 };
 
 // Main Component
@@ -267,171 +226,326 @@ export default function OTAAdminPage() {
 
   const isActionLoading = rollbackLoading || deactivateLoading;
 
-  return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
-        <Box>
-          <Typography variant="h4" fontWeight="bold" gutterBottom>
-            OTA Update Manager
-          </Typography>
+  // DataGrid columns
+  const columns = [
+    {
+      field: "version",
+      headerName: "Version",
+      width: 160,
+      renderCell: (params) => (
+        <Box display="flex" alignItems="center" gap={1}>
+          <Typography fontWeight="medium">{params.value}</Typography>
+          {params.row.isLatest && (
+            <Chip label="Latest" size="small" color="success" sx={{ fontWeight: "bold" }} />
+          )}
+          {params.row.mandatory && (
+            <Chip label="Bắt buộc" size="small" color="error" variant="outlined" />
+          )}
+        </Box>
+      ),
+    },
+    {
+      field: "description",
+      headerName: "Mô tả",
+      width: 200,
+      renderCell: (params) => (
+        <Typography variant="body2" color="text.secondary">
+          {params.value || "-"}
+        </Typography>
+      ),
+    },
+    {
+      field: "minAppVersion",
+      headerName: "Min App Version",
+      width: 130,
+      renderCell: (params) => <Chip label={`≥ ${params.value}`} size="small" variant="outlined" />,
+    },
+    {
+      field: "size",
+      headerName: "Kích thước",
+      width: 110,
+      valueFormatter: (params) => formatBytes(params.value),
+    },
+    {
+      field: "downloads",
+      headerName: "Downloads",
+      width: 110,
+      valueGetter: (params) => params.row?.stats?.downloads || 0,
+      renderCell: (params) => (
+        <Box display="flex" alignItems="center" gap={0.5}>
+          <Download fontSize="small" color="action" />
+          {formatNumber(params.value)}
+        </Box>
+      ),
+    },
+    {
+      field: "successRate",
+      headerName: "Tỷ lệ thành công",
+      width: 150,
+      valueGetter: (params) => {
+        const stats = params.row?.stats;
+        if (!stats) return null;
+        const total = (stats.successfulUpdates || 0) + (stats.failedUpdates || 0);
+        return total > 0 ? ((stats.successfulUpdates / total) * 100).toFixed(1) : null;
+      },
+      renderCell: (params) =>
+        params.value !== null ? (
+          <Box display="flex" alignItems="center" gap={1}>
+            <Box sx={{ width: 60 }}>
+              <LinearProgress
+                variant="determinate"
+                value={parseFloat(params.value)}
+                color={parseFloat(params.value) >= 90 ? "success" : "warning"}
+                sx={{ height: 6, borderRadius: 3 }}
+              />
+            </Box>
+            <Typography variant="body2">{params.value}%</Typography>
+          </Box>
+        ) : (
           <Typography variant="body2" color="text.secondary">
-            Quản lý và phân phối bản cập nhật Over-The-Air cho PickleTour
+            -
           </Typography>
-        </Box>
-        <Box display="flex" gap={2}>
-          <ToggleButtonGroup value={platform} exclusive onChange={handlePlatformChange} size="small">
-            <ToggleButton value="android">
-              <Android sx={{ mr: 1 }} /> Android
-            </ToggleButton>
-            <ToggleButton value="ios">
-              <Apple sx={{ mr: 1 }} /> iOS
-            </ToggleButton>
-          </ToggleButtonGroup>
+        ),
+    },
+    {
+      field: "createdAt",
+      headerName: "Ngày upload",
+      width: 160,
+      valueFormatter: (params) => formatDate(params.value),
+    },
+    {
+      field: "actions",
+      headerName: "",
+      width: 60,
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      renderCell: (params) => (
+        <VersionActions
+          version={params.row}
+          onRollback={handleRollback}
+          onDeactivate={handleDeactivate}
+          isLoading={isActionLoading}
+        />
+      ),
+    },
+  ];
 
-          <Button variant="outlined" startIcon={<BugReport />} onClick={() => setTestModalOpen(true)}>
-            Test Update
-          </Button>
+  return (
+    <DashboardLayout>
+      <DashboardNavbar />
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        {/* Header */}
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+          <Box>
+            <Typography variant="h4" fontWeight="bold" gutterBottom>
+              OTA Update Manager
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Quản lý và phân phối bản cập nhật Over-The-Air cho PickleTour
+            </Typography>
+          </Box>
+          <Box display="flex" gap={2}>
+            <ToggleButtonGroup
+              value={platform}
+              exclusive
+              onChange={handlePlatformChange}
+              size="small"
+            >
+              <ToggleButton value="android">
+                <Android sx={{ mr: 1 }} /> Android
+              </ToggleButton>
+              <ToggleButton value="ios">
+                <Apple sx={{ mr: 1 }} /> iOS
+              </ToggleButton>
+            </ToggleButtonGroup>
 
-          <Button variant="contained" startIcon={<CloudUpload />} onClick={() => setUploadModalOpen(true)}>
-            Upload Bundle
-          </Button>
-        </Box>
-      </Box>
+            <Button
+              variant="outlined"
+              startIcon={<BugReport />}
+              onClick={() => setTestModalOpen(true)}
+            >
+              Test Update
+            </Button>
 
-      {/* Stats Cards */}
-      <Grid container spacing={3} mb={4}>
-        <Grid item xs={12} sm={6} md={3}>
-          {analyticsLoading ? (
-            <Skeleton variant="rounded" height={120} />
-          ) : (
-            <StatsCard
-              title="Tổng Downloads"
-              value={formatNumber(analytics?.totals?.downloading || 0)}
-              icon={<Download />}
-              color="primary"
-              subtitle="7 ngày qua"
-            />
-          )}
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          {analyticsLoading ? (
-            <Skeleton variant="rounded" height={120} />
-          ) : (
-            <StatsCard
-              title="Update Thành Công"
-              value={formatNumber(analytics?.totals?.success || 0)}
-              icon={<CheckCircle />}
-              color="success"
-              subtitle="7 ngày qua"
-            />
-          )}
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          {analyticsLoading ? (
-            <Skeleton variant="rounded" height={120} />
-          ) : (
-            <StatsCard
-              title="Update Thất Bại"
-              value={formatNumber(analytics?.totals?.failed || 0)}
-              icon={<Error />}
-              color="error"
-              subtitle="7 ngày qua"
-            />
-          )}
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          {analyticsLoading ? (
-            <Skeleton variant="rounded" height={120} />
-          ) : (
-            <StatsCard
-              title="Tổng Versions"
-              value={versions.length}
-              icon={<Storage />}
-              color="info"
-              subtitle={platform === "android" ? "Android" : "iOS"}
-            />
-          )}
-        </Grid>
-      </Grid>
-
-      {/* Failed Updates Alert */}
-      {analytics?.failedUpdates?.length > 0 && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          Có {analytics.failedUpdates.length} lần update thất bại gần đây. Kiểm tra chi tiết để debug.
-        </Alert>
-      )}
-
-      {/* Analytics Chart & Failed Updates */}
-      <Grid container spacing={3} mb={4}>
-        <Grid item xs={12} md={8}>
-          <AnalyticsChart platform={platform} days={analyticsDays} onDaysChange={setAnalyticsDays} />
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <FailedUpdatesTable platform={platform} />
-        </Grid>
-      </Grid>
-
-      {/* Versions Table */}
-      <Paper sx={{ overflow: "hidden" }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" p={2} borderBottom={1} borderColor="divider">
-          <Typography variant="h6">Danh sách Versions</Typography>
-          <Button size="small" startIcon={<Refresh />} onClick={refetchVersions} disabled={versionsLoading}>
-            Làm mới
-          </Button>
+            <Button
+              variant="contained"
+              startIcon={<CloudUpload />}
+              onClick={() => setUploadModalOpen(true)}
+            >
+              Upload Bundle
+            </Button>
+          </Box>
         </Box>
 
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Version</TableCell>
-                <TableCell>Mô tả</TableCell>
-                <TableCell>Min App Version</TableCell>
-                <TableCell>Kích thước</TableCell>
-                <TableCell>Downloads</TableCell>
-                <TableCell>Tỷ lệ thành công</TableCell>
-                <TableCell>Ngày upload</TableCell>
-                <TableCell width={60}></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {versionsLoading ? (
-                [...Array(5)].map((_, i) => (
-                  <TableRow key={i}>
-                    {[...Array(8)].map((_, j) => (
-                      <TableCell key={j}><Skeleton /></TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : versions.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 8 }}>
-                    <Typography color="text.secondary">Chưa có version nào được upload</Typography>
-                    <Button variant="contained" startIcon={<CloudUpload />} sx={{ mt: 2 }} onClick={() => setUploadModalOpen(true)}>
-                      Upload Bundle đầu tiên
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                versions.map((version) => (
-                  <VersionRow
-                    key={version.version}
-                    version={version}
-                    onRollback={handleRollback}
-                    onDeactivate={handleDeactivate}
-                    isLoading={isActionLoading}
-                  />
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+        {/* Stats Cards */}
+        <Grid container spacing={3} mb={4}>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Tổng Downloads"
+                value={formatNumber(analytics?.totals?.downloading || 0)}
+                icon={<Download />}
+                color="primary"
+                subtitle="7 ngày qua"
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Update Thành Công"
+                value={formatNumber(analytics?.totals?.success || 0)}
+                icon={<CheckCircle />}
+                color="success"
+                subtitle="7 ngày qua"
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Update Thất Bại"
+                value={formatNumber(analytics?.totals?.failed || 0)}
+                icon={<Error />}
+                color="error"
+                subtitle="7 ngày qua"
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Tổng Versions"
+                value={versions.length}
+                icon={<Storage />}
+                color="info"
+                subtitle={platform === "android" ? "Android" : "iOS"}
+              />
+            )}
+          </Grid>
+        </Grid>
 
-      {/* Modals */}
-      <UploadBundleModal open={uploadModalOpen} onClose={() => setUploadModalOpen(false)} platform={platform} />
-      <TestUpdateModal open={testModalOpen} onClose={() => setTestModalOpen(false)} platform={platform} />
-    </Container>
+        {/* Failed Updates Alert */}
+        {analytics?.failedUpdates?.length > 0 && (
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            Có {analytics.failedUpdates.length} lần update thất bại gần đây. Kiểm tra chi tiết để
+            debug.
+          </Alert>
+        )}
+
+        {/* Analytics Chart & Failed Updates */}
+        <Grid container spacing={3} mb={4}>
+          <Grid item xs={12} md={8}>
+            <AnalyticsChart
+              platform={platform}
+              days={analyticsDays}
+              onDaysChange={setAnalyticsDays}
+            />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <FailedUpdatesTable platform={platform} />
+          </Grid>
+        </Grid>
+
+        {/* Versions DataGrid */}
+        <Paper sx={{ width: "100%" }}>
+          <Box
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            p={2}
+            borderBottom={1}
+            borderColor="divider"
+          >
+            <Typography variant="h6">Danh sách Versions</Typography>
+            <Button
+              size="small"
+              startIcon={<Refresh />}
+              onClick={refetchVersions}
+              disabled={versionsLoading}
+            >
+              Làm mới
+            </Button>
+          </Box>
+
+          <DataGrid
+            rows={versions}
+            columns={columns}
+            getRowId={(row) => row._id || row.version}
+            loading={versionsLoading}
+            disableRowSelectionOnClick
+            pageSizeOptions={[10, 25, 50]}
+            initialState={{
+              pagination: { paginationModel: { pageSize: 10 } },
+            }}
+            autoHeight
+            sx={{
+              border: 0,
+              "& .MuiDataGrid-cell": {
+                py: 1.5,
+              },
+              "& .MuiDataGrid-columnHeaders": {
+                bgcolor: "grey.50",
+              },
+              "& .MuiDataGrid-row:hover": {
+                bgcolor: "action.hover",
+              },
+            }}
+            localeText={{
+              noRowsLabel: "Chưa có version nào được upload",
+              MuiTablePagination: {
+                labelRowsPerPage: "Số dòng:",
+                labelDisplayedRows: ({ from, to, count }) =>
+                  `${from}-${to} trong ${count !== -1 ? count : `hơn ${to}`}`,
+              },
+            }}
+            slots={{
+              noRowsOverlay: () => (
+                <Box
+                  display="flex"
+                  flexDirection="column"
+                  alignItems="center"
+                  justifyContent="center"
+                  height="100%"
+                  py={8}
+                >
+                  <Typography color="text.secondary" mb={2}>
+                    Chưa có version nào được upload
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<CloudUpload />}
+                    onClick={() => setUploadModalOpen(true)}
+                  >
+                    Upload Bundle đầu tiên
+                  </Button>
+                </Box>
+              ),
+            }}
+          />
+        </Paper>
+
+        {/* Modals */}
+        <UploadBundleModal
+          open={uploadModalOpen}
+          onClose={() => setUploadModalOpen(false)}
+          platform={platform}
+        />
+        <TestUpdateModal
+          open={testModalOpen}
+          onClose={() => setTestModalOpen(false)}
+          platform={platform}
+        />
+      </Container>
+    </DashboardLayout>
   );
 }

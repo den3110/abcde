@@ -57,6 +57,7 @@ import NewsListPage from "layouts/NewsListPage";
 import NewsDetailPage from "layouts/NewsDetailPage";
 import AdminSystemPage from "layouts/AdminSystemPage";
 import AuditLogsPage from "layouts/AuditLogsPage";
+import OTAAdminPage from "layouts/ota/OTAAdminPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -570,6 +571,17 @@ const routes = [
     icon: <Icon fontSize="small">history</Icon>,
     route: "/admin/audit-logs",
     component: <AuditLogsPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "OTA Updates",
+    key: "admin-ota",
+    icon: <Icon fontSize="small">system_update</Icon>,
+    route: "/admin/ota",
+    component: <OTAAdminPage />,
     private: true,
     roles: ["admin"],
     show: true,

@@ -1,5 +1,6 @@
 // pages/admin/components/FailedUpdatesTable.jsx
 import React, { useState } from "react";
+import PropTypes from "prop-types"; // 1. Import PropTypes
 import {
   Paper,
   Typography,
@@ -137,6 +138,26 @@ const FailedUpdateRow = ({ log }) => {
   );
 };
 
+// 2. Thêm validation cho FailedUpdateRow
+FailedUpdateRow.propTypes = {
+  log: PropTypes.shape({
+    _id: PropTypes.string,
+    fromVersion: PropTypes.string,
+    toVersion: PropTypes.string,
+    errorCode: PropTypes.string,
+    errorMessage: PropTypes.string,
+    appVersion: PropTypes.string,
+    duration: PropTypes.number,
+    createdAt: PropTypes.string,
+    ip: PropTypes.string,
+    deviceInfo: PropTypes.shape({
+      brand: PropTypes.string,
+      model: PropTypes.string,
+      osVersion: PropTypes.string,
+    }),
+  }).isRequired,
+};
+
 export default function FailedUpdatesTable({ platform }) {
   const { data: analytics, isLoading } = useGetOtaAnalyticsQuery({ platform, days: 7 });
   const failedUpdates = analytics?.failedUpdates || [];
@@ -185,3 +206,8 @@ export default function FailedUpdatesTable({ platform }) {
     </Paper>
   );
 }
+
+// 3. Thêm validation cho FailedUpdatesTable
+FailedUpdatesTable.propTypes = {
+  platform: PropTypes.string.isRequired,
+};

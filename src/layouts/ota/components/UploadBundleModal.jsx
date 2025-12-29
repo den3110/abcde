@@ -1,5 +1,6 @@
 // pages/admin/components/UploadBundleModal.jsx
 import React, { useState, useRef } from "react";
+import PropTypes from "prop-types"; // 1. Import PropTypes
 import {
   Dialog,
   DialogTitle,
@@ -253,3 +254,10 @@ export default function UploadBundleModal({ open, onClose, platform }) {
     </Dialog>
   );
 }
+
+// 2. Thêm khai báo PropTypes
+UploadBundleModal.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  platform: PropTypes.string.isRequired,
+};

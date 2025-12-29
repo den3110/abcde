@@ -1,5 +1,6 @@
 // pages/admin/components/TestUpdateModal.jsx
 import React, { useState } from "react";
+import PropTypes from "prop-types"; // 1. Import PropTypes
 import {
   Dialog,
   DialogTitle,
@@ -220,7 +221,8 @@ export default function TestUpdateModal({ open, onClose, platform }) {
 
         {!result && !error && (
           <Paper variant="outlined" sx={{ p: 3, textAlign: "center", bgcolor: "action.hover" }}>
-            <Typography color="text.secondary">Nhấn "Kiểm tra Update" để test</Typography>
+            {/* Fix lỗi no-unescaped-entities bằng cách dùng &quot; */}
+            <Typography color="text.secondary">Nhấn &quot;Kiểm tra Update&quot; để test</Typography>
           </Paper>
         )}
       </DialogContent>
@@ -231,3 +233,10 @@ export default function TestUpdateModal({ open, onClose, platform }) {
     </Dialog>
   );
 }
+
+// 2. Định nghĩa PropTypes
+TestUpdateModal.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  platform: PropTypes.string.isRequired,
+};

@@ -1,5 +1,6 @@
 // pages/admin/components/AnalyticsChart.jsx
 import React, { useMemo } from "react";
+import PropTypes from "prop-types";
 import { Box, Paper, Typography, Skeleton, ToggleButton, ToggleButtonGroup } from "@mui/material";
 import {
   BarChart,
@@ -17,13 +18,21 @@ export default function AnalyticsChart({ platform, days, onDaysChange }) {
   const { data: analytics, isLoading } = useGetOtaAnalyticsQuery({ platform, days });
 
   const chartData = useMemo(() => {
-    if (!analytics?.dailyStats) return [];
+    if (!analytics?.dailyStats || analytics.dailyStats.length === 0) return [];
 
     const dateMap = {};
     analytics.dailyStats.forEach((item) => {
       const date = item._id.date;
       if (!dateMap[date]) {
-        dateMap[date] = { date, success: 0, failed: 0, checking: 0, downloading: 0 };
+        dateMap[date] = {
+          date,
+          checking: 0,
+          downloading: 0,
+          installing: 0,
+          success: 0,
+          failed: 0,
+          skipped: 0,
+        };
       }
       dateMap[date][item._id.status] = item.count;
     });
@@ -66,18 +75,32 @@ export default function AnalyticsChart({ platform, days, onDaysChange }) {
                 return `${date.getDate()}/${date.getMonth() + 1}`;
               }}
             />
-            <YAxis tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
             <Tooltip
               labelFormatter={(value) => new Date(value).toLocaleDateString("vi-VN")}
-              contentStyle={{ backgroundColor: "rgba(0,0,0,0.8)", border: "none", borderRadius: 8 }}
+              contentStyle={{
+                backgroundColor: "rgba(0,0,0,0.8)",
+                border: "none",
+                borderRadius: 8,
+                color: "#fff",
+              }}
             />
             <Legend />
+            <Bar dataKey="checking" name="Kiểm tra" fill="#9c27b0" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="downloading" name="Đang tải" fill="#2196f3" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="installing" name="Đang cài" fill="#ff9800" radius={[4, 4, 0, 0]} />
             <Bar dataKey="success" name="Thành công" fill="#4caf50" radius={[4, 4, 0, 0]} />
             <Bar dataKey="failed" name="Thất bại" fill="#f44336" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="downloading" name="Đang tải" fill="#2196f3" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="skipped" name="Bỏ qua" fill="#607d8b" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )}
     </Paper>
   );
 }
+
+AnalyticsChart.propTypes = {
+  platform: PropTypes.string.isRequired,
+  days: PropTypes.number.isRequired,
+  onDaysChange: PropTypes.func.isRequired,
+};
