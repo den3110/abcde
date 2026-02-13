@@ -395,7 +395,7 @@ export default function SystemSettingsPage() {
             desc="Đường dẫn tới trang hướng dẫn sử dụng / FAQ / docs."
           >
             <TextField
-              label="URL hướng dẫn"
+              label="URL hướng dẫn "
               value={form.links?.guideUrl ?? ""}
               onChange={onChange("links.guideUrl")}
               placeholder="https://docs.pickletour.vn/huong-dan"
