@@ -221,7 +221,7 @@ function Dashboard() {
                 <ComplexStatisticsCard
                   color="dark"
                   icon="emoji_events"
-                  title="Giải  đang mở"
+                  title="Giải đấu đang mở"
                   count={openTournaments}
                   percentage={{
                     color: openDelta >= 0 ? "success" : "error",
