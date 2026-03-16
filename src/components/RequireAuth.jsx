@@ -4,11 +4,38 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Box from "@mui/material/Box";
 import { useVerifyQuery } from "slices/authApiSlice";
 
+const normalizeRole = (role) =>
+  String(role || "")
+    .trim()
+    .toLowerCase();
+
+function extractUser(data) {
+  if (!data) return null;
+  if (data.user && typeof data.user === "object") return data.user;
+  return data;
+}
+
+function collectRoles(user) {
+  if (!user) return [];
+  const roles = new Set([
+    ...(Array.isArray(user.roles) ? user.roles : []),
+    ...(user.role ? [user.role] : []),
+  ]);
+  if (user.isAdmin) roles.add("admin");
+  if (user.isSuperUser || user.isSuperAdmin) {
+    roles.add("superadmin");
+    roles.add("superuser");
+    roles.add("admin");
+  }
+  return Array.from(roles).map(normalizeRole).filter(Boolean);
+}
+
 export default function RequireAuth({ roles, redirectTo = "/dashboard", children }) {
   const location = useLocation();
 
   // Gọi verify để lấy user hiện tại
-  const { data: user, isFetching, error } = useVerifyQuery();
+  const { data, isFetching, error } = useVerifyQuery();
+  const user = extractUser(data);
 
   if (isFetching) {
     return (
@@ -25,9 +52,9 @@ export default function RequireAuth({ roles, redirectTo = "/dashboard", children
   }
 
   // Kiểm tra quyền
-  const userRoles = Array.isArray(user?.roles) ? user.roles : user?.role ? [user.role] : [];
-
-  const allowed = !roles || roles.length === 0 ? true : userRoles.some((r) => roles.includes(r));
+  const userRoles = collectRoles(user);
+  const wantedRoles = (roles || []).map(normalizeRole).filter(Boolean);
+  const allowed = wantedRoles.length === 0 ? true : wantedRoles.some((r) => userRoles.includes(r));
 
   if (!allowed) {
     // Thiếu quyền: đá về redirectTo (mặc định /dashboard)

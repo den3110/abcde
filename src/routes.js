@@ -382,7 +382,7 @@ const routes = [
     route: "/admin/brackets/:bracketId/preassign",
     component: <GroupPreassignBoard />,
     private: true,
-    roles: ["admin"],
+    roles: ["superadmin", "superuser"],
   },
   {
     show: false,

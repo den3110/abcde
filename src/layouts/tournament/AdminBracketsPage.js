@@ -52,6 +52,7 @@ import {
 
 import { useNavigate, useParams } from "react-router-dom";
 import { skipToken } from "@reduxjs/toolkit/query";
+import { useSelector } from "react-redux";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -116,6 +117,26 @@ const regName = (reg, evType) => {
 
 const detectVideoUrl = (m) => m?.video || "";
 const sanitizeVideoUrl = (s) => String(s || "").trim();
+
+const normalizeRole = (role) =>
+  String(role || "")
+    .trim()
+    .toLowerCase();
+const isSuperAdminUser = (user) => {
+  const roles = new Set([
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+    ...(user?.role ? [user.role] : []),
+  ]);
+  if (user?.isAdmin) roles.add("admin");
+  if (user?.isSuperUser || user?.isSuperAdmin) {
+    roles.add("superadmin");
+    roles.add("superuser");
+    roles.add("admin");
+  }
+  return Array.from(roles)
+    .map(normalizeRole)
+    .some((r) => r === "superadmin" || r === "superuser");
+};
 
 // ===== Helpers: hiển thị mã trận dạng V-B-T / V-T (dùng gạch nối) =====
 const joinDash = (...parts) => parts.filter(Boolean).join("-");
@@ -220,6 +241,8 @@ const sxUI = {
 export default function AdminBracketsPage() {
   const { id: tournamentId } = useParams();
   const navigate = useNavigate();
+  const currentUser = useSelector((s) => s.auth?.userInfo || null);
+  const canManagePreassign = isSuperAdminUser(currentUser);
 
   // 1) Thông tin giải
   const {
@@ -1735,7 +1758,7 @@ export default function AdminBracketsPage() {
                           Auto fill từ stage trước
                         </Button>
                         {/* ⭐ CHỈ roundElim mới có nút này */}
-                        {br.type === "roundElim" && (
+                        {canManagePreassign && br.type === "roundElim" && (
                           <Button
                             size="small"
                             startIcon={<TableChartIcon />}
@@ -1754,7 +1777,7 @@ export default function AdminBracketsPage() {
                             Cấu hình vòng PO
                           </Button>
                         )}
-                        {br.type === "group" && (
+                        {canManagePreassign && br.type === "group" && (
                           <Button
                             size="small"
                             startIcon={<BoltIcon />}

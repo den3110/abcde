@@ -44,22 +44,35 @@ function clearAllCookies() {
 }
 
 // helpers role
+const normalizeRole = (role) =>
+  String(role || "")
+    .trim()
+    .toLowerCase();
 const getUserRoles = (user) => {
   if (!user) return [];
-  if (Array.isArray(user.roles)) return user.roles;
-  if (typeof user.role === "string") return [user.role];
-  return [];
+  const roles = new Set([
+    ...(Array.isArray(user.roles) ? user.roles : []),
+    ...(typeof user.role === "string" ? [user.role] : []),
+  ]);
+  if (user.isAdmin) roles.add("admin");
+  if (user.isSuperUser || user.isSuperAdmin) {
+    roles.add("superadmin");
+    roles.add("superuser");
+    roles.add("admin");
+  }
+  return Array.from(roles).map(normalizeRole).filter(Boolean);
 };
 
 const canView = (route, user) => {
-  // route không private -> ai cũng xem được (trừ khi show=false)
+  // non-private route -> visible unless show=false
   if (!route.private) return route.show !== false;
-  // private -> cần đăng nhập
+  // private route -> must be logged in
   if (!user) return false;
-  // nếu có roles -> phải khớp ít nhất 1
+  // if roles are defined -> user needs at least one matching role
   if (route.roles && route.roles.length > 0) {
     const roles = getUserRoles(user);
-    return roles.some((r) => route.roles.includes(r));
+    const allowed = route.roles.map(normalizeRole).filter(Boolean);
+    return roles.some((r) => allowed.includes(r));
   }
   return true;
 };

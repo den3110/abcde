@@ -47,6 +47,7 @@ import DataTable from "examples/Tables/DataTable";
 import {
   useGetUsersQuery,
   useUpdateUserRoleMutation,
+  useUpdateUserSuperAdminMutation,
   useUpdateUserInfoMutation,
   useReviewKycMutation,
   useUpdateRankingMutation,
@@ -152,6 +153,28 @@ const prettyDate = (d) => (d ? new Date(d).toLocaleDateString("vi-VN") : "—");
 /* ================== Helpers ================== */
 const roleText = (r) => (r === "admin" ? "Admin" : r === "referee" ? "Trọng tài" : "User");
 
+const normalizeRole = (r) =>
+  String(r || "")
+    .trim()
+    .toLowerCase();
+const hasRole = (u, role) => {
+  const wanted = normalizeRole(role);
+  const roles = new Set([
+    ...(Array.isArray(u?.roles) ? u.roles : []).map(normalizeRole),
+    normalizeRole(u?.role),
+  ]);
+  if (u?.isAdmin) roles.add("admin");
+  if (u?.isSuperUser || u?.isSuperAdmin) {
+    roles.add("superadmin");
+    roles.add("superuser");
+    roles.add("admin");
+  }
+  roles.delete("");
+  return roles.has(wanted);
+};
+const isSuperAdminUser = (u) =>
+  hasRole(u, "superadmin") || hasRole(u, "superuser") || !!u?.isSuperUser || !!u?.isSuperAdmin;
+
 const getEvalProvinces = (u) => {
   const list = u?.evaluator?.gradingScopes?.provinces || [];
   return Array.isArray(list) ? list.filter(Boolean) : [];
@@ -169,10 +192,12 @@ const getIsFullEvaluator = (u) => {
 export default function UserManagement() {
   const dispatch = useDispatch();
   const { page, keyword, role = "" } = useSelector((s) => s.adminUi);
+  const currentUser = useSelector((s) => s.auth?.userInfo || null);
   const [kycFilter, setKycFilter] = useState("");
 
   // mutations
   const [updateRoleMut] = useUpdateUserRoleMutation();
+  const [updateSuperAdminMut] = useUpdateUserSuperAdminMutation();
   const [updateInfoMut] = useUpdateUserInfoMutation();
   const [reviewKycMut] = useReviewKycMutation();
   const [updateRanking] = useUpdateRankingMutation();
@@ -258,6 +283,14 @@ export default function UserManagement() {
     }
   };
 
+  const canManageSuperAdmin = isSuperAdminUser(currentUser);
+  const toggleSuperAdmin = async (userId, enable) => {
+    await handle(
+      updateSuperAdminMut({ id: userId, isSuperUser: enable }).unwrap(),
+      enable ? "Promoted to super admin" : "Removed super admin"
+    );
+  };
+
   /* ================== Table ================== */
   const columns = [
     { Header: "Tên", accessor: "name", align: "left" },
@@ -274,6 +307,8 @@ export default function UserManagement() {
     (data?.users || []).map((u) => {
       const st = u.cccdStatus || "unverified";
       const isFull = !!isFullEvaluator(u);
+      const targetIsSuperAdmin = isSuperAdminUser(u);
+      const isSelf = String(u?._id) === String(currentUser?._id);
 
       return {
         name: <MDTypography variant="button">{u.name}</MDTypography>,
@@ -292,6 +327,7 @@ export default function UserManagement() {
             <Select
               size="small"
               value={u.role}
+              disabled={!canManageSuperAdmin && targetIsSuperAdmin}
               renderValue={(val) => `${roleText(val)}`}
               onChange={(e) =>
                 handle(
@@ -306,6 +342,10 @@ export default function UserManagement() {
               <MenuItem value="admin">Admin</MenuItem>
             </Select>
 
+            {targetIsSuperAdmin && (
+              <Chip size="small" label="Super Admin" color="warning" variant="outlined" />
+            )}
+
             {/* Checkbox: Admin chấm trình (FULL tỉnh) */}
             <FormControlLabel
               sx={{ m: 0 }}
@@ -318,6 +358,21 @@ export default function UserManagement() {
               }
               label="Admin chấm trình"
             />
+
+            {canManageSuperAdmin && (
+              <FormControlLabel
+                sx={{ m: 0 }}
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={targetIsSuperAdmin}
+                    disabled={isSelf && targetIsSuperAdmin}
+                    onChange={(e) => toggleSuperAdmin(u._id, e.target.checked)}
+                  />
+                }
+                label="Super Admin"
+              />
+            )}
           </Stack>
         ),
         cccd: (
@@ -736,6 +791,29 @@ export default function UserManagement() {
                 </Select>
               </FormControl>
 
+              {/* Cài đặt thông báo Push */}
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={edit.isPushNotificationEnabled !== false}
+                    onChange={(e) =>
+                      setEdit({ ...edit, isPushNotificationEnabled: e.target.checked })
+                    }
+                  />
+                }
+                label={
+                  <Box>
+                    <MDTypography variant="button" fontWeight="medium" display="block">
+                      Nhận thông báo Push
+                    </MDTypography>
+                    <MDTypography variant="caption" color="text" display="block">
+                      Cho phép gửi thông báo đẩy đến các thiết bị của người dùng này
+                    </MDTypography>
+                  </Box>
+                }
+                sx={{ mt: 1, ml: 0 }}
+              />
+
               {/* ====== Đổi mật khẩu ====== */}
               <Box sx={{ mt: 1, pt: 1.5, borderTop: "1px dashed #e0e0e0" }}>
                 <FormControlLabel
@@ -865,6 +943,7 @@ export default function UserManagement() {
                           ? edit.gender
                           : "unspecified",
                         province: edit.province,
+                        isPushNotificationEnabled: edit.isPushNotificationEnabled !== false,
                       },
                     }).unwrap(),
                     "Đã cập nhật người dùng"

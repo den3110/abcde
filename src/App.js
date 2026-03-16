@@ -117,7 +117,7 @@ export default function App() {
 
       if (route.route) {
         const element = route.private ? (
-          <RequireAuth>{route.component}</RequireAuth>
+          <RequireAuth roles={route.roles}>{route.component}</RequireAuth>
         ) : (
           route.component
         );

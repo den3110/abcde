@@ -1,5 +1,5 @@
 // src/pages/admin/SystemSettingsPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import PropTypes from "prop-types";
 import {
   Box,
@@ -14,7 +14,9 @@ import {
   CircularProgress,
   Tooltip,
   Skeleton,
+  Fab,
 } from "@mui/material";
+import SaveIcon from "@mui/icons-material/Save";
 import {
   useGetSystemSettingsQuery,
   useUpdateSystemSettingsMutation,
@@ -85,10 +87,25 @@ export default function SystemSettingsPage() {
   const [updateSettings, { isLoading: isSaving }] = useUpdateSystemSettingsMutation();
 
   const [form, setForm] = useState(null);
+  const [showFab, setShowFab] = useState(false);
+  const topSaveRef = useRef(null);
 
   useEffect(() => {
     if (data) setForm(structuredClone(data));
   }, [data]);
+
+  useEffect(() => {
+    if (isLoading || !topSaveRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // Show FAB when top button is not accessible in the viewport
+        setShowFab(!entry.isIntersecting);
+      },
+      { threshold: 0 }
+    );
+    observer.observe(topSaveRef.current);
+    return () => observer.disconnect();
+  }, [isLoading, form]);
 
   const onToggle = (path) => (e) => {
     const val = e.target.checked;
@@ -172,6 +189,7 @@ export default function SystemSettingsPage() {
         notifications: {
           telegramEnabled: !!form.notifications?.telegramEnabled,
           telegramComplaintChatId: form.notifications?.telegramComplaintChatId ?? "",
+          systemPushEnabled: !!form.notifications?.systemPushEnabled,
         },
         links: {
           guideUrl: form.links?.guideUrl ?? "",
@@ -239,9 +257,11 @@ export default function SystemSettingsPage() {
           <Typography variant="h5" fontWeight={800}>
             Cài đặt hệ thống
           </Typography>
-          <Button variant="contained" onClick={handleSave} disabled={isSaving}>
-            {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
-          </Button>
+          <Box ref={topSaveRef}>
+            <Button variant="contained" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
+            </Button>
+          </Box>
         </Stack>
 
         <Stack spacing={2}>
@@ -370,6 +390,16 @@ export default function SystemSettingsPage() {
             />
           </Section>
 
+          <Section title="Sự kiện" desc="Cài đặt thông báo liên quan đến hệ thống.">
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Typography>Bật thông báo đẩy (Push) toàn hệ thống</Typography>
+              <Switch
+                checked={!!form.notifications?.systemPushEnabled}
+                onChange={onToggle("notifications.systemPushEnabled")}
+              />
+            </Stack>
+          </Section>
+
           <Section
             title="Thông báo (Telegram)"
             desc="Token để ở ENV; tại đây chỉ bật/tắt và đặt Chat ID."
@@ -404,6 +434,34 @@ export default function SystemSettingsPage() {
           </Section>
         </Stack>
       </Box>
+
+      {/* Floating Action Button (FAB) for Save */}
+      <Fab
+        color="primary"
+        aria-label="save"
+        variant="extended"
+        onClick={handleSave}
+        disabled={isSaving}
+        sx={{
+          position: "fixed",
+          bottom: 24,
+          right: 24,
+          zIndex: 1000,
+          boxShadow: 3,
+          px: 3,
+          transition: "opacity 0.3s, transform 0.3s",
+          opacity: showFab ? 1 : 0,
+          transform: showFab ? "translateY(0)" : "translateY(20px)",
+          pointerEvents: showFab ? "auto" : "none",
+        }}
+      >
+        {isSaving ? (
+          <CircularProgress size={24} color="inherit" sx={{ mr: 1 }} />
+        ) : (
+          <SaveIcon sx={{ mr: 1 }} />
+        )}
+        {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
+      </Fab>
     </DashboardLayout>
   );
 }

@@ -435,6 +435,7 @@ export default function TournamentFormPage() {
     contentHtml: "",
     maxPairs: 0,
     noRankDelta: false,
+    allowExceedMaxRating: false,
 
     // phạm vi chấm
     scoringScopeType: "national",
@@ -588,6 +589,7 @@ export default function TournamentFormPage() {
       contactHtml: tour.contactHtml || "",
       contentHtml: tour.contentHtml || "",
       noRankDelta: !!tour.noRankDelta,
+      allowExceedMaxRating: !!tour.allowExceedMaxRating,
 
       scoringScopeType: scopeType,
       scoringProvinces: scopeProvinces,
@@ -698,6 +700,7 @@ export default function TournamentFormPage() {
       contentHtml: form.contentHtml,
       maxPairs: Number(form.maxPairs) || 0,
       noRankDelta: !!form.noRankDelta,
+      allowExceedMaxRating: !!form.allowExceedMaxRating,
 
       scoringScope: {
         type: scoringScopeType,
@@ -1230,6 +1233,27 @@ export default function TournamentFormPage() {
                       margin="normal"
                     />
                   ))}
+
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={!!form.allowExceedMaxRating}
+                        onChange={(e) =>
+                          setForm((p) => ({ ...p, allowExceedMaxRating: e.target.checked }))
+                        }
+                      />
+                    }
+                    label="Cho phép đăng ký kể cả khi vượt điểm trần (Cap)"
+                  />
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    display="block"
+                    sx={{ ml: 4, mb: 2 }}
+                  >
+                    VĐV có điểm cá nhân hoặc tổng điểm đôi vượt quá giới hạn trên vẫn có thể đăng ký
+                    bình thường.
+                  </Typography>
                 </Grid>
 
                 <Grid item xs={12}>

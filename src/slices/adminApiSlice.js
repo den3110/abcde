@@ -23,6 +23,15 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
+    updateUserSuperAdmin: builder.mutation({
+      query: ({ id, isSuperUser }) => ({
+        url: `/admin/users/${id}/super-admin`,
+        method: "PATCH",
+        body: { isSuperUser },
+      }),
+      invalidatesTags: ["User"],
+    }),
+
     deleteUser: builder.mutation({
       query: (id) => ({ url: `/admin/users/${id}`, method: "DELETE" }),
       invalidatesTags: ["User"],
@@ -168,6 +177,7 @@ export const {
   // users
   useGetUsersQuery,
   useUpdateUserRoleMutation,
+  useUpdateUserSuperAdminMutation,
   useDeleteUserMutation,
   useReviewKycMutation,
   useUpdateUserInfoMutation,
