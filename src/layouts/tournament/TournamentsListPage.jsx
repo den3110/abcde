@@ -26,6 +26,7 @@ import {
   Delete as DeleteIcon,
   Edit as EditIcon,
   ListAlt as ListAltIcon,
+  SmartToy as SmartToyIcon,
   TableChart as TableChartIcon,
   Stadium as StadiumIcon,
 } from "@mui/icons-material";
@@ -123,6 +124,10 @@ export default function TournamentsListPage() {
   const goMatches = useCallback((id) => navigate(`/admin/tournaments/${id}/matches`), [navigate]);
   const goEdit = useCallback((id) => navigate(`/admin/tournaments/${id}/edit`), [navigate]);
   const goCourts = useCallback((id) => navigate(`/admin/tournaments/${id}/courts`), [navigate]);
+  const goAiImport = useCallback(
+    (id) => navigate(`/admin/ai-registration-import?t=${encodeURIComponent(id)}`),
+    [navigate]
+  );
 
   /* ---------------- Memo hóa columns / rows / tableData ---------------- */
   const columns = useMemo(
@@ -203,6 +208,11 @@ export default function TournamentsListPage() {
                 <ListAltIcon fontSize="small" />
               </IconButton>
             </Tooltip>
+            <Tooltip title="AI Import đăng ký">
+              <IconButton size="small" color="success" onClick={() => goAiImport(t._id)}>
+                <SmartToyIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="Sửa">
               <IconButton size="small" onClick={() => goEdit(t._id)}>
                 <EditIcon fontSize="small" />
@@ -225,6 +235,7 @@ export default function TournamentsListPage() {
       goBrackets,
       goCourts,
       goMatches,
+      goAiImport,
       goEdit,
       handleDelete,
     ]
@@ -398,6 +409,14 @@ export default function TournamentsListPage() {
                           onClick={() => goMatches(t._id)}
                         >
                           Matches
+                        </MDButton>
+                        <MDButton
+                          size="small"
+                          variant="outlined"
+                          color="warning"
+                          onClick={() => goAiImport(t._id)}
+                        >
+                          AI Import
                         </MDButton>
                         <MDButton
                           size="small"

@@ -18,6 +18,7 @@ import {
   InputAdornment,
   Slider,
 } from "@mui/material";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
 
 // === MUI X Date Pickers v5 ===
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -857,9 +858,26 @@ export default function TournamentFormPage() {
         <FormSkeleton />
       ) : (
         <Box p={3} sx={{ backgroundColor: "#fff", borderRadius: 1 }}>
-          <Typography variant="h4" mb={3}>
-            {isEdit ? "Sửa Giải đấu" : "Tạo Giải đấu"}
-          </Typography>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            alignItems={{ xs: "flex-start", sm: "center" }}
+            justifyContent="space-between"
+            mb={3}
+          >
+            <Typography variant="h4">{isEdit ? "Sửa Giải đấu" : "Tạo Giải đấu"}</Typography>
+            {isEdit ? (
+              <Button
+                variant="outlined"
+                startIcon={<SmartToyIcon />}
+                onClick={() =>
+                  navigate(`/admin/ai-registration-import?t=${encodeURIComponent(id)}`)
+                }
+              >
+                AI Import đăng ký
+              </Button>
+            ) : null}
+          </Stack>
 
           <Box
             component="form"

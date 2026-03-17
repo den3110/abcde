@@ -27,6 +27,7 @@ import {
   Paper,
 } from "@mui/material";
 import { ArrowBack, Paid, MoneyOff, Delete as DeleteIcon } from "@mui/icons-material";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
 import { useNavigate, useParams } from "react-router-dom";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -418,6 +419,14 @@ export default function AdminTournamentRegistrations() {
             <ArrowBack />
           </IconButton>
           <MDTypography variant="h5">Danh sách đăng ký</MDTypography>
+          <Box flexGrow={1} />
+          <Button
+            variant="outlined"
+            startIcon={<SmartToyIcon />}
+            onClick={() => nav(`/admin/ai-registration-import?t=${encodeURIComponent(id)}`)}
+          >
+            AI Import
+          </Button>
         </Stack>
         {tour && (
           <Typography variant="caption" color="text.secondary" fontSize={16}>

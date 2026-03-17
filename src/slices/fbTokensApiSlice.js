@@ -4,12 +4,19 @@ import { apiSlice } from "./apiSlice";
 export const fbTokensApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     listFbTokens: builder.query({
-      query: ({ q = "", status = "", busy = "" } = {}) =>
-        `/fb-tokens?q=${encodeURIComponent(q)}&status=${status}&busy=${busy}`,
+      query: ({ q = "", status = "", busy = "", enabled = "" } = {}) =>
+        `/fb-tokens?q=${encodeURIComponent(q)}&status=${status}&busy=${busy}&enabled=${enabled}`,
       keepUnusedDataFor: 30,
+    }),
+    getFbPageMonitor: builder.query({
+      query: () => "/fb-tokens/monitor",
+      keepUnusedDataFor: 5,
     }),
     checkOneFbToken: builder.mutation({
       query: (id) => ({ url: `/fb-tokens/${id}/check`, method: "POST" }),
+    }),
+    probeFbPageLiveState: builder.mutation({
+      query: (id) => ({ url: `/fb-tokens/${id}/probe-live`, method: "POST" }),
     }),
     checkAllFbTokens: builder.mutation({
       query: () => ({ url: `/fb-tokens/~batch/check-all`, method: "POST" }),
@@ -38,7 +45,9 @@ export const fbTokensApi = apiSlice.injectEndpoints({
 
 export const {
   useListFbTokensQuery,
+  useGetFbPageMonitorQuery,
   useCheckOneFbTokenMutation,
+  useProbeFbPageLiveStateMutation,
   useCheckAllFbTokensMutation,
   useMarkNeedsReauthMutation,
   useClearBusyFlagMutation,

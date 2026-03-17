@@ -25,7 +25,12 @@ import {
   TableBody,
   Paper,
 } from "@mui/material";
-import { ArrowBack, Info as InfoIcon, Refresh as RefreshIcon } from "@mui/icons-material";
+import {
+  ArrowBack,
+  Info as InfoIcon,
+  Refresh as RefreshIcon,
+  SmartToy as SmartToyIcon,
+} from "@mui/icons-material";
 import { useNavigate, useParams } from "react-router-dom";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -293,6 +298,13 @@ export default function AdminTournamentMatches() {
             color={eventType === "single" ? "default" : "primary"}
           />
           <Box flexGrow={1} />
+          <Button
+            variant="outlined"
+            startIcon={<SmartToyIcon />}
+            onClick={() => nav(`/admin/ai-registration-import?t=${encodeURIComponent(id)}`)}
+          >
+            AI Import
+          </Button>
           <IconButton onClick={refresh} title="Làm mới">
             <RefreshIcon />
           </IconButton>

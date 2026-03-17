@@ -32,6 +32,7 @@ import CmsContactEditor from "layouts/CmsContactEditor";
 import AdminRefereeMatches from "layouts/tournament/referee/AdminRefereeMatches";
 import TournamentBlueprintPage from "layouts/tournament/TournamentBlueprintPage";
 import AutoRegistrationsPage from "layouts/tournament/AutoRegistrationsPage";
+import AiRegistrationImportPage from "layouts/tournament/AiRegistrationImportPage";
 import AdminOverlayPage from "layouts/tournament/OverlayTab";
 import GlobalMatchViewerPage from "layouts/match/GlobalMatchViewerPage";
 import AdminMatchDetailPage from "layouts/match/AdminMatchDetailPage";
@@ -48,6 +49,7 @@ import FilesManager from "layouts/FilesManager";
 import AdminMonitorPage from "layouts/AdminMonitorPage";
 import AdminSponsorsPage from "layouts/AdminSponsorsPage";
 import FbLiveConfigPage from "layouts/FbLiveConfigPage";
+import FbPageMonitorPage from "layouts/FbPageMonitorPage";
 import ConfigManager from "layouts/ConfigManager";
 import YouTubeLiveAdmin from "layouts/YouTubeLiveAdmin";
 import AdminLiveSessionsPage from "layouts/AdminLiveSessionsPage";
@@ -315,6 +317,18 @@ const routes = [
     show: true, // hiện trên sidebar
   },
 
+  {
+    type: "collapse",
+    name: "FB Page Monitor",
+    key: "fb-page-monitor",
+    icon: <Icon fontSize="small">monitoring</Icon>,
+    route: "/admin/fb-page-monitor",
+    component: <FbPageMonitorPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+
   // 🆕 Facebook Page Tokens (Admin)
   {
     type: "collapse",
@@ -464,6 +478,16 @@ const routes = [
     icon: <Icon fontSize="small">how_to_reg</Icon>,
     route: "/admin/auto-registrations",
     component: <AutoRegistrationsPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "AI Import Đăng ký",
+    key: "ai-registration-import",
+    icon: <Icon fontSize="small">smart_toy</Icon>,
+    route: "/admin/ai-registration-import",
+    component: <AiRegistrationImportPage />,
     private: true,
     roles: ["admin"],
   },

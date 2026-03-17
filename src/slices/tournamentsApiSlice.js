@@ -504,6 +504,20 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       //   { type: "Tournament", id: arg.tourId },
       // ],
     }),
+    previewAiRegistrationImport: builder.mutation({
+      query: ({ tourId, body }) => ({
+        url: `/admin/tournaments/${tourId}/registrations/ai-import/preview`,
+        method: "POST",
+        body,
+      }),
+    }),
+    commitAiRegistrationImport: builder.mutation({
+      query: ({ tourId, body }) => ({
+        url: `/admin/tournaments/${tourId}/registrations/ai-import/commit`,
+        method: "POST",
+        body,
+      }),
+    }),
     // Danh sách gần đây (limit + sort)
     getRecentTournaments: builder.query({
       query: ({ limit = 50, sort = "-updatedAt" } = {}) => ({
@@ -713,6 +727,8 @@ export const {
   useCommitTournamentPlanMutation,
   usePlanTournamentMutation,
   useAutoGenerateRegistrationsMutation,
+  usePreviewAiRegistrationImportMutation,
+  useCommitAiRegistrationImportMutation,
   useGetRecentTournamentsQuery,
   useSearchTournamentsQuery,
   useGetTournamentByIdQuery,
