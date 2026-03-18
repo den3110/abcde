@@ -1,0 +1,33 @@
+[
+  { "fullName1": "Nguyễn Thanh Bình", "fullName2": "Trần Thị Kim Loan" },
+  { "fullName1": "Tùng VT", "fullName2": "Yến Lê" },
+  { "fullName1": "Tâm Văn", "fullName2": "Linh Lô" },
+  { "fullName1": "Nguyễn Cao Đình", "fullName2": "Ngô Thị Ngọc" },
+  { "fullName1": "Nguyễn Trường Cửu Long", "fullName2": "Trần Bống" },
+  { "fullName1": "Dương Greenleaf", "fullName2": "Nguyễn Minh Thu" },
+  { "fullName1": "Lưu Quang Ninh", "fullName2": "Linh Cao" },
+  { "fullName1": "Lê Đăng Minh Châu", "fullName2": "Nguyễn Thanh Hương" },
+
+  { "fullName1": "Duy Vũ", "fullName2": "Bách Hợp" },
+  { "fullName1": "Hà Quỳnh Liên", "fullName2": "Nguyễn Đạo Huy" },
+  { "fullName1": "Cảnh Ca", "fullName2": "Phương Đoàn" },
+  { "fullName1": "Trương Khánh Toàn", "fullName2": "Lương Mỹ Duyên" },
+  { "fullName1": "Trần Phương Nam", "fullName2": "Nguyễn Thị Ngọc Khánh" },
+  { "fullName1": "Nguyễn Thanh Phong", "fullName2": "Nguyễn Thị Huệ Anh" },
+
+  { "fullName1": "Nguyễn Văn Khánh", "fullName2": "Ngô Thị Thu Hà" },
+  { "fullName1": "Trần Quang Đức", "fullName2": "Nguyễn Linh Giang" },
+  { "fullName1": "Trịnh Khắc Toàn", "fullName2": "Phạm Ngọc Anh" },
+  { "fullName1": "Nguyễn Văn Phúc", "fullName2": "Nguyễn Thị Thu Uyên" },
+  { "fullName1": "Chu Đức Anh", "fullName2": "Nguyễn Thu Huyền" },
+  { "fullName1": "Bùi Hiếu", "fullName2": "Chu Ngọc Trâm" },
+  { "fullName1": "Nguyễn Lưu Khang", "fullName2": "Vũ Thị Quyên" },
+  { "fullName1": "Vũ Đình Điệp", "fullName2": "Đậu Phan Ngọc Ánh" },
+  { "fullName1": "Hoàng Văn Quang", "fullName2": "Nguyễn Thị Trang" },
+
+  { "fullName1": "Nguyễn Thành", "fullName2": "Minh Lý" },
+  { "fullName1": "Lý Huy", "fullName2": "Trần Hồng Vân" },
+  { "fullName1": "Nguyễn Viết Hoàng", "fullName2": "Nguyễn Ngọc Ánh" },
+  { "fullName1": "Vương Đắc Trung", "fullName2": "Thu Huyền" },
+  { "fullName1": "Lê Trung Anh", "fullName2": "Nhãn Hà" }
+]

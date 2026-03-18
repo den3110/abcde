@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Autocomplete,
@@ -44,6 +44,7 @@ import {
   useCommitAiRegistrationImportMutation,
   useGetTournamentQuery,
   useListTournamentsQuery,
+  useQuickImportAiRegistrationJsonMutation,
 } from "slices/tournamentsApiSlice";
 
 const STATUS_META = {
@@ -286,11 +287,61 @@ function buildApiUrl(path) {
   return `${API_BASE_URL}${path}`;
 }
 
-function buildPreviewRequestHeaders(token) {
+async function buildImportFileSnapshot(file) {
+  if (!file) return "";
+
+  const name = String(file.name || "").toLowerCase();
+  const isSpreadsheet = /\.(xlsx|xls)$/i.test(name);
+
+  if (isSpreadsheet) {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const firstSheetName = workbook.SheetNames.find((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) return false;
+      const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false }).trim();
+      return Boolean(csv);
+    });
+
+    if (!firstSheetName) return "";
+    return XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheetName], { blankrows: false }).trim();
+  }
+
+  return (await file.text()).replace(/^\uFEFF/, "").trim();
+}
+
+async function parseQuickJsonTeamsFile(file) {
+  if (!file) {
+    throw new Error("Hãy chọn file JSON trước");
+  }
+
+  if (!/\.json$/i.test(String(file.name || ""))) {
+    throw new Error("Chức năng này chỉ nhận file JSON");
+  }
+
+  const raw = (await file.text()).replace(/^\uFEFF/, "").trim();
+  const parsed = JSON.parse(raw);
+  const teams = Array.isArray(parsed) ? parsed : parsed?.teams;
+
+  if (!Array.isArray(teams) || !teams.length) {
+    throw new Error("File JSON phải là một mảng đội");
+  }
+
+  return teams.map((item, index) => ({
+    rowId: String(item?.rowId || `quick-json-${index + 1}`),
+    rowNumber: Number(item?.rowNumber) || index + 1,
+    fullName1: String(item?.fullName1 || item?.name1 || item?.player1 || "").trim(),
+    fullName2: String(item?.fullName2 || item?.name2 || item?.player2 || "").trim(),
+  }));
+}
+
+function buildPreviewRequestHeaders(token, options = {}) {
+  const { isFormData = false } = options;
   const headers = {
-    "content-type": "application/json",
     accept: "text/event-stream",
   };
+
+  if (!isFormData) headers["content-type"] = "application/json";
 
   if (token) headers.authorization = `Bearer ${token}`;
 
@@ -380,13 +431,14 @@ async function readSseStream(response, onEvent) {
 }
 
 async function streamPreviewImport({ tourId, body, token, onEvent }) {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const response = await fetch(
     buildApiUrl(`/admin/tournaments/${tourId}/registrations/ai-import/preview-stream`),
     {
       method: "POST",
       credentials: "include",
-      headers: buildPreviewRequestHeaders(token),
-      body: JSON.stringify(body),
+      headers: buildPreviewRequestHeaders(token, { isFormData }),
+      body: isFormData ? body : JSON.stringify(body),
     }
   );
 
@@ -499,6 +551,7 @@ export default function AiRegistrationImportPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialId = searchParams.get("t") || "";
   const authToken = useSelector((state) => state.auth.userInfo?.token || "");
+  const resultSectionRef = useRef(null);
 
   const [status, setStatus] = useState("all");
   const [selectedTournament, setSelectedTournament] = useState(null);
@@ -506,6 +559,8 @@ export default function AiRegistrationImportPage() {
   const [inputMode, setInputMode] = useState("sheet");
   const [sheetUrl, setSheetUrl] = useState("");
   const [rawText, setRawText] = useState("");
+  const [importFile, setImportFile] = useState(null);
+  const [importFileSnapshot, setImportFileSnapshot] = useState("");
   const [adminPrompt, setAdminPrompt] = useState("");
   const [previewData, setPreviewData] = useState(null);
   const [previewErrorDiagnostics, setPreviewErrorDiagnostics] = useState(null);
@@ -521,6 +576,9 @@ export default function AiRegistrationImportPage() {
   const [commitResult, setCommitResult] = useState(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paidRowIds, setPaidRowIds] = useState([]);
+  const [quickJsonDialogOpen, setQuickJsonDialogOpen] = useState(false);
+  const [quickJsonTeams, setQuickJsonTeams] = useState([]);
+  const [quickJsonPaidRowIds, setQuickJsonPaidRowIds] = useState([]);
   const [userExportAnchorEl, setUserExportAnchorEl] = useState(null);
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
 
@@ -538,6 +596,8 @@ export default function AiRegistrationImportPage() {
     refetchOnMountOrArgChange: true,
   });
   const [commitImport, { isLoading: committing }] = useCommitAiRegistrationImportMutation();
+  const [quickImportJson, { isLoading: quickImporting }] =
+    useQuickImportAiRegistrationJsonMutation();
 
   const options = useMemo(
     () =>
@@ -586,6 +646,11 @@ export default function AiRegistrationImportPage() {
     setPaidRowIds([]);
   }, [previewData]);
 
+  useEffect(() => {
+    if (!commitResult || !resultSectionRef.current) return;
+    resultSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [commitResult]);
+
   const gridRows = useMemo(
     () =>
       rows.map((row) => ({
@@ -596,7 +661,8 @@ export default function AiRegistrationImportPage() {
   );
 
   const canPreview = Boolean(
-    tournamentId && (inputMode === "sheet" ? sheetUrl.trim() : rawText.trim())
+    tournamentId &&
+      (inputMode === "sheet" ? sheetUrl.trim() : inputMode === "file" ? importFile : rawText.trim())
   );
   const canCommit = Boolean(tournamentId && selectedRows.length > 0 && !committing);
   const canCommitAllReady = Boolean(tournamentId && readyRows.length > 0 && !committing);
@@ -618,6 +684,17 @@ export default function AiRegistrationImportPage() {
     readyRows.length > 0 && readyRows.every((row) => paidRowIdSet.has(row.rowId));
   const partiallyPaid =
     paidRowIds.length > 0 && paidRowIds.length < Math.max(allReadyRowIds.length, 1);
+  const quickJsonPaidRowIdSet = useMemo(() => new Set(quickJsonPaidRowIds), [quickJsonPaidRowIds]);
+  const allQuickJsonRowIds = useMemo(
+    () => quickJsonTeams.map((row) => row.rowId),
+    [quickJsonTeams]
+  );
+  const allQuickJsonPaid =
+    quickJsonTeams.length > 0 &&
+    quickJsonTeams.every((row) => quickJsonPaidRowIdSet.has(row.rowId));
+  const partiallyQuickJsonPaid =
+    quickJsonPaidRowIds.length > 0 &&
+    quickJsonPaidRowIds.length < Math.max(allQuickJsonRowIds.length, 1);
 
   const pushPreviewProgress = (payload = {}) => {
     const next = {
@@ -640,6 +717,36 @@ export default function AiRegistrationImportPage() {
     }));
   };
 
+  const handleImportFileChange = async (event) => {
+    const nextFile = event.target.files?.[0] || null;
+    event.target.value = "";
+
+    if (!nextFile) {
+      setImportFile(null);
+      setImportFileSnapshot("");
+      return;
+    }
+
+    try {
+      const snapshot = await buildImportFileSnapshot(nextFile);
+      setImportFile(nextFile);
+      setImportFileSnapshot(snapshot);
+      setSnack({
+        open: true,
+        type: "success",
+        msg: `Đã nạp file ${nextFile.name}`,
+      });
+    } catch (error) {
+      setImportFile(null);
+      setImportFileSnapshot("");
+      setSnack({
+        open: true,
+        type: "error",
+        msg: error?.message || "Không đọc được file này",
+      });
+    }
+  };
+
   const handlePreview = async () => {
     setPreviewing(true);
     setPreviewData(null);
@@ -654,10 +761,20 @@ export default function AiRegistrationImportPage() {
     });
 
     try {
-      const body =
-        inputMode === "sheet"
-          ? { sheetUrl: sheetUrl.trim(), adminPrompt: adminPrompt.trim() }
-          : { rawText: rawText.trim(), adminPrompt: adminPrompt.trim() };
+      let body;
+      if (inputMode === "sheet") {
+        body = { sheetUrl: sheetUrl.trim(), adminPrompt: adminPrompt.trim() };
+      } else if (inputMode === "file") {
+        if (!importFile) {
+          throw new Error("Hãy chọn file đăng ký trước khi xem trước");
+        }
+        body = new FormData();
+        body.append("file", importFile);
+        body.append("rawText", importFileSnapshot || "");
+        body.append("adminPrompt", adminPrompt.trim());
+      } else {
+        body = { rawText: rawText.trim(), adminPrompt: adminPrompt.trim() };
+      }
       let streamedResult = null;
       let streamedError = "";
       let streamedErrorDiagnostics = null;
@@ -750,7 +867,7 @@ export default function AiRegistrationImportPage() {
       setSnack({
         open: true,
         type: "success",
-        msg: `Đã tạo ${res.createdRegistrations} lượt đăng ký và ${res.createdUsers} tài khoản tạm`,
+        msg: `Đã tạo ${res.createdRegistrations} đội/cặp đăng ký và ${res.createdUsers} tài khoản VĐV`,
       });
       return true;
     } catch (error) {
@@ -785,6 +902,111 @@ export default function AiRegistrationImportPage() {
     if (ok) {
       setPaymentDialogOpen(false);
       setPaidRowIds([]);
+    }
+  };
+
+  const handleQuickImportJsonTeams = async () => {
+    try {
+      if (!tournamentId) {
+        throw new Error("Hãy chọn giải trước");
+      }
+      if (String(tournament?.eventType || "double") === "single") {
+        throw new Error("Nhập nhanh JSON này chỉ áp dụng cho giải đôi");
+      }
+
+      const teams = await parseQuickJsonTeamsFile(importFile);
+      setQuickJsonTeams(teams);
+      setQuickJsonPaidRowIds([]);
+      setQuickJsonDialogOpen(true);
+    } catch (error) {
+      setSnack({
+        open: true,
+        type: "error",
+        msg:
+          error?.data?.message ||
+          error?.message ||
+          error?.error ||
+          "Không nhập nhanh được file JSON này",
+      });
+    }
+  };
+
+  const handleQuickJsonFileChange = async (event) => {
+    const nextFile = event.target.files?.[0] || null;
+    event.target.value = "";
+
+    if (!nextFile) return;
+
+    try {
+      if (!tournamentId) {
+        throw new Error("Hãy chọn giải trước");
+      }
+      if (String(tournament?.eventType || "double") === "single") {
+        throw new Error("Nhập nhanh JSON này chỉ áp dụng cho giải đôi");
+      }
+
+      const snapshot = await buildImportFileSnapshot(nextFile);
+      const teams = await parseQuickJsonTeamsFile(nextFile);
+
+      setInputMode("file");
+      setImportFile(nextFile);
+      setImportFileSnapshot(snapshot);
+      setQuickJsonTeams(teams);
+      setQuickJsonPaidRowIds([]);
+      setQuickJsonDialogOpen(true);
+    } catch (error) {
+      setSnack({
+        open: true,
+        type: "error",
+        msg:
+          error?.data?.message ||
+          error?.message ||
+          error?.error ||
+          "Không nhập nhanh được file JSON này",
+      });
+    }
+  };
+
+  const handleToggleQuickJsonPaidRow = (rowId) => {
+    setQuickJsonPaidRowIds((prev) =>
+      prev.includes(rowId) ? prev.filter((value) => value !== rowId) : [...prev, rowId]
+    );
+  };
+
+  const handleToggleAllQuickJsonPaidRows = (checked) => {
+    setQuickJsonPaidRowIds(checked ? allQuickJsonRowIds : []);
+  };
+
+  const handleConfirmQuickJsonImport = async () => {
+    try {
+      const teams = quickJsonTeams.map((team) => ({
+        ...team,
+        paid: quickJsonPaidRowIdSet.has(team.rowId),
+      }));
+      const res = await quickImportJson({
+        tourId: tournamentId,
+        body: { teams },
+      }).unwrap();
+
+      setCommitResult(res);
+      setQuickJsonDialogOpen(false);
+      setQuickJsonTeams([]);
+      setQuickJsonPaidRowIds([]);
+      setSnack({
+        open: true,
+        type: "success",
+        msg: `Đã nhập nhanh ${res.createdRegistrations} đội/cặp và tạo ${res.createdUsers} tài khoản VĐV`,
+      });
+    } catch (error) {
+      setSnack({
+        open: true,
+        type: "error",
+        msg:
+          error?.data?.message ||
+          error?.message ||
+          error?.error ||
+          "Không nhập nhanh được file JSON này",
+      });
     }
   };
 
@@ -940,8 +1162,8 @@ export default function AiRegistrationImportPage() {
               Nhập đăng ký
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Chọn giải rồi dán danh sách đăng ký hoặc nhập link Google Sheet. Hệ thống sẽ đọc trước
-              để bạn kiểm tra, sau đó mới lưu chính thức.
+              Chọn giải rồi nạp file đăng ký, dán danh sách hoặc nhập link Google Sheet. Hệ thống sẽ
+              đọc trước để bạn kiểm tra, sau đó mới lưu chính thức.
             </Typography>
           </Box>
 
@@ -1021,31 +1243,61 @@ export default function AiRegistrationImportPage() {
                     onChange={(e) => setInputMode(e.target.value)}
                   >
                     <MenuItem value="sheet">Dùng link Google Sheet</MenuItem>
+                    <MenuItem value="file">Nạp file đăng ký</MenuItem>
                     <MenuItem value="paste">Dán trực tiếp</MenuItem>
                   </TextField>
                 </Grid>
-                <Grid item xs={12} md={8}>
-                  <TextField
-                    fullWidth
-                    label="Link Google Sheet"
-                    value={sheetUrl}
-                    onChange={(e) => setSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    multiline
-                    minRows={8}
-                    label="Dữ liệu đăng ký"
-                    value={rawText}
-                    onChange={(e) => setRawText(e.target.value)}
-                    placeholder={
-                      "Dán nội dung copy từ Google Sheets, Excel hoặc file CSV vào đây nếu không dùng link"
-                    }
-                  />
-                </Grid>
+                {inputMode === "sheet" ? (
+                  <Grid item xs={12} md={8}>
+                    <TextField
+                      fullWidth
+                      label="Link Google Sheet"
+                      value={sheetUrl}
+                      onChange={(e) => setSheetUrl(e.target.value)}
+                      placeholder="https://docs.google.com/spreadsheets/d/..."
+                    />
+                  </Grid>
+                ) : null}
+                {inputMode === "file" ? (
+                  <Grid item xs={12} md={8}>
+                    <Stack spacing={1.25}>
+                      <Button
+                        variant="outlined"
+                        component="label"
+                        startIcon={<CloudUploadIcon />}
+                        sx={{ alignSelf: "flex-start" }}
+                      >
+                        Chọn file đăng ký
+                        <input
+                          hidden
+                          type="file"
+                          accept=".xlsx,.xls,.csv,.txt,.json"
+                          onChange={handleImportFileChange}
+                        />
+                      </Button>
+                      <Typography variant="body2" color="text.secondary">
+                        {importFile
+                          ? `Đã chọn: ${importFile.name}`
+                          : "Hỗ trợ XLSX, XLS, CSV, TXT, JSON"}
+                      </Typography>
+                    </Stack>
+                  </Grid>
+                ) : null}
+                {inputMode === "paste" ? (
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={8}
+                      label="Dữ liệu đăng ký"
+                      value={rawText}
+                      onChange={(e) => setRawText(e.target.value)}
+                      placeholder={
+                        "Dán nội dung copy từ Google Sheets, Excel hoặc file CSV vào đây nếu không dùng link"
+                      }
+                    />
+                  </Grid>
+                ) : null}
                 <Grid item xs={12}>
                   <TextField
                     fullWidth
@@ -1060,8 +1312,9 @@ export default function AiRegistrationImportPage() {
                 </Grid>
                 <Grid item xs={12}>
                   <Alert severity="info">
-                    Nếu dùng link, bảng cần mở public hoặc cho phép tải CSV. Nếu chưa chắc, bạn cứ
-                    copy dữ liệu rồi dán trực tiếp cho ổn định hơn.
+                    Nếu dùng link, bảng cần mở public hoặc cho phép tải CSV. Nếu có file sẵn, bạn có
+                    thể nạp thẳng file đăng ký để Pikora tự phân tích, sau đó xác nhận thanh toán
+                    rồi tạo đăng ký.
                   </Alert>
                 </Grid>
               </Grid>
@@ -1079,6 +1332,24 @@ export default function AiRegistrationImportPage() {
                   flexWrap="wrap"
                   alignItems={{ xs: "stretch", xl: "center" }}
                 >
+                  <Button
+                    variant={inputMode === "file" ? "contained" : "outlined"}
+                    color="secondary"
+                    component="label"
+                    startIcon={<CloudUploadIcon />}
+                    sx={{ minWidth: { xl: 220 } }}
+                  >
+                    Nạp file đăng ký
+                    <input
+                      hidden
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.txt,.json"
+                      onChange={(event) => {
+                        setInputMode("file");
+                        handleImportFileChange(event);
+                      }}
+                    />
+                  </Button>
                   <Button
                     variant="outlined"
                     startIcon={previewing ? <CircularProgress size={16} /> : <VisibilityIcon />}
@@ -1109,7 +1380,24 @@ export default function AiRegistrationImportPage() {
                       ? "Đang tạo đăng ký..."
                       : `Tạo tài khoản + đăng ký giải (${readyRows.length})`}
                   </Button>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    component="label"
+                    startIcon={quickImporting ? <CircularProgress size={16} /> : <DoneAllIcon />}
+                    disabled={!tournamentId || quickImporting}
+                    sx={{ minWidth: { xl: 250 } }}
+                  >
+                    {quickImporting ? "Đang nhập nhanh JSON..." : "Nhập nhanh JSON đội đôi"}
+                    <input hidden type="file" accept=".json" onChange={handleQuickJsonFileChange} />
+                  </Button>
                 </Stack>
+
+                {importFile ? (
+                  <Typography variant="body2" color="text.secondary">
+                    File đang chọn: {importFile.name}
+                  </Typography>
+                ) : null}
 
                 {previewExports.length ? (
                   <Stack
@@ -1185,7 +1473,7 @@ export default function AiRegistrationImportPage() {
                   <Chip label={`Bỏ qua: ${previewSummary.skippedRows}`} />
                   <Chip label={`Cụm hồ sơ: ${previewSummary.candidateGroups || rows.length}`} />
                   <Chip label={`Đã khớp sẵn: ${previewSummary.matchedPlayers}`} />
-                  <Chip label={`Tài khoản tạm: ${previewSummary.tempPlayers}`} />
+                  <Chip label={`VĐV cần tạo tài khoản: ${previewSummary.tempPlayers}`} />
                   <Chip
                     icon={<CloudUploadIcon />}
                     label={
@@ -1348,35 +1636,49 @@ export default function AiRegistrationImportPage() {
           </Card>
 
           {commitResult ? (
-            <Card variant="outlined">
+            <Card variant="outlined" ref={resultSectionRef}>
               <CardHeader title="Kết quả lưu" />
               <CardContent>
-                <Stack direction="row" spacing={1} mb={2} flexWrap="wrap">
-                  <Chip color="success" label={`Đăng ký: ${commitResult.createdRegistrations}`} />
-                  <Chip color="primary" label={`Tài khoản tạm: ${commitResult.createdUsers}`} />
-                  <Chip label={`Đã xử lý: ${(commitResult.results || []).length} dòng`} />
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1}
+                  mb={2}
+                  useFlexGap
+                  flexWrap="wrap"
+                  alignItems={{ xs: "stretch", md: "center" }}
+                >
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    <Chip
+                      color="success"
+                      label={`Đội/cặp đăng ký: ${commitResult.createdRegistrations}`}
+                    />
+                    <Chip
+                      color="primary"
+                      label={`Tài khoản VĐV tạo mới: ${commitResult.createdUsers}`}
+                    />
+                    <Chip label={`Đã xử lý: ${(commitResult.results || []).length} dòng`} />
+                  </Stack>
+                  {credentials.length ? (
+                    <Button
+                      variant="contained"
+                      startIcon={<FileDownloadIcon />}
+                      endIcon={<ArrowDropDownIcon />}
+                      onClick={handleOpenUserExportMenu}
+                    >
+                      Xuất thông tin user vừa tạo
+                    </Button>
+                  ) : null}
                 </Stack>
 
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Mỗi dòng đăng ký hợp lệ tạo ra 1 đội/cặp đăng ký. Nếu là nội dung đôi thì 1 dòng
+                  có thể phát sinh 2 tài khoản VĐV mới, nên số tài khoản thường lớn hơn số đội/cặp.
+                </Alert>
+
                 {!credentials.length ? (
-                  <Alert severity="info">Đã lưu xong, không phát sinh tài khoản tạm mới.</Alert>
+                  <Alert severity="info">Đã lưu xong, không phát sinh tài khoản VĐV mới.</Alert>
                 ) : (
                   <Stack spacing={2}>
-                    <Stack
-                      direction={{ xs: "column", md: "row" }}
-                      spacing={1}
-                      useFlexGap
-                      flexWrap="wrap"
-                    >
-                      <Button
-                        variant="outlined"
-                        startIcon={<FileDownloadIcon />}
-                        endIcon={<ArrowDropDownIcon />}
-                        onClick={handleOpenUserExportMenu}
-                      >
-                        Xuất thông tin user vừa tạo
-                      </Button>
-                    </Stack>
-
                     <Menu
                       anchorEl={userExportAnchorEl}
                       open={Boolean(userExportAnchorEl)}
@@ -1421,13 +1723,13 @@ export default function AiRegistrationImportPage() {
         fullWidth
         maxWidth="md"
       >
-        <DialogTitle>Xác nhận thanh toán trước khi tạo đăng ký</DialogTitle>
+        <DialogTitle>Xác nhận thanh toán cho đội/cặp đăng ký</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
             <Typography variant="body2" color="text.secondary">
-              {
-                "Tick các dòng đã xác nhận thanh toán. Dòng được chọn sẽ lưu là đã thanh toán, dòng còn lại sẽ lưu là chưa thanh toán."
-              }
+              Tick các đội/cặp đã xác nhận thanh toán. Mỗi dòng trong danh sách này tương ứng với 1
+              đội/cặp đăng ký. Dòng được chọn sẽ lưu là đã thanh toán, dòng còn lại sẽ lưu là chưa
+              thanh toán.
             </Typography>
 
             <FormControlLabel
@@ -1438,7 +1740,7 @@ export default function AiRegistrationImportPage() {
                   onChange={(event) => handleToggleAllPaidRows(event.target.checked)}
                 />
               }
-              label={`Tất cả (${readyRows.length} dòng)`}
+              label={`Tất cả ${readyRows.length} đội/cặp`}
             />
 
             <Stack spacing={1} sx={{ maxHeight: 420, overflowY: "auto", pr: 1 }}>
@@ -1472,11 +1774,12 @@ export default function AiRegistrationImportPage() {
                           }`}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Thanh toán preview: {row.paymentStatus || "Chưa rõ"}
+                          Trạng thái thanh toán hiện tại: {row.paymentStatus || "Chưa rõ"}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Sẽ lưu:{" "}
-                          {paidRowIdSet.has(row.rowId) ? "Đã thanh toán" : "Chưa thanh toán"}
+                          {paidRowIdSet.has(row.rowId)
+                            ? "Đội/cặp này sẽ được lưu là đã thanh toán"
+                            : "Đội/cặp này sẽ được lưu là chưa thanh toán"}
                         </Typography>
                       </Stack>
                     }
@@ -1497,7 +1800,95 @@ export default function AiRegistrationImportPage() {
             disabled={!readyRows.length || committing}
             onClick={handleConfirmCommitAllReady}
           >
-            {committing ? "Đang tạo đăng ký..." : `Xác nhận tạo ${readyRows.length} đăng ký`}
+            {committing
+              ? "Đang tạo đăng ký..."
+              : `Xác nhận tạo ${readyRows.length} đội/cặp đăng ký`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={quickJsonDialogOpen}
+        onClose={() => {
+          if (!quickImporting) setQuickJsonDialogOpen(false);
+        }}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Xác nhận thanh toán cho JSON đội đôi</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Typography variant="body2" color="text.secondary">
+              File JSON này sẽ được nhập theo kiểu 1 object = 1 đội/cặp. Tick các đội/cặp đã thanh
+              toán trước khi tạo user và đăng ký giải.
+            </Typography>
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={allQuickJsonPaid}
+                  indeterminate={partiallyQuickJsonPaid}
+                  onChange={(event) => handleToggleAllQuickJsonPaidRows(event.target.checked)}
+                />
+              }
+              label={`Tất cả ${quickJsonTeams.length} đội/cặp`}
+            />
+
+            <Stack spacing={1} sx={{ maxHeight: 420, overflowY: "auto", pr: 1 }}>
+              {quickJsonTeams.map((row) => (
+                <Box
+                  key={row.rowId}
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 2,
+                    px: 1.5,
+                    py: 1,
+                  }}
+                >
+                  <FormControlLabel
+                    sx={{ m: 0, alignItems: "flex-start", width: "100%" }}
+                    control={
+                      <Checkbox
+                        checked={quickJsonPaidRowIdSet.has(row.rowId)}
+                        onChange={() => handleToggleQuickJsonPaidRow(row.rowId)}
+                        sx={{ mt: 0.25 }}
+                      />
+                    }
+                    label={
+                      <Stack spacing={0.25} sx={{ py: 0.25 }}>
+                        <Typography variant="body2" fontWeight={700}>
+                          {`Dòng ${row.rowNumber}: ${row.fullName1 || "-"} • ${
+                            row.fullName2 || "-"
+                          }`}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {quickJsonPaidRowIdSet.has(row.rowId)
+                            ? "Đội/cặp này sẽ được lưu là đã thanh toán"
+                            : "Đội/cặp này sẽ được lưu là chưa thanh toán"}
+                        </Typography>
+                      </Stack>
+                    }
+                  />
+                </Box>
+              ))}
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={quickImporting} onClick={() => setQuickJsonDialogOpen(false)}>
+            Hủy
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            startIcon={quickImporting ? <CircularProgress size={16} /> : <DoneAllIcon />}
+            disabled={!quickJsonTeams.length || quickImporting}
+            onClick={handleConfirmQuickJsonImport}
+          >
+            {quickImporting
+              ? "Đang nhập nhanh JSON..."
+              : `Xác nhận tạo ${quickJsonTeams.length} đội/cặp từ JSON`}
           </Button>
         </DialogActions>
       </Dialog>
