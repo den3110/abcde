@@ -36,6 +36,7 @@ import {
   useGetTournamentQuery,
   useUpdateTournamentMutation,
   useUploadAvatarMutation,
+  useUploadTournamentImageMutation,
 } from "../../slices/tournamentsApiSlice";
 import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -409,6 +410,7 @@ export default function TournamentFormPage() {
   const [createTour] = useCreateTournamentMutation();
   const [updateTour] = useUpdateTournamentMutation();
   const [uploadAvatar] = useUploadAvatarMutation();
+  const [uploadTournamentImage] = useUploadTournamentImageMutation();
 
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -424,6 +426,7 @@ export default function TournamentFormPage() {
     sportType: 1,
     groupId: 0,
     eventType: "double",
+    nameDisplayMode: "nickname",
     regOpenDT: nowStr,
     registrationDeadlineDT: nowStr,
     startDT: nowStr,
@@ -462,7 +465,10 @@ export default function TournamentFormPage() {
   const contactQuillRef = useRef(null);
   const contentQuillRef = useRef(null);
 
-  const uploadImageAndGetUrl = async (file) => {
+  const resolveUploadedUrl = (res) =>
+    res?.url || res?.path || res?.secure_url || res?.data?.url || res?.data?.path || "";
+
+  const uploadImageAndGetUrl = async (file, kind = "editor") => {
     if (!file) return null;
     if (!file.type?.startsWith("image/")) {
       toast.error("Vui lòng chọn đúng file ảnh (PNG/JPG/WebP...)");
@@ -474,9 +480,11 @@ export default function TournamentFormPage() {
     }
     try {
       setUploading(true);
-      const res = await uploadAvatar(file).unwrap();
-      const url =
-        res?.url || res?.path || res?.secure_url || res?.data?.url || res?.data?.path || "";
+      const res = await (kind === "tournament"
+        ? uploadTournamentImage(file)
+        : uploadAvatar(file)
+      ).unwrap();
+      const url = resolveUploadedUrl(res);
       if (!url) throw new Error("Không tìm thấy URL ảnh từ server");
       return url;
     } catch (err) {
@@ -493,7 +501,7 @@ export default function TournamentFormPage() {
     input.accept = "image/*";
     input.onchange = async () => {
       const file = input.files?.[0];
-      const url = await uploadImageAndGetUrl(file);
+      const url = await uploadImageAndGetUrl(file, "editor");
       if (!url) return;
       const quill = quillRef.current?.getEditor?.();
       if (!quill) return;
@@ -576,6 +584,7 @@ export default function TournamentFormPage() {
       sportType: 1,
       groupId: Number(tour.groupId ?? 0),
       eventType: tour.eventType || "double",
+      nameDisplayMode: tour.nameDisplayMode === "fullName" ? "fullName" : "nickname",
 
       regOpenDT: fixZToNaive(tour.regOpenDate) || nowStr,
       registrationDeadlineDT: fixZToNaive(tour.registrationDeadline) || nowStr,
@@ -687,6 +696,7 @@ export default function TournamentFormPage() {
       sportType: 1,
       groupId: Number(form.groupId) || 0,
       eventType: form.eventType,
+      nameDisplayMode: form.nameDisplayMode === "fullName" ? "fullName" : "nickname",
 
       regOpenDate: regOpenDT,
       registrationDeadline: registrationDeadlineDT,
@@ -823,7 +833,7 @@ export default function TournamentFormPage() {
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = await uploadImageAndGetUrl(file);
+    const url = await uploadImageAndGetUrl(file, "tournament");
     if (url) {
       setForm((prev) => ({ ...prev, image: url }));
       toast.success("Tải ảnh thành công");
@@ -1006,6 +1016,24 @@ export default function TournamentFormPage() {
                     <MenuItem value="single">Đơn</MenuItem>
                     <MenuItem value="double">Đôi</MenuItem>
                   </TextField>
+                  <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Hiển thị tên VĐV
+                    </Typography>
+                    <RadioGroup
+                      row
+                      name="nameDisplayMode"
+                      value={form.nameDisplayMode}
+                      onChange={onChange}
+                    >
+                      <FormControlLabel value="nickname" control={<Radio />} label="Nickname" />
+                      <FormControlLabel value="fullName" control={<Radio />} label="Họ và tên" />
+                    </RadioGroup>
+                    <Typography variant="caption" color="text.secondary">
+                      Chỉ đổi cách hiển thị tên VĐV/cặp đấu của giải này. Logic bốc thăm, seed,
+                      score và đăng ký giữ nguyên.
+                    </Typography>
+                  </Card>
                   <TextField
                     name="location"
                     label="Địa điểm"

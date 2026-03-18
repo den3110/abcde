@@ -24,8 +24,16 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: (result) => [{ type: "LiveSessions", id: "LIST" }],
     }),
+    getLiveRecordingMonitor: builder.query({
+      query: () => ({
+        url: "/live/recordings/v2/admin/monitor",
+        method: "GET",
+      }),
+      keepUnusedDataFor: 5,
+      providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
   }),
   overrideExisting: false,
 });
 
-export const { useAdminListLiveSessionsQuery } = liveApiSlice;
+export const { useAdminListLiveSessionsQuery, useGetLiveRecordingMonitorQuery } = liveApiSlice;

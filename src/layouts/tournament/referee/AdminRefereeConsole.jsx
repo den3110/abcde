@@ -58,6 +58,10 @@ import {
 } from "slices/tournamentsApiSlice";
 import { useSocket } from "context/SocketContext";
 import RefereeMatchesPanel from "./RefereeMatchesPanel";
+import {
+  getTournamentNameDisplayMode,
+  getTournamentPairName,
+} from "utils/tournamentName";
 
 /* ================= helpers ================= */
 export const VI_MATCH_STATUS = {
@@ -95,15 +99,10 @@ const isEditableTarget = (el) => {
   return false;
 };
 
-function nickOrName(p) {
-  return p?.nickname || p?.nick || p?.shortName || p?.fullName || p?.name || "Chưa có đội";
-}
-
-export function pairLabel(reg, eventType = "double") {
-  if (!reg) return "Chưa có đội";
-  const p1 = nickOrName(reg.player1 || reg.p1);
-  const p2 = nickOrName(reg.player2 || reg.p2);
-  return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
+export function pairLabel(reg, eventType = "double", displayMode = "nickname") {
+  return getTournamentPairName(reg, eventType, displayMode, {
+    fallback: "Chưa có đội",
+  });
 }
 const needWins = (bestOf = 3) => Math.floor(bestOf / 2) + 1;
 const isGameWin = (a = 0, b = 0, pointsToWin = 11, winByTwo = true) => {
@@ -543,6 +542,7 @@ export default function AdminRefereeConsole() {
 
   const rules = match?.rules || { bestOf: 3, pointsToWin: 11, winByTwo: true };
   const eventType = (match?.tournament?.eventType || "double").toLowerCase();
+  const displayMode = getTournamentNameDisplayMode(match?.tournament);
   const isDoubles = eventType !== "single";
   const gs = match?.gameScores || [];
   const needSetWinsVal = needWins(rules.bestOf);
@@ -826,12 +826,14 @@ export default function AdminRefereeConsole() {
                     <Typography variant="h5" fontWeight={700}>
                       {pairLabel(
                         match.pairA,
-                        (match?.tournament?.eventType || "double").toLowerCase()
+                        (match?.tournament?.eventType || "double").toLowerCase(),
+                        displayMode
                       )}{" "}
                       <span style={{ opacity: 0.6 }}>vs</span>{" "}
                       {pairLabel(
                         match.pairB,
-                        (match?.tournament?.eventType || "double").toLowerCase()
+                        (match?.tournament?.eventType || "double").toLowerCase(),
+                        displayMode
                       )}
                     </Typography>
                   </Stack>
@@ -958,7 +960,8 @@ export default function AdminRefereeConsole() {
                     A){" "}
                     {pairLabel(
                       match.pairA,
-                      (match?.tournament?.eventType || "double").toLowerCase()
+                      (match?.tournament?.eventType || "double").toLowerCase(),
+                      displayMode
                     )}
                   </Typography>
                   <Box
@@ -1055,7 +1058,8 @@ export default function AdminRefereeConsole() {
                     B){" "}
                     {pairLabel(
                       match.pairB,
-                      (match?.tournament?.eventType || "double").toLowerCase()
+                      (match?.tournament?.eventType || "double").toLowerCase(),
+                      displayMode
                     )}
                   </Typography>
                   <Box
@@ -1310,7 +1314,8 @@ export default function AdminRefereeConsole() {
                   control={<Radio />}
                   label={`A) ${pairLabel(
                     match?.pairA,
-                    (match?.tournament?.eventType || "double").toLowerCase()
+                    (match?.tournament?.eventType || "double").toLowerCase(),
+                    displayMode
                   )}`}
                 />
                 <FormControlLabel
@@ -1318,7 +1323,8 @@ export default function AdminRefereeConsole() {
                   control={<Radio />}
                   label={`B) ${pairLabel(
                     match?.pairB,
-                    (match?.tournament?.eventType || "double").toLowerCase()
+                    (match?.tournament?.eventType || "double").toLowerCase(),
+                    displayMode
                   )}`}
                 />
               </RadioGroup>

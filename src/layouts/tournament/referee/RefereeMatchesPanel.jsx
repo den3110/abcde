@@ -46,6 +46,7 @@ import {
   VI_MATCH_STATUS,
 } from "./AdminRefereeConsole";
 import PropTypes from "prop-types";
+import { getTournamentNameDisplayMode } from "utils/tournamentName";
 
 /* Ưu tiên lấy mã từ server: codeResolved > code > displayCode > meta.code > _code */
 function pickMatchCode(m) {
@@ -212,6 +213,7 @@ function TournamentAccordion({
                 const chip = getMatchStatusChip(m.status);
                 const courtName = m.court?.name || m.courtName || "";
                 const evt = (m?.tournament?.eventType || "double").toLowerCase();
+                const displayMode = getTournamentNameDisplayMode(m?.tournament);
                 return (
                   <ListItemButton
                     key={m._id}
@@ -253,8 +255,8 @@ function TournamentAccordion({
                       }
                       secondary={
                         <Typography variant="caption">
-                          {pairLabel(m.pairA, evt)} <b style={{ opacity: 0.6 }}>vs</b>{" "}
-                          {pairLabel(m.pairB, evt)}
+                          {pairLabel(m.pairA, evt, displayMode)} <b style={{ opacity: 0.6 }}>vs</b>{" "}
+                          {pairLabel(m.pairB, evt, displayMode)}
                         </Typography>
                       }
                     />

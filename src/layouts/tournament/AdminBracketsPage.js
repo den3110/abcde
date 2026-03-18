@@ -80,6 +80,10 @@ import {
   useClearBracketMatchesMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
+import {
+  getTournamentNameDisplayMode,
+  getTournamentPairName,
+} from "utils/tournamentName";
 
 /* ===== progression slice ===== */
 import {
@@ -107,13 +111,8 @@ function normType(t) {
   if (s === "double" || s === "doubles") return "double";
   return "double";
 }
-const regName = (reg, evType) => {
-  if (!reg) return "—";
-  if (evType === "single") return reg?.player1?.nickName || "N/A";
-  const a = reg?.player1?.nickName || "N/A";
-  const b = reg?.player2?.nickName || "N/A";
-  return `${a} & ${b}`;
-};
+const regName = (reg, evType, displayMode = "nickname") =>
+  getTournamentPairName(reg, evType, displayMode, { fallback: "N/A" });
 
 const detectVideoUrl = (m) => m?.video || "";
 const sanitizeVideoUrl = (s) => String(s || "").trim();
@@ -253,6 +252,7 @@ export default function AdminBracketsPage() {
   const [updateTournament] = useUpdateTournamentMutation(); // ⭐
   const noRankEffectiveForBracket = (br) => !!(br?.noRankDelta || tournament?.noRankDelta); // ⭐ NEW: ưu tiên Bracket > Giải
   const evType = normType(tournament?.eventType);
+  const displayMode = getTournamentNameDisplayMode(tournament);
   const isSingles = evType === "single";
 
   // 2) Danh sách trọng tài
@@ -662,7 +662,7 @@ export default function AdminBracketsPage() {
 
   const getSideLabel = (mt, side) => {
     const pair = side === "A" ? mt?.pairA : mt?.pairB;
-    if (pair) return regName(pair, evType);
+    if (pair) return regName(pair, evType, displayMode);
     const prevRef = side === "A" ? mt?.previousA : mt?.previousB;
     if (!prevRef) return "—";
     // Có thể là object (được populate) hoặc chỉ là id → tìm trong matches
@@ -671,7 +671,7 @@ export default function AdminBracketsPage() {
     const code = getPrevCode(prevFromList) || "?";
     if (prevFromList?.status === "finished" && prevFromList?.winner) {
       const reg = prevFromList.winner === "A" ? prevFromList.pairA : prevFromList.pairB;
-      return `${regName(reg, evType)} (thắng ${code})`;
+      return `${regName(reg, evType, displayMode)} (thắng ${code})`;
     }
     return `Thắng trận ${code} (TBD)`;
   };
@@ -2727,7 +2727,7 @@ export default function AdminBracketsPage() {
               </MenuItem>
               {registrations.map((r) => (
                 <MenuItem key={r._id} value={r._id}>
-                  {regName(r, evType)}
+                  {regName(r, evType, displayMode)}
                 </MenuItem>
               ))}
             </TextField>
@@ -2749,7 +2749,7 @@ export default function AdminBracketsPage() {
               </MenuItem>
               {registrations.map((r) => (
                 <MenuItem key={r._id} value={r._id}>
-                  {regName(r, evType)}
+                  {regName(r, evType, displayMode)}
                 </MenuItem>
               ))}
             </TextField>
@@ -3010,7 +3010,7 @@ export default function AdminBracketsPage() {
               </MenuItem>
               {registrations.map((r) => (
                 <MenuItem key={r._id} value={r._id}>
-                  {regName(r, evType)}
+                  {regName(r, evType, displayMode)}
                 </MenuItem>
               ))}
             </TextField>
@@ -3031,7 +3031,7 @@ export default function AdminBracketsPage() {
               </MenuItem>
               {registrations.map((r) => (
                 <MenuItem key={r._id} value={r._id}>
-                  {regName(r, evType)}
+                  {regName(r, evType, displayMode)}
                 </MenuItem>
               ))}
             </TextField>
@@ -3348,15 +3348,17 @@ export default function AdminBracketsPage() {
                   const rm = row.rightMatch;
 
                   const lmLabel = lm
-                    ? `${getPrevCode(lm)}: ${regName(lm.pairA, evType)} vs ${regName(
+                    ? `${getPrevCode(lm)}: ${regName(lm.pairA, evType, displayMode)} vs ${regName(
                         lm.pairB,
-                        evType
+                        evType,
+                        displayMode
                       )}`
                     : "—";
                   const rmLabel = rm
-                    ? `${getPrevCode(rm)}: ${regName(rm.pairA, evType)} vs ${regName(
+                    ? `${getPrevCode(rm)}: ${regName(rm.pairA, evType, displayMode)} vs ${regName(
                         rm.pairB,
-                        evType
+                        evType,
+                        displayMode
                       )}`
                     : "—";
                   const prevList = (grouped[idOf(nextDlgBracket._id)] || []).filter(
@@ -3394,7 +3396,7 @@ export default function AdminBracketsPage() {
                         </MenuItem>
                         {[lm?.pairA, lm?.pairB].filter(Boolean).map((x, i2) => (
                           <MenuItem key={`${lm?._id}-${i2}`} value={x._id}>
-                            {regName(x, evType)}
+                            {regName(x, evType, displayMode)}
                           </MenuItem>
                         ))}
                       </TextField>
@@ -3433,12 +3435,12 @@ export default function AdminBracketsPage() {
                         {rm
                           ? [rm?.pairA, rm?.pairB].filter(Boolean).map((x, i2) => (
                               <MenuItem key={`${rm?._id}-${i2}`} value={x._id}>
-                                {regName(x, evType)}
+                                {regName(x, evType, displayMode)}
                               </MenuItem>
                             ))
                           : otherTeams.map((t) => (
                               <MenuItem key={t._id} value={t._id}>
-                                {regName(t, evType)}
+                                {regName(t, evType, displayMode)}
                               </MenuItem>
                             ))}
                       </TextField>
@@ -3689,7 +3691,7 @@ export default function AdminBracketsPage() {
                         <Grid key={i} item xs={12} sm={6} md={4}>
                           <Card variant="outlined" sx={{ p: 1 }}>
                             <Typography variant="body2">
-                              <b>#{s.seed}</b> — {reg ? regName(reg, evType) : idOf(s.regId)}
+                              <b>#{s.seed}</b> — {reg ? regName(reg, evType, displayMode) : idOf(s.regId)}
                             </Typography>
                           </Card>
                         </Grid>

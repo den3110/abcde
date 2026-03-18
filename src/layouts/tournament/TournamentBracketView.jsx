@@ -25,6 +25,10 @@ import {
   useListAllMatchesQuery,
   useGetTournamentQuery,
 } from "slices/tournamentsApiSlice";
+import {
+  getTournamentNameDisplayMode,
+  getTournamentPairName,
+} from "utils/tournamentName";
 
 import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
 import PropTypes from "prop-types";
@@ -38,12 +42,8 @@ function normType(t) {
   if (s === "double" || s === "doubles") return "double";
   return "double";
 }
-function safeRegName(pair, evType) {
-  if (!pair) return "—";
-  if (evType === "single") return pair.player1?.fullName || "N/A";
-  const p1 = pair.player1?.fullName || "N/A";
-  const p2 = pair.player2?.fullName || "N/A";
-  return `${p1} & ${p2}`;
+function safeRegName(pair, evType, displayMode = "nickname") {
+  return getTournamentPairName(pair, evType, displayMode, { fallback: "N/A" });
 }
 function depLabel(prev) {
   if (!prev) return "TBD";
@@ -304,6 +304,7 @@ function makeCustomSeed({ emptyLabel, entityWord }) {
 export default function TournamentBracketView() {
   const { id: tourId } = useParams();
   const { data: tour, isLoading: l1, error: e1 } = useGetTournamentQuery(tourId);
+  const displayMode = getTournamentNameDisplayMode(tour);
   const { data: brackets = [], isLoading: l2, error: e2 } = useListBracketsQuery(tourId);
   const { data: allMatches = [], isLoading: l3, error: e3 } = useListAllMatchesQuery();
 
@@ -377,7 +378,7 @@ export default function TournamentBracketView() {
 
       const winSide = srcMatch.winner;
       const pair = winSide === "A" ? srcMatch.pairA : winSide === "B" ? srcMatch.pairB : null;
-      return pair ? safeRegName(pair, evType) : null;
+      return pair ? safeRegName(pair, evType, displayMode) : null;
     },
     [byId, byBracketRoundOrder, evType]
   );
@@ -415,7 +416,9 @@ export default function TournamentBracketView() {
           (x, y) =>
             y.win - x.win ||
             x.loss - y.loss ||
-            (x.pair?.player1?.fullName || "").localeCompare(y.pair?.player1?.fullName || "")
+            safeRegName(x.pair, evType, displayMode).localeCompare(
+              safeRegName(y.pair, evType, displayMode)
+            )
         );
       });
     return map;
@@ -425,7 +428,7 @@ export default function TournamentBracketView() {
   const matchSideLabel = useCallback(
     (m, side /* 'A'|'B' */) => {
       const pair = side === "A" ? m.pairA : m.pairB;
-      if (pair) return safeRegName(pair, evType);
+      if (pair) return safeRegName(pair, evType, displayMode);
 
       const prev = side === "A" ? m.previousA : m.previousB;
       if (prev) {
@@ -562,7 +565,7 @@ export default function TournamentBracketView() {
                         standings.map((row, idx) => (
                           <TableRow key={row.pair?._id || idx}>
                             <TableCell>{idx + 1}</TableCell>
-                            <TableCell>{safeRegName(row.pair, evType)}</TableCell>
+                            <TableCell>{safeRegName(row.pair, evType, displayMode)}</TableCell>
                             <TableCell align="center">{row.win}</TableCell>
                             <TableCell align="center">{row.loss}</TableCell>
                           </TableRow>
@@ -669,7 +672,7 @@ export default function TournamentBracketView() {
 
               {champion && (
                 <Alert severity="success" sx={{ mb: 1 }}>
-                  Vô địch: <b>{safeRegName(champion, evType)}</b>
+                  Vô địch: <b>{safeRegName(champion, evType, displayMode)}</b>
                   {finalLike ? (
                     <>
                       {" "}

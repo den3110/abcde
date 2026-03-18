@@ -38,6 +38,10 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
 import { useNavigate } from "react-router-dom";
+import {
+  getTournamentNameDisplayMode,
+  getTournamentPairName,
+} from "utils/tournamentName";
 
 import { useListRefereeMatchesQuery, useGetMatchQuery } from "slices/tournamentsApiSlice";
 import { useSocket } from "context/SocketContext";
@@ -53,12 +57,15 @@ function statusChipProps(s) {
   }
 }
 
-function pairLabel(reg, eventType = "double") {
+function pairLabel(reg, eventType = "double", displayMode = "nickname") {
+  return getTournamentPairName(reg, eventType, displayMode, {
+    fallback: "N/A",
+  }); /*
   if (!reg) return "—";
   const p1 = reg.player1?.fullName || reg.player1?.name || "N/A";
   const p2 = reg.player2?.fullName || reg.player2?.name;
   return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
-}
+*/}
 
 const ALL = "all";
 
@@ -172,10 +179,12 @@ export default function RefereeMatches() {
       if (stage !== ALL && Number(m.bracket?.stage) !== Number(stage)) return;
       if (round !== ALL && Number(m.round) !== Number(round)) return;
       const evType = (m.tournament?.eventType || "double").toLowerCase();
+      const displayMode = getTournamentNameDisplayMode(m.tournament);
       const label = `${m.code || `Trận #${m.order ?? ""}`} — ${pairLabel(
         m.pairA,
-        evType
-      )} vs ${pairLabel(m.pairB, evType)}`;
+        evType,
+        displayMode
+      )} vs ${pairLabel(m.pairB, evType, displayMode)}`;
       arr.push({ id: String(m._id), label });
     });
     // Sort: theo order trong vòng
@@ -246,10 +255,12 @@ export default function RefereeMatches() {
       // text search
       if (!key) return true;
       const evType = (m.tournament?.eventType || "double").toLowerCase();
+      const displayMode = getTournamentNameDisplayMode(m.tournament);
       const hay = `${m.code || ""} ${m.tournament?.name || ""} ${m.bracket?.name || ""} ${pairLabel(
         m.pairA,
-        evType
-      )} ${pairLabel(m.pairB, evType)} ${m.status || ""}`.toLowerCase();
+        evType,
+        displayMode
+      )} ${pairLabel(m.pairB, evType, displayMode)} ${m.status || ""}`.toLowerCase();
       return hay.includes(key);
     });
 
@@ -281,6 +292,7 @@ export default function RefereeMatches() {
     error: detailError,
     refetch: refetchDetail,
   } = useGetMatchQuery(detailId, { skip: !detailId });
+  const detailDisplayMode = getTournamentNameDisplayMode(detail?.tournament);
 
   // join room socket khi mở dialog chi tiết
   useEffect(() => {
@@ -347,7 +359,7 @@ export default function RefereeMatches() {
                     <Typography fontWeight={700} sx={{ mb: 0.5 }}>
                       Đôi A
                     </Typography>
-                    <Typography>{pairLabel(detail.pairA, evType)}</Typography>
+                    <Typography>{pairLabel(detail.pairA, evType, detailDisplayMode)}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -355,7 +367,7 @@ export default function RefereeMatches() {
                     <Typography fontWeight={700} sx={{ mb: 0.5 }}>
                       Đôi B
                     </Typography>
-                    <Typography>{pairLabel(detail.pairB, evType)}</Typography>
+                    <Typography>{pairLabel(detail.pairB, evType, detailDisplayMode)}</Typography>
                   </Paper>
                 </Grid>
               </Grid>
@@ -640,6 +652,7 @@ export default function RefereeMatches() {
             <Stack spacing={1}>
               {paged.map((m) => {
                 const evType = (m.tournament?.eventType || "double").toLowerCase();
+                const rowDisplayMode = getTournamentNameDisplayMode(m.tournament);
                 const chip = statusChipProps(m.status);
                 return (
                   <Card key={m._id} sx={{ p: 2 }}>
@@ -661,8 +674,8 @@ export default function RefereeMatches() {
                           • Vòng {m.round} • Trận #{m.order ?? 0}
                         </Typography>
                         <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
-                          {pairLabel(m.pairA, evType)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
-                          {pairLabel(m.pairB, evType)}
+                          {pairLabel(m.pairA, evType, rowDisplayMode)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
+                          {pairLabel(m.pairB, evType, rowDisplayMode)}
                         </Typography>
                       </Box>
 

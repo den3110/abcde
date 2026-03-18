@@ -47,6 +47,10 @@ import {
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
 import { useSocket } from "context/SocketContext";
+import {
+  getTournamentNameDisplayMode,
+  getTournamentPairName,
+} from "utils/tournamentName";
 
 /* ===== helpers ===== */
 const isHex24 = (s) => /^[0-9a-fA-F]{24}$/.test(String(s || "").trim());
@@ -68,16 +72,8 @@ const preferNick = (p) =>
   (p?.nick_name && String(p.nick_name).trim()) ||
   "";
 
-const nameWithNick = (p) => {
-  const nk = preferNick(p);
-  return nk || p?.fullName || p?.name || "N/A";
-};
-
-function pairLabel(reg, eventType = "double") {
-  if (!reg) return "—";
-  const p1 = nameWithNick(reg.player1);
-  const p2 = reg.player2 ? nameWithNick(reg.player2) : "";
-  return String(eventType).toLowerCase() === "single" || !p2 ? p1 : `${p1} & ${p2}`;
+function pairLabel(reg, eventType = "double", displayMode = "nickname") {
+  return getTournamentPairName(reg, eventType, displayMode, { fallback: "N/A" });
 }
 
 /* ======== Hiển thị R{vòng} cộng dồn giữa các bracket ========
@@ -312,6 +308,7 @@ export default function AdminRefereeMatches() {
   /* ===== UI ===== */
   const renderDetailDialog = () => {
     const evType = (detail?.tournament?.eventType || "double").toLowerCase();
+    const detailDisplayMode = getTournamentNameDisplayMode(detail?.tournament);
     const chip = statusChipProps(detail?.status);
     const R = detail ? displayRoundForMatch(detail, baseMap) : null;
     const ord = Number.isFinite(Number(detail?.order)) ? Number(detail.order) + 1 : detail?.order;
@@ -355,7 +352,7 @@ export default function AdminRefereeMatches() {
                     <Typography fontWeight={700} sx={{ mb: 0.5 }}>
                       Đôi A
                     </Typography>
-                    <Typography>{pairLabel(detail.pairA, evType)}</Typography>
+                    <Typography>{pairLabel(detail.pairA, evType, detailDisplayMode)}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -363,7 +360,7 @@ export default function AdminRefereeMatches() {
                     <Typography fontWeight={700} sx={{ mb: 0.5 }}>
                       Đôi B
                     </Typography>
-                    <Typography>{pairLabel(detail.pairB, evType)}</Typography>
+                    <Typography>{pairLabel(detail.pairB, evType, detailDisplayMode)}</Typography>
                   </Paper>
                 </Grid>
               </Grid>
@@ -603,6 +600,7 @@ export default function AdminRefereeMatches() {
             <Stack spacing={1}>
               {list.map((m) => {
                 const evType = (m.tournament?.eventType || "double").toLowerCase();
+                const rowDisplayMode = getTournamentNameDisplayMode(m.tournament);
                 const chip = statusChipProps(m.status);
                 const R = displayRoundForMatch(m, baseMap);
                 const ord = Number.isFinite(Number(m?.order)) ? Number(m.order) + 1 : m?.order;
@@ -637,8 +635,8 @@ export default function AdminRefereeMatches() {
                           • Vòng <b>R{R}</b> • Trận #{ord ?? 0}
                         </Typography>
                         <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
-                          {pairLabel(m.pairA, evType)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
-                          {pairLabel(m.pairB, evType)}
+                          {pairLabel(m.pairA, evType, rowDisplayMode)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
+                          {pairLabel(m.pairB, evType, rowDisplayMode)}
                         </Typography>
                         {(m.code || m._id) && (
                           <Typography variant="caption" color="text.secondary">

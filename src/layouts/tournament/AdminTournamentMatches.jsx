@@ -41,6 +41,10 @@ import {
   useGetTournamentQuery, // get tournament info
   useGetMatchQuery, // get one match detail
 } from "slices/tournamentsApiSlice";
+import {
+  getTournamentNameDisplayMode,
+  getTournamentPairName,
+} from "utils/tournamentName";
 
 /* ---------------- helpers ---------------- */
 const idOf = (x) => String(x?._id ?? x ?? "");
@@ -76,17 +80,8 @@ const preferNick = (obj) =>
   (obj?.nick_name && String(obj.nick_name).trim()) ||
   "";
 
-const nameWithNick = (p) => {
-  if (!p) return "—";
-  return preferNick(p) || p.fullName || p.name || "N/A";
-};
-
-const pairLabel = (reg, eventType = "double") => {
-  if (!reg) return "—";
-  const p1 = nameWithNick(reg.player1);
-  const p2 = reg.player2 ? nameWithNick(reg.player2) : "";
-  return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
-};
+const pairLabel = (reg, eventType = "double", displayMode = "nickname") =>
+  getTournamentPairName(reg, eventType, displayMode, { fallback: "N/A" });
 
 /* ====== TÍNH VÒNG CỘNG DỒN (V) GIỮA CÁC BRACKET ======
    - Mỗi bracket: số vòng = max(round) quan sát được trong dữ liệu của bracket; nếu type=group => 1
@@ -192,6 +187,7 @@ export default function AdminTournamentMatches() {
   } = useGetTournamentQuery(tournamentId);
 
   const eventType = normType(tour?.eventType);
+  const displayMode = getTournamentNameDisplayMode(tour);
 
   // 2. All matches (client-filter by tournamentId)
   const {
@@ -270,7 +266,7 @@ export default function AdminTournamentMatches() {
   // side label with nick & winner text in V/T
   const sideLabelVT = (m, side, eventType) => {
     const pair = side === "A" ? m?.pairA : m?.pairB;
-    if (pair) return pairLabel(pair, eventType);
+    if (pair) return pairLabel(pair, eventType, displayMode);
     return winnerOfText(m, side, baseMap);
   };
 
@@ -396,7 +392,7 @@ export default function AdminTournamentMatches() {
                     <Typography fontWeight="bold" gutterBottom>
                       Đội A
                     </Typography>
-                    <Typography>{pairLabel(detail?.pairA, eventType)}</Typography>
+                    <Typography>{pairLabel(detail?.pairA, eventType, displayMode)}</Typography>
                     <Typography variant="caption" color="text.secondary">
                       {eventType === "single"
                         ? maskPhone(detail?.pairA?.player1?.phone)
@@ -421,7 +417,7 @@ export default function AdminTournamentMatches() {
                     <Typography fontWeight="bold" gutterBottom>
                       Đội B
                     </Typography>
-                    <Typography>{pairLabel(detail?.pairB, eventType)}</Typography>
+                    <Typography>{pairLabel(detail?.pairB, eventType, displayMode)}</Typography>
                     <Typography variant="caption" color="text.secondary">
                       {eventType === "single"
                         ? maskPhone(detail?.pairB?.player1?.phone)

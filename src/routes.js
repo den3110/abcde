@@ -53,6 +53,7 @@ import FbPageMonitorPage from "layouts/FbPageMonitorPage";
 import ConfigManager from "layouts/ConfigManager";
 import YouTubeLiveAdmin from "layouts/YouTubeLiveAdmin";
 import AdminLiveSessionsPage from "layouts/AdminLiveSessionsPage";
+import LiveRecordingMonitorPage from "layouts/LiveRecordingMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
 import NewsListPage from "layouts/NewsListPage";
@@ -606,6 +607,17 @@ const routes = [
     icon: <Icon fontSize="small">system_update</Icon>,
     route: "/admin/ota",
     component: <OTAAdminPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Recording Monitor",
+    key: "live-recording-monitor",
+    icon: <Icon fontSize="small">video_library</Icon>,
+    route: "/admin/live-recording-monitor",
+    component: <LiveRecordingMonitorPage />,
     private: true,
     roles: ["admin"],
     show: true,

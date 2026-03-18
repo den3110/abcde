@@ -73,6 +73,6 @@ const baseQuery = async (args, api, extra) => {
 export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery,
-  tagTypes: ["User", "Registration" /* etc */],
+  tagTypes: ["User", "Registration", "LiveSessions", "LiveRecordingMonitor"],
   endpoints: () => ({}),
 });

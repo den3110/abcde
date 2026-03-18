@@ -47,6 +47,10 @@ import {
   useRemoveTournamentManagerMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
+import {
+  getTournamentNameDisplayMode,
+  getTournamentPlayerName,
+} from "utils/tournamentName";
 
 function normType(t) {
   const s = String(t || "").toLowerCase();
@@ -101,6 +105,7 @@ export default function AdminTournamentRegistrations() {
 
   const evType = normType(tour?.eventType);
   const isSingles = evType === "single";
+  const displayMode = getTournamentNameDisplayMode(tour);
 
   /* ───── selection (per reg._id) ───── */
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -180,7 +185,9 @@ export default function AdminTournamentRegistrations() {
       <Stack direction="row" spacing={1} alignItems="center">
         <Avatar src={pl.avatar || PLACE} />
         <Box>
-          <MDTypography variant="button">{pl.fullName}</MDTypography>
+          <MDTypography variant="button">
+            {getTournamentPlayerName(pl, displayMode)}
+          </MDTypography>
           <div></div>
           <MDTypography variant="caption" color="text">
             {pl.phone}
@@ -607,7 +614,9 @@ export default function AdminTournamentRegistrations() {
                     >
                       <Avatar src={pl.avatar || PLACE} />
                       <Box>
-                        <MDTypography variant="body2">{pl.fullName}</MDTypography>
+                        <MDTypography variant="body2">
+                          {getTournamentPlayerName(pl, displayMode)}
+                        </MDTypography>
                         <div></div>
                         <MDTypography variant="caption" color="text">
                           {pl.phone}
@@ -694,16 +703,16 @@ export default function AdminTournamentRegistrations() {
         <DialogContent>
           {isSingles ? (
             <>
-              Bạn chắc chắn xoá đăng ký của <b>{confirmDel?.player1?.fullName}</b>?
+              Bạn chắc chắn xoá đăng ký của <b>{getTournamentPlayerName(confirmDel?.player1, displayMode)}</b>?
             </>
           ) : (
             <>
               Bạn chắc chắn xoá cặp&nbsp;
-              <b>{confirmDel?.player1?.fullName}</b>
+              <b>{getTournamentPlayerName(confirmDel?.player1, displayMode)}</b>
               {confirmDel?.player2 ? (
                 <>
                   {" "}
-                  — <b>{confirmDel?.player2?.fullName}</b>?
+                  — <b>{getTournamentPlayerName(confirmDel?.player2, displayMode)}</b>?
                 </>
               ) : (
                 "?"

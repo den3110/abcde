@@ -227,6 +227,23 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         };
       },
     }),
+    uploadTournamentImage: builder.mutation({
+      query: (file) => {
+        const form = new FormData();
+        form.append("image", file);
+        return {
+          url: "/upload/tournaments",
+          method: "POST",
+          params: {
+            format: "webp",
+            width: 1600,
+            height: 900,
+            quality: 78,
+          },
+          body: form,
+        };
+      },
+    }),
     listMatchGroups: builder.query({
       query: (params) => ({ url: "/admin/matches/groups", params }),
     }),
@@ -712,6 +729,7 @@ export const {
   useUpdateBracketMutation,
   useUpdateMatchMutation,
   useUploadAvatarMutation,
+  useUploadTournamentImageMutation,
   useListMatchGroupsQuery,
   useListMatchesPagedQuery,
   useResetMatchChainMutation,
