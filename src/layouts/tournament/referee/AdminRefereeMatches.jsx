@@ -47,10 +47,7 @@ import {
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
 import { useSocket } from "context/SocketContext";
-import {
-  getTournamentNameDisplayMode,
-  getTournamentPairName,
-} from "utils/tournamentName";
+import { getTournamentNameDisplayMode, getTournamentPairName } from "utils/tournamentName";
 
 /* ===== helpers ===== */
 const isHex24 = (s) => /^[0-9a-fA-F]{24}$/.test(String(s || "").trim());
@@ -635,7 +632,8 @@ export default function AdminRefereeMatches() {
                           • Vòng <b>R{R}</b> • Trận #{ord ?? 0}
                         </Typography>
                         <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
-                          {pairLabel(m.pairA, evType, rowDisplayMode)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
+                          {pairLabel(m.pairA, evType, rowDisplayMode)}{" "}
+                          <span style={{ opacity: 0.6 }}>vs</span>{" "}
                           {pairLabel(m.pairB, evType, rowDisplayMode)}
                         </Typography>
                         {(m.code || m._id) && (

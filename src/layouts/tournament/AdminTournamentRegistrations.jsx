@@ -47,10 +47,7 @@ import {
   useRemoveTournamentManagerMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
-import {
-  getTournamentNameDisplayMode,
-  getTournamentPlayerName,
-} from "utils/tournamentName";
+import { getTournamentNameDisplayMode, getTournamentPlayerName } from "utils/tournamentName";
 
 function normType(t) {
   const s = String(t || "").toLowerCase();
@@ -185,9 +182,7 @@ export default function AdminTournamentRegistrations() {
       <Stack direction="row" spacing={1} alignItems="center">
         <Avatar src={pl.avatar || PLACE} />
         <Box>
-          <MDTypography variant="button">
-            {getTournamentPlayerName(pl, displayMode)}
-          </MDTypography>
+          <MDTypography variant="button">{getTournamentPlayerName(pl, displayMode)}</MDTypography>
           <div></div>
           <MDTypography variant="caption" color="text">
             {pl.phone}
@@ -703,7 +698,8 @@ export default function AdminTournamentRegistrations() {
         <DialogContent>
           {isSingles ? (
             <>
-              Bạn chắc chắn xoá đăng ký của <b>{getTournamentPlayerName(confirmDel?.player1, displayMode)}</b>?
+              Bạn chắc chắn xoá đăng ký của{" "}
+              <b>{getTournamentPlayerName(confirmDel?.player1, displayMode)}</b>?
             </>
           ) : (
             <>

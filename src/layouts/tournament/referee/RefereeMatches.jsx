@@ -38,10 +38,7 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
 import { useNavigate } from "react-router-dom";
-import {
-  getTournamentNameDisplayMode,
-  getTournamentPairName,
-} from "utils/tournamentName";
+import { getTournamentNameDisplayMode, getTournamentPairName } from "utils/tournamentName";
 
 import { useListRefereeMatchesQuery, useGetMatchQuery } from "slices/tournamentsApiSlice";
 import { useSocket } from "context/SocketContext";
@@ -65,7 +62,8 @@ function pairLabel(reg, eventType = "double", displayMode = "nickname") {
   const p1 = reg.player1?.fullName || reg.player1?.name || "N/A";
   const p2 = reg.player2?.fullName || reg.player2?.name;
   return eventType === "single" || !p2 ? p1 : `${p1} & ${p2}`;
-*/}
+*/
+}
 
 const ALL = "all";
 
@@ -674,7 +672,8 @@ export default function RefereeMatches() {
                           • Vòng {m.round} • Trận #{m.order ?? 0}
                         </Typography>
                         <Typography variant="subtitle2" sx={{ mt: 0.5 }}>
-                          {pairLabel(m.pairA, evType, rowDisplayMode)} <span style={{ opacity: 0.6 }}>vs</span>{" "}
+                          {pairLabel(m.pairA, evType, rowDisplayMode)}{" "}
+                          <span style={{ opacity: 0.6 }}>vs</span>{" "}
                           {pairLabel(m.pairB, evType, rowDisplayMode)}
                         </Typography>
                       </Box>

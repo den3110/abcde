@@ -25,10 +25,7 @@ import {
   useListAllMatchesQuery,
   useGetTournamentQuery,
 } from "slices/tournamentsApiSlice";
-import {
-  getTournamentNameDisplayMode,
-  getTournamentPairName,
-} from "utils/tournamentName";
+import { getTournamentNameDisplayMode, getTournamentPairName } from "utils/tournamentName";
 
 import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
 import PropTypes from "prop-types";

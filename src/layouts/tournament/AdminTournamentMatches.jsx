@@ -41,10 +41,7 @@ import {
   useGetTournamentQuery, // get tournament info
   useGetMatchQuery, // get one match detail
 } from "slices/tournamentsApiSlice";
-import {
-  getTournamentNameDisplayMode,
-  getTournamentPairName,
-} from "utils/tournamentName";
+import { getTournamentNameDisplayMode, getTournamentPairName } from "utils/tournamentName";
 
 /* ---------------- helpers ---------------- */
 const idOf = (x) => String(x?._id ?? x ?? "");

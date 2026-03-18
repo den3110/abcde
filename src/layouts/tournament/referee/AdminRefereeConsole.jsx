@@ -58,10 +58,7 @@ import {
 } from "slices/tournamentsApiSlice";
 import { useSocket } from "context/SocketContext";
 import RefereeMatchesPanel from "./RefereeMatchesPanel";
-import {
-  getTournamentNameDisplayMode,
-  getTournamentPairName,
-} from "utils/tournamentName";
+import { getTournamentNameDisplayMode, getTournamentPairName } from "utils/tournamentName";
 
 /* ================= helpers ================= */
 export const VI_MATCH_STATUS = {

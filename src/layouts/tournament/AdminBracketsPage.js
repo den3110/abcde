@@ -80,10 +80,7 @@ import {
   useClearBracketMatchesMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
-import {
-  getTournamentNameDisplayMode,
-  getTournamentPairName,
-} from "utils/tournamentName";
+import { getTournamentNameDisplayMode, getTournamentPairName } from "utils/tournamentName";
 
 /* ===== progression slice ===== */
 import {
@@ -3691,7 +3688,8 @@ export default function AdminBracketsPage() {
                         <Grid key={i} item xs={12} sm={6} md={4}>
                           <Card variant="outlined" sx={{ p: 1 }}>
                             <Typography variant="body2">
-                              <b>#{s.seed}</b> — {reg ? regName(reg, evType, displayMode) : idOf(s.regId)}
+                              <b>#{s.seed}</b> —{" "}
+                              {reg ? regName(reg, evType, displayMode) : idOf(s.regId)}
                             </Typography>
                           </Card>
                         </Grid>

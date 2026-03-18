@@ -8,10 +8,7 @@ const readText = (...candidates) => {
 };
 
 export const getTournamentNameDisplayMode = (source) => {
-  const mode = readText(
-    source?.nameDisplayMode,
-    source?.tournament?.nameDisplayMode
-  );
+  const mode = readText(source?.nameDisplayMode, source?.tournament?.nameDisplayMode);
   return mode === "fullName" ? "fullName" : "nickname";
 };
 
@@ -35,11 +32,7 @@ const fullNameOf = (player) =>
     player?.user?.name
   );
 
-export const getTournamentPlayerName = (
-  player,
-  displayMode = "nickname",
-  fallback = "—"
-) => {
+export const getTournamentPlayerName = (player, displayMode = "nickname", fallback = "—") => {
   if (!player) return fallback;
   const nickname = nicknameOf(player);
   const fullName = fullNameOf(player);
@@ -77,10 +70,7 @@ export const getTournamentTeamName = (
     return isSingle ? names[0] : names.join(separator);
   }
 
-  return (
-    readText(entity?.teamName, entity?.name, entity?.label, entity?.title) ||
-    fallback
-  );
+  return readText(entity?.teamName, entity?.name, entity?.label, entity?.title) || fallback;
 };
 
 export const getTournamentPairName = (
