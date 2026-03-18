@@ -37,6 +37,7 @@
     "socket.io-client": "^4.8.1",
     "stylis": "4.1.4",
     "stylis-plugin-rtl": "2.1.1",
+    "xlsx": "^0.18.5",
     "yup": "1.1.1"
   },
   "scripts": {
@@ -78,7 +79,7 @@
     "eslint-plugin-react-hooks": "4.6.0",
     "http-proxy-middleware": "^3.0.5",
     "prettier": "2.8.8",
-    "svgo": "^4.0.0"
+    "svgo": "3.0.2"
   },
   "proxy": "http://localhost:5001",
   "overrides": {

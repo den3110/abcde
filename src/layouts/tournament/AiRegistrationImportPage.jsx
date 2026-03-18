@@ -7,11 +7,18 @@ import {
   Card,
   CardContent,
   CardHeader,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
   Grid,
   LinearProgress,
+  Menu,
   MenuItem,
   Snackbar,
   Stack,
@@ -23,11 +30,13 @@ import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import { DataGrid } from "@mui/x-data-grid";
 import { skipToken } from "@reduxjs/toolkit/query";
 import PropTypes from "prop-types";
 import { useSelector } from "react-redux";
 import { useSearchParams } from "react-router-dom";
+import * as XLSX from "xlsx";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
@@ -65,41 +74,212 @@ const AI_STAGE_LABELS = {
 };
 
 const PREVIEW_STEP_LABELS = {
-  connected: "Da ket noi",
-  init: "Dang tai thong tin giai",
-  source_loading: "Dang lay du lieu nguon",
-  source_parsed: "Da doc xong du lieu nguon",
-  document_analysis: "Dang hieu bo cuc file",
-  row_grouping: "Dang gom ho so dang ky",
-  row_extraction: "Dang tach tung ho so",
-  preview_building: "Dang lap bang xem truoc",
-  complete: "Da xong xem truoc",
-  error: "Co loi khi xem truoc",
+  connected: "Đã kết nối",
+  init: "Đang tải thông tin giải",
+  source_loading: "Đang lấy dữ liệu nguồn",
+  source_parsed: "Đã đọc xong dữ liệu nguồn",
+  document_analysis: "Đang hiểu bố cục file",
+  row_grouping: "Đang gom hồ sơ đăng ký",
+  row_extraction: "Đang tách từng hồ sơ",
+  preview_building: "Đang lập bảng xem trước",
+  complete: "Đã xong xem trước",
+  error: "Có lỗi khi xem trước",
+};
+
+const EXTENDED_AI_STAGE_LABELS = {
+  ...AI_STAGE_LABELS,
+  gateway_uploading: "Gửi file sang Pikora",
+  gateway_analyzing: "Pikora đang phân tích file",
+  gateway_parsing: "Đang đọc kết quả Pikora",
+};
+
+const EXTENDED_PREVIEW_STEP_LABELS = {
+  ...PREVIEW_STEP_LABELS,
+  source_materialized: "Đang chuẩn bị file gửi AI",
+  gateway_uploading: "Đang gửi file sang Pikora",
+  gateway_analyzing: "Pikora đang phân tích file",
+  gateway_parsing: "Đang đọc kết quả Pikora",
 };
 
 const API_BASE_URL = String(process.env.REACT_APP_API_URL || "/api").replace(/\/$/, "");
 
-function toCredentialsCsv(rows) {
-  if (!rows?.length) return "";
-  const cols = ["rowNumber", "name", "nickname", "phone", "email", "password", "userId"];
+const CREDENTIAL_FIELD_PRIORITY = [
+  "rowId",
+  "rowNumber",
+  "userId",
+  "name",
+  "nickname",
+  "phone",
+  "email",
+  "password",
+];
+
+const CREDENTIAL_LABELS = {
+  rowId: "Mã dòng",
+  rowNumber: "Dòng",
+  userId: "Mã tài khoản",
+  name: "Họ tên",
+  nickname: "Tên hiển thị",
+  phone: "Số điện thoại",
+  email: "Email",
+  password: "Mật khẩu",
+};
+
+function serializeExportValue(value) {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value) || typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch (error) {
+      console.log("Cannot serialize export value", error);
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function prettifyFieldLabel(field) {
+  if (!field) return "-";
+  return String(field)
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function buildCredentialExportModel(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const seen = new Set();
+  const columns = [];
+  const pushColumn = (field) => {
+    if (!field || seen.has(field)) return;
+    seen.add(field);
+    columns.push(field);
+  };
+
+  CREDENTIAL_FIELD_PRIORITY.forEach((field) => {
+    if (list.some((row) => Object.prototype.hasOwnProperty.call(row || {}, field))) {
+      pushColumn(field);
+    }
+  });
+
+  list.forEach((row) => {
+    Object.keys(row || {}).forEach(pushColumn);
+  });
+
+  return {
+    columns,
+    rows: list.map((row) =>
+      columns.reduce((acc, field) => {
+        acc[field] = serializeExportValue(row?.[field]);
+        return acc;
+      }, {})
+    ),
+  };
+}
+
+function toCsvFromTable(columns, rows) {
+  if (!columns?.length) return "";
   const esc = (value) => {
     if (value === null || value === undefined) return "";
     const s = String(value);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  return [cols.join(","), ...rows.map((row) => cols.map((col) => esc(row[col])).join(","))].join(
-    "\n"
-  );
+  return [
+    columns.join(","),
+    ...rows.map((row) => columns.map((col) => esc(row[col])).join(",")),
+  ].join("\n");
 }
 
-function downloadCsv(filename, csv) {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+function toCredentialsCsv(rows) {
+  const exportModel = buildCredentialExportModel(rows);
+  return toCsvFromTable(exportModel.columns, exportModel.rows);
+}
+
+function buildExportFilename(prefix, extension) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${prefix}-${stamp}.${extension}`;
+}
+
+function downloadTextFile(
+  filename,
+  content,
+  mimeType = "text/plain;charset=utf-8",
+  withBom = false
+) {
+  const normalized = String(content || "");
+  const blob = new Blob([withBom ? `\uFEFF${normalized}` : normalized], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadCsv(filename, csv) {
+  downloadTextFile(filename, csv, "text/csv;charset=utf-8", true);
+}
+
+function downloadXlsx(filename, rows) {
+  const exportModel = buildCredentialExportModel(rows);
+  const worksheet = XLSX.utils.json_to_sheet(exportModel.rows, { header: exportModel.columns });
+  worksheet["!cols"] = exportModel.columns.map((field) => ({
+    wch: Math.max((CREDENTIAL_LABELS[field] || prettifyFieldLabel(field)).length + 4, 16),
+  }));
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+  XLSX.writeFile(workbook, filename, { compression: true });
+}
+
+function getExportButtonLabel(item) {
+  switch (item?.key) {
+    case "analysis_csv":
+      return "CSV đã phân tích";
+    case "analysis_txt":
+      return "Ghi chú phân tích";
+    case "analysis_json":
+      return "JSON AI";
+    case "gateway_raw_text":
+      return "Phản hồi gốc Pikora";
+    default:
+      return item?.label || "Tải file";
+  }
+}
+
+function downloadPreviewExport(item) {
+  const filename = item?.filename || "ai-import.txt";
+  const content = item?.content || "";
+  const mimeType = item?.mimeType || "text/plain;charset=utf-8";
+
+  if (
+    item?.key === "analysis_csv" ||
+    /\.csv$/i.test(filename) ||
+    String(mimeType).toLowerCase().includes("csv")
+  ) {
+    downloadCsv(filename, content);
+    return;
+  }
+
+  downloadTextFile(filename, content, mimeType);
+}
+
+function brandAiCopy(value) {
+  return String(value || "")
+    .replace(/Pikora Gateway/gi, "Pikora")
+    .replace(/CatGPT-Gateway/gi, "Pikora")
+    .replace(/ChatGPT/gi, "Pikora")
+    .replace(/\bGateway đang\b/gi, "Pikora đang")
+    .replace(/\bGateway status\b/gi, "Trạng thái Pikora");
+}
+
+function formatAiStageMessage(stage) {
+  return brandAiCopy(
+    `${(EXTENDED_AI_STAGE_LABELS[stage?.stage] || stage?.stage || "unknown").replace(/_/g, " ")}: ${
+      stage?.message || "Lỗi"
+    }`
+  );
 }
 
 function buildApiUrl(path) {
@@ -138,17 +318,17 @@ async function parsePreviewError(response) {
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
     const data = await response.json().catch(() => null);
-    return data?.message || `Khong the xem truoc (${response.status})`;
+    return data?.message || `Không thể xem trước (${response.status})`;
   }
 
   const text = await response.text().catch(() => "");
-  return text || `Khong the xem truoc (${response.status})`;
+  return text || `Không thể xem trước (${response.status})`;
 }
 
 async function readSseStream(response, onEvent) {
   const reader = response.body?.getReader();
   if (!reader) {
-    throw new Error("Trinh duyet khong doc duoc stream tu server");
+    throw new Error("Trình duyệt không đọc được stream từ server");
   }
 
   const decoder = new TextDecoder("utf-8");
@@ -226,21 +406,57 @@ async function streamPreviewImport({ tourId, body, token, onEvent }) {
 function PlayerCell({ label, player }) {
   if (!player) return <Typography variant="caption">-</Typography>;
   return (
-    <Stack spacing={0.25}>
-      <Typography variant="body2" fontWeight={700}>
+    <Stack spacing={0.25} sx={{ width: "100%", minWidth: 0, py: 0.75 }}>
+      <Typography
+        variant="body2"
+        fontWeight={700}
+        sx={{ whiteSpace: "normal", lineHeight: 1.35, overflowWrap: "anywhere" }}
+      >
         {player.fullName || "-"}
       </Typography>
-      <Typography variant="caption" color="text.secondary">
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ whiteSpace: "normal", lineHeight: 1.35, overflowWrap: "anywhere" }}
+      >
         {player.sourcePhone || player.matchedUser?.phone || player.tempDraft?.phone || "-"}
       </Typography>
-      <Typography variant="caption" color="text.secondary">
+      {player.action === "create_temp" && player.tempDraft?.email ? (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ whiteSpace: "normal", lineHeight: 1.35, overflowWrap: "anywhere" }}
+        >
+          {player.tempDraft.email}
+        </Typography>
+      ) : null}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ whiteSpace: "normal", lineHeight: 1.35, overflowWrap: "anywhere" }}
+      >
         {player.action === "match_existing"
           ? `${label}: đã khớp theo ${player.matchedBy}`
           : player.action === "create_temp"
-          ? `${label}: sẽ tạo tài khoản @pickletour.vn`
+          ? `${label}: sẽ tạo tài khoản tạm`
           : `${label}: thiếu dữ liệu`}
       </Typography>
     </Stack>
+  );
+}
+
+function WrappedCell({ value, fontWeight, color, variant }) {
+  return (
+    <Box sx={{ width: "100%", py: 0.75 }}>
+      <Typography
+        variant={variant}
+        color={color}
+        fontWeight={fontWeight}
+        sx={{ whiteSpace: "normal", lineHeight: 1.35, overflowWrap: "anywhere" }}
+      >
+        {value || "-"}
+      </Typography>
+    </Box>
   );
 }
 
@@ -255,6 +471,7 @@ PlayerCell.propTypes = {
     }),
     sourcePhone: PropTypes.string,
     tempDraft: PropTypes.shape({
+      email: PropTypes.string,
       phone: PropTypes.string,
     }),
   }),
@@ -262,6 +479,20 @@ PlayerCell.propTypes = {
 
 PlayerCell.defaultProps = {
   player: null,
+};
+
+WrappedCell.propTypes = {
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  fontWeight: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  color: PropTypes.string,
+  variant: PropTypes.string,
+};
+
+WrappedCell.defaultProps = {
+  value: "-",
+  fontWeight: 400,
+  color: "text.primary",
+  variant: "body2",
 };
 
 export default function AiRegistrationImportPage() {
@@ -275,7 +506,9 @@ export default function AiRegistrationImportPage() {
   const [inputMode, setInputMode] = useState("sheet");
   const [sheetUrl, setSheetUrl] = useState("");
   const [rawText, setRawText] = useState("");
+  const [adminPrompt, setAdminPrompt] = useState("");
   const [previewData, setPreviewData] = useState(null);
+  const [previewErrorDiagnostics, setPreviewErrorDiagnostics] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewProgress, setPreviewProgress] = useState({
     active: false,
@@ -286,6 +519,9 @@ export default function AiRegistrationImportPage() {
   });
   const [selectionModel, setSelectionModel] = useState([]);
   const [commitResult, setCommitResult] = useState(null);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paidRowIds, setPaidRowIds] = useState([]);
+  const [userExportAnchorEl, setUserExportAnchorEl] = useState(null);
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
 
   const listArg = useMemo(
@@ -345,6 +581,11 @@ export default function AiRegistrationImportPage() {
     setSelectionModel(readyRows.map((row) => row.rowId));
   }, [previewData]);
 
+  useEffect(() => {
+    setPaymentDialogOpen(false);
+    setPaidRowIds([]);
+  }, [previewData]);
+
   const gridRows = useMemo(
     () =>
       rows.map((row) => ({
@@ -358,17 +599,31 @@ export default function AiRegistrationImportPage() {
     tournamentId && (inputMode === "sheet" ? sheetUrl.trim() : rawText.trim())
   );
   const canCommit = Boolean(tournamentId && selectedRows.length > 0 && !committing);
+  const canCommitAllReady = Boolean(tournamentId && readyRows.length > 0 && !committing);
 
   const previewSummary = previewData?.summary;
   const previewAnalysis = previewData?.analysis;
-  const previewAiDiagnostics = previewData?.aiDiagnostics;
+  const previewAiDiagnostics = previewData?.aiDiagnostics || previewErrorDiagnostics;
+  const previewExports = previewData?.exports || [];
+  const previewProvider = previewAiDiagnostics?.environment?.provider || "legacy";
+  const usingCatgptGateway = previewProvider === "catgpt";
   const credentials = commitResult?.credentials || [];
+  const credentialExportModel = useMemo(
+    () => buildCredentialExportModel(credentials),
+    [credentials]
+  );
+  const paidRowIdSet = useMemo(() => new Set(paidRowIds), [paidRowIds]);
+  const allReadyRowIds = useMemo(() => readyRows.map((row) => row.rowId), [readyRows]);
+  const allReadyPaid =
+    readyRows.length > 0 && readyRows.every((row) => paidRowIdSet.has(row.rowId));
+  const partiallyPaid =
+    paidRowIds.length > 0 && paidRowIds.length < Math.max(allReadyRowIds.length, 1);
 
   const pushPreviewProgress = (payload = {}) => {
     const next = {
       step: payload.step || "working",
       progress: Math.max(0, Math.min(100, Number(payload.progress) || 0)),
-      message: payload.message || "He thong dang xu ly du lieu...",
+      message: payload.message || "Hệ thống đang xử lý dữ liệu...",
     };
 
     setPreviewProgress((prev) => ({
@@ -387,19 +642,25 @@ export default function AiRegistrationImportPage() {
 
   const handlePreview = async () => {
     setPreviewing(true);
+    setPreviewData(null);
+    setPreviewErrorDiagnostics(null);
+    setCommitResult(null);
     setPreviewProgress({
       active: true,
       progress: 1,
       step: "init",
-      message: "Dang bat dau xem truoc danh sach.",
+      message: "Đang bắt đầu xem trước danh sách.",
       logs: [],
     });
 
     try {
       const body =
-        inputMode === "sheet" ? { sheetUrl: sheetUrl.trim() } : { rawText: rawText.trim() };
+        inputMode === "sheet"
+          ? { sheetUrl: sheetUrl.trim(), adminPrompt: adminPrompt.trim() }
+          : { rawText: rawText.trim(), adminPrompt: adminPrompt.trim() };
       let streamedResult = null;
       let streamedError = "";
+      let streamedErrorDiagnostics = null;
       const res = await streamPreviewImport({
         tourId: tournamentId,
         body,
@@ -416,7 +677,9 @@ export default function AiRegistrationImportPage() {
           }
 
           if (eventName === "error") {
-            streamedError = payload?.message || "Khong doc duoc du lieu de xem truoc";
+            streamedErrorDiagnostics = payload?.aiDiagnostics || null;
+            setPreviewErrorDiagnostics(streamedErrorDiagnostics);
+            streamedError = payload?.message || "Không đọc được dữ liệu để xem trước";
             pushPreviewProgress({
               step: "error",
               progress: 100,
@@ -427,19 +690,21 @@ export default function AiRegistrationImportPage() {
       });
       const finalResult = res || streamedResult;
       if (streamedError) {
-        throw new Error(streamedError);
+        const streamedException = new Error(streamedError);
+        streamedException.aiDiagnostics = streamedErrorDiagnostics;
+        throw streamedException;
       }
       if (!finalResult) {
-        throw new Error("Khong nhan duoc ket qua xem truoc tu server");
+        throw new Error("Không nhận được kết quả xem trước từ server");
       }
 
       pushPreviewProgress({
         step: "complete",
         progress: 100,
-        message: "Da xong phan xem truoc danh sach.",
+        message: "Đã xong phần xem trước danh sách.",
       });
       setPreviewData(finalResult);
-      setCommitResult(null);
+      setPreviewErrorDiagnostics(null);
       setSnack({
         open: true,
         type: "success",
@@ -453,8 +718,10 @@ export default function AiRegistrationImportPage() {
           error?.data?.message ||
           error?.message ||
           error?.error ||
-          "Khong doc duoc du lieu de xem truoc",
+          "Không đọc được dữ liệu để xem trước",
       });
+      setPreviewData(null);
+      setPreviewErrorDiagnostics(error?.aiDiagnostics || null);
       setSnack({
         open: true,
         type: "error",
@@ -469,11 +736,15 @@ export default function AiRegistrationImportPage() {
     }
   };
 
-  const handleCommit = async () => {
+  const commitRows = async (rowsToCommit, options = {}) => {
     try {
+      const body = { rows: rowsToCommit };
+      if (Object.prototype.hasOwnProperty.call(options, "paidRowIds")) {
+        body.paidRowIds = options.paidRowIds;
+      }
       const res = await commitImport({
         tourId: tournamentId,
-        body: { rows: selectedRows },
+        body,
       }).unwrap();
       setCommitResult(res);
       setSnack({
@@ -481,12 +752,39 @@ export default function AiRegistrationImportPage() {
         type: "success",
         msg: `Đã tạo ${res.createdRegistrations} lượt đăng ký và ${res.createdUsers} tài khoản tạm`,
       });
+      return true;
     } catch (error) {
       setSnack({
         open: true,
         type: "error",
         msg: error?.data?.message || error?.error || "Không thể lưu danh sách này",
       });
+      return false;
+    }
+  };
+
+  const handleCommit = async () => commitRows(selectedRows);
+
+  const handleCommitAllReady = () => {
+    setPaidRowIds([]);
+    setPaymentDialogOpen(true);
+  };
+
+  const handleTogglePaidRow = (rowId) => {
+    setPaidRowIds((prev) =>
+      prev.includes(rowId) ? prev.filter((value) => value !== rowId) : [...prev, rowId]
+    );
+  };
+
+  const handleToggleAllPaidRows = (checked) => {
+    setPaidRowIds(checked ? allReadyRowIds : []);
+  };
+
+  const handleConfirmCommitAllReady = async () => {
+    const ok = await commitRows(readyRows, { paidRowIds });
+    if (ok) {
+      setPaymentDialogOpen(false);
+      setPaidRowIds([]);
     }
   };
 
@@ -495,28 +793,38 @@ export default function AiRegistrationImportPage() {
       {
         field: "sourceRowNumber",
         headerName: "Dòng",
-        width: 110,
+        width: 120,
+        renderCell: ({ value }) => <WrappedCell value={value} color="text.secondary" />,
       },
       {
         field: "status",
         headerName: "Trạng thái",
-        width: 140,
+        width: 150,
         renderCell: ({ value }) => {
           const meta = STATUS_META[value] || STATUS_META.skip;
-          return <Chip size="small" color={meta.color} label={meta.label} />;
+          return (
+            <Box sx={{ py: 1 }}>
+              <Chip size="small" color={meta.color} label={meta.label} />
+            </Box>
+          );
         },
       },
       {
         field: "confidence",
         headerName: "Tin cậy",
         width: 100,
-        valueFormatter: ({ value }) => `${Math.round((Number(value) || 0) * 100)}%`,
+        renderCell: ({ value }) => (
+          <WrappedCell
+            value={`${Math.round((Number(value) || 0) * 100)}%`}
+            color="text.secondary"
+          />
+        ),
       },
       {
         field: "primary",
         headerName: "VĐV 1",
         flex: 1.1,
-        minWidth: 210,
+        minWidth: 230,
         sortable: false,
         renderCell: ({ row }) => <PlayerCell label="VĐV 1" player={row.primary} />,
       },
@@ -524,11 +832,11 @@ export default function AiRegistrationImportPage() {
         field: "secondary",
         headerName: "VĐV 2",
         flex: 1.1,
-        minWidth: 210,
+        minWidth: 230,
         sortable: false,
         renderCell: ({ row }) =>
           tournament?.eventType === "single" ? (
-            <Typography variant="caption">Nội dung đơn</Typography>
+            <WrappedCell value="Nội dung đơn" color="text.secondary" variant="caption" />
           ) : (
             <PlayerCell label="VĐV 2" player={row.secondary} />
           ),
@@ -536,44 +844,90 @@ export default function AiRegistrationImportPage() {
       {
         field: "paymentStatus",
         headerName: "Thanh toán",
-        width: 110,
+        width: 130,
+        renderCell: ({ value }) => <WrappedCell value={value} color="text.secondary" />,
       },
       {
         field: "actionSummary",
         headerName: "Xử lý",
-        minWidth: 210,
-        flex: 0.8,
+        minWidth: 260,
+        flex: 1,
+        renderCell: ({ value }) => <WrappedCell value={value} />,
       },
       {
         field: "issues",
         headerName: "Lưu ý",
-        minWidth: 260,
+        minWidth: 320,
         flex: 1.4,
         sortable: false,
-        valueGetter: ({ row }) => (row.issues || []).join(" | "),
+        renderCell: ({ row }) => (
+          <WrappedCell value={(row.issues || []).join(" | ")} color="text.secondary" />
+        ),
       },
       {
         field: "sourcePreview",
         headerName: "Dữ liệu gốc",
-        minWidth: 280,
+        minWidth: 340,
         flex: 1.6,
+        renderCell: ({ value }) => <WrappedCell value={value} color="text.secondary" />,
       },
     ],
     [tournament?.eventType]
   );
 
   const credentialColumns = useMemo(
-    () => [
-      { field: "rowNumber", headerName: "Dòng", width: 80 },
-      { field: "name", headerName: "Họ tên", minWidth: 180, flex: 1 },
-      { field: "nickname", headerName: "Tên hiển thị", minWidth: 160, flex: 0.8 },
-      { field: "phone", headerName: "Số điện thoại", minWidth: 140, flex: 0.7 },
-      { field: "email", headerName: "Email", minWidth: 220, flex: 1 },
-      { field: "password", headerName: "Mật khẩu", minWidth: 180, flex: 0.8 },
-      { field: "userId", headerName: "Mã tài khoản", minWidth: 220, flex: 1 },
-    ],
-    []
+    () =>
+      credentialExportModel.columns.map((field) => ({
+        field,
+        headerName: CREDENTIAL_LABELS[field] || prettifyFieldLabel(field),
+        minWidth:
+          field === "email" || field === "userId"
+            ? 220
+            : field === "password"
+            ? 180
+            : field === "rowNumber"
+            ? 90
+            : 160,
+        flex: field === "rowNumber" ? 0.45 : 1,
+        renderCell: ({ value }) => <WrappedCell value={value} color="text.secondary" />,
+      })),
+    [credentialExportModel.columns]
   );
+
+  const handleDownloadCreatedUsersCsv = () => {
+    downloadCsv(
+      buildExportFilename("tai-khoan-vua-tao", "csv"),
+      toCsvFromTable(credentialExportModel.columns, credentialExportModel.rows)
+    );
+  };
+
+  const handleDownloadCreatedUsersJson = () => {
+    downloadTextFile(
+      buildExportFilename("tai-khoan-vua-tao", "json"),
+      JSON.stringify(credentials, null, 2),
+      "application/json;charset=utf-8",
+      true
+    );
+  };
+
+  const handleDownloadCreatedUsersExcel = () => {
+    downloadXlsx(buildExportFilename("tai-khoan-vua-tao", "xlsx"), credentials);
+  };
+
+  const handleOpenUserExportMenu = (event) => {
+    setUserExportAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseUserExportMenu = () => {
+    setUserExportAnchorEl(null);
+  };
+
+  const handleExportCreatedUsers = (type) => {
+    if (type === "excel") handleDownloadCreatedUsersExcel();
+    if (type === "csv") handleDownloadCreatedUsersCsv();
+    if (type === "json") handleDownloadCreatedUsersJson();
+    handleCloseUserExportMenu();
+  };
 
   return (
     <DashboardLayout>
@@ -693,6 +1047,18 @@ export default function AiRegistrationImportPage() {
                   />
                 </Grid>
                 <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={3}
+                    label="Ghi chú thêm cho AI"
+                    value={adminPrompt}
+                    onChange={(e) => setAdminPrompt(e.target.value)}
+                    placeholder='Ví dụ: "Các dòng có ghi HỦY thì bỏ qua", "Nếu có ghi chú ô đỏ / red cell thì đừng cho vào đăng ký".'
+                    helperText="Dùng để thêm rule riêng cho đợt import này. Nếu file thiếu email, số điện thoại, nickname hoặc mật khẩu mà vẫn còn tên người chơi thì hệ thống sẽ tự tạo tài khoản tạm để giữ suất đăng ký. Lưu ý: CSV/text thuần không giữ màu ô, nên các rule kiểu “ô đỏ” chỉ có tác dụng khi nguồn thực sự chứa dấu hiệu đó."
+                  />
+                </Grid>
+                <Grid item xs={12}>
                   <Alert severity="info">
                     Nếu dùng link, bảng cần mở public hoặc cho phép tải CSV. Nếu chưa chắc, bạn cứ
                     copy dữ liệu rồi dán trực tiếp cho ổn định hơn.
@@ -705,31 +1071,65 @@ export default function AiRegistrationImportPage() {
           <Card variant="outlined">
             <CardHeader title="Xem trước" />
             <CardContent>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="center">
-                <Button
-                  variant="outlined"
-                  startIcon={previewing ? <CircularProgress size={16} /> : <VisibilityIcon />}
-                  disabled={!canPreview || previewing}
-                  onClick={handlePreview}
+              <Stack spacing={1.5}>
+                <Stack
+                  direction={{ xs: "column", xl: "row" }}
+                  spacing={1.5}
+                  useFlexGap
+                  flexWrap="wrap"
+                  alignItems={{ xs: "stretch", xl: "center" }}
                 >
-                  {previewing ? "Đang đọc dữ liệu..." : "Xem trước danh sách"}
-                </Button>
-                <Button
-                  variant="contained"
-                  startIcon={committing ? <CircularProgress size={16} /> : <DoneAllIcon />}
-                  disabled={!canCommit}
-                  onClick={handleCommit}
-                >
-                  {committing ? "Đang lưu..." : `Lưu ${selectedRows.length} dòng có thể nhập`}
-                </Button>
-                {credentials.length ? (
                   <Button
-                    variant="text"
-                    startIcon={<FileDownloadIcon />}
-                    onClick={() => downloadCsv("tai-khoan-tam.csv", toCredentialsCsv(credentials))}
+                    variant="outlined"
+                    startIcon={previewing ? <CircularProgress size={16} /> : <VisibilityIcon />}
+                    disabled={!canPreview || previewing}
+                    onClick={handlePreview}
+                    sx={{ minWidth: { xl: 200 } }}
                   >
-                    Tải danh sách tài khoản tạm
+                    {previewing ? "Đang đọc dữ liệu..." : "Xem trước danh sách"}
                   </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={committing ? <CircularProgress size={16} /> : <DoneAllIcon />}
+                    disabled={!canCommit}
+                    onClick={handleCommit}
+                    sx={{ minWidth: { xl: 210 } }}
+                  >
+                    {committing ? "Đang lưu..." : `Lưu ${selectedRows.length} dòng đã chọn`}
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    startIcon={committing ? <CircularProgress size={16} /> : <DoneAllIcon />}
+                    disabled={!canCommitAllReady}
+                    onClick={handleCommitAllReady}
+                    sx={{ minWidth: { xl: 280 } }}
+                  >
+                    {committing
+                      ? "Đang tạo đăng ký..."
+                      : `Tạo tài khoản + đăng ký giải (${readyRows.length})`}
+                  </Button>
+                </Stack>
+
+                {previewExports.length ? (
+                  <Stack
+                    direction={{ xs: "column", lg: "row" }}
+                    spacing={1}
+                    useFlexGap
+                    flexWrap="wrap"
+                    alignItems={{ xs: "stretch", lg: "center" }}
+                  >
+                    {previewExports.map((item) => (
+                      <Button
+                        key={`${item.source || "local"}-${item.key}`}
+                        variant="text"
+                        startIcon={<FileDownloadIcon />}
+                        onClick={() => downloadPreviewExport(item)}
+                      >
+                        {getExportButtonLabel(item)}
+                      </Button>
+                    ))}
+                  </Stack>
                 ) : null}
               </Stack>
 
@@ -748,7 +1148,8 @@ export default function AiRegistrationImportPage() {
                       alignItems={{ xs: "flex-start", md: "center" }}
                     >
                       <Typography variant="body2" fontWeight={700}>
-                        {PREVIEW_STEP_LABELS[previewProgress.step] || "Dang xu ly xem truoc"}
+                        {EXTENDED_PREVIEW_STEP_LABELS[previewProgress.step] ||
+                          "Đang xử lý xem trước"}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {Math.round(previewProgress.progress || 0)}%
@@ -756,7 +1157,7 @@ export default function AiRegistrationImportPage() {
                     </Stack>
 
                     <Typography variant="body2">
-                      {previewProgress.message || "He thong dang xu ly du lieu..."}
+                      {brandAiCopy(previewProgress.message || "Hệ thống đang xử lý dữ liệu...")}
                     </Typography>
 
                     <LinearProgress
@@ -766,9 +1167,11 @@ export default function AiRegistrationImportPage() {
 
                     {(previewProgress.logs || []).slice(-5).map((item) => (
                       <Typography key={item.id} variant="caption" color="text.secondary">
-                        {`${Math.round(item.progress || 0)}% - ${
-                          PREVIEW_STEP_LABELS[item.step] || item.step || "Dang xu ly"
-                        }: ${item.message}`}
+                        {brandAiCopy(
+                          `${Math.round(item.progress || 0)}% - ${
+                            EXTENDED_PREVIEW_STEP_LABELS[item.step] || item.step || "Đang xử lý"
+                          }: ${item.message}`
+                        )}
                       </Typography>
                     ))}
                   </Stack>
@@ -805,7 +1208,12 @@ export default function AiRegistrationImportPage() {
                   <strong>
                     {REGISTRATION_STYLE_LABELS[previewAnalysis.registrationStyle] || "Chưa rõ"}
                   </strong>
-                  . {previewAnalysis.notes}
+                  . {brandAiCopy(previewAnalysis.notes)}
+                  {usingCatgptGateway ? (
+                    <Typography component="div" variant="caption" sx={{ mt: 1, fontWeight: 700 }}>
+                      Đang đọc file qua Pikora.
+                    </Typography>
+                  ) : null}
                 </Alert>
               ) : null}
 
@@ -818,7 +1226,24 @@ export default function AiRegistrationImportPage() {
                     <Typography variant="body2" fontWeight={700}>
                       {previewAiDiagnostics?.hasErrors ? "Lỗi kết nối AI" : "Cảnh báo cấu hình AI"}
                     </Typography>
-                    <Typography variant="body2">{previewAiDiagnostics.summary}</Typography>
+                    <Typography variant="body2">
+                      {brandAiCopy(previewAiDiagnostics.summary)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Provider: {usingCatgptGateway ? "Pikora" : "Legacy AI"}
+                      {previewAiDiagnostics.environment?.configuredBaseUrl
+                        ? ` | Endpoint: ${previewAiDiagnostics.environment.configuredBaseUrl}`
+                        : ""}
+                      {previewAiDiagnostics?.fileType
+                        ? ` | File: ${previewAiDiagnostics.fileType}`
+                        : ""}
+                      {previewAiDiagnostics?.responseMode
+                        ? ` | Kết quả: ${previewAiDiagnostics.responseMode}`
+                        : ""}
+                      {previewAiDiagnostics?.artifactSource
+                        ? ` | Artifact: ${previewAiDiagnostics.artifactSource}`
+                        : ""}
+                    </Typography>
                     <Typography variant="caption" color="text.secondary">
                       Model hiện tại: {previewAiDiagnostics.environment?.configuredModel || "-"}
                       {previewAiDiagnostics.environment?.configuredBaseUrl
@@ -828,6 +1253,37 @@ export default function AiRegistrationImportPage() {
                         ? ` | Fallback trực tiếp: ${previewAiDiagnostics.environment.directFallbackModel}`
                         : " | Fallback trực tiếp: không có"}
                     </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Completion: {previewAiDiagnostics?.completionId || "-"}
+                      {typeof previewAiDiagnostics?.artifactManifestAvailable === "boolean"
+                        ? ` | Có manifest: ${
+                            previewAiDiagnostics.artifactManifestAvailable ? "có" : "không"
+                          }`
+                        : ""}
+                      {previewAiDiagnostics?.availableModels?.length
+                        ? ` | Models: ${previewAiDiagnostics.availableModels.join(", ")}`
+                        : ""}
+                    </Typography>
+                    {previewAiDiagnostics?.environment?.gatewayStatusUrl ? (
+                      <Typography variant="caption" color="text.secondary">
+                        Trạng thái Pikora:{" "}
+                        {previewAiDiagnostics.environment.gatewayReachable === false
+                          ? "không kết nối được"
+                          : previewAiDiagnostics.environment.gatewayLoggedIn === false
+                          ? "chưa đăng nhập Pikora"
+                          : previewAiDiagnostics.environment.gatewayHealthy === false
+                          ? "đang không ổn định"
+                          : previewAiDiagnostics.environment.gatewayStatusChecked
+                          ? "đang phản hồi"
+                          : "chưa kiểm tra"}
+                        {` | ${previewAiDiagnostics.environment.gatewayStatusUrl}`}
+                        {previewAiDiagnostics.environment.gatewayStatusSummary
+                          ? ` | ${brandAiCopy(
+                              previewAiDiagnostics.environment.gatewayStatusSummary
+                            )}`
+                          : ""}
+                      </Typography>
+                    ) : null}
                     {(previewAiDiagnostics.stages || [])
                       .filter((stage) =>
                         previewAiDiagnostics?.hasErrors ? !stage.ok : stage.attempts?.length > 0
@@ -835,8 +1291,7 @@ export default function AiRegistrationImportPage() {
                       .slice(0, 4)
                       .map((stage) => (
                         <Typography key={stage.stage} variant="caption" color="text.secondary">
-                          {(AI_STAGE_LABELS[stage.stage] || stage.stage).replace(/_/g, " ")}:{" "}
-                          {stage.message || "Lỗi"}
+                          {formatAiStageMessage(stage)}
                         </Typography>
                       ))}
                   </Stack>
@@ -850,18 +1305,41 @@ export default function AiRegistrationImportPage() {
                   Chưa có dữ liệu xem trước. Chọn giải rồi bấm Xem trước danh sách.
                 </Alert>
               ) : (
-                <Box sx={{ height: 520, width: "100%" }}>
+                <Box sx={{ height: 620, width: "100%" }}>
                   <DataGrid
                     rows={gridRows}
                     columns={previewColumns}
                     checkboxSelection
                     disableRowSelectionOnClick
+                    columnHeaderHeight={64}
+                    getRowHeight={() => "auto"}
+                    getEstimatedRowHeight={() => 112}
                     isRowSelectable={(params) => params.row.status === "ready"}
                     selectionModel={selectionModel}
                     onSelectionModelChange={(value) => setSelectionModel(value)}
                     pageSizeOptions={[10, 25, 50, 100]}
                     initialState={{
                       pagination: { paginationModel: { page: 0, pageSize: 25 } },
+                    }}
+                    sx={{
+                      "& .MuiDataGrid-columnHeaderTitle": {
+                        whiteSpace: "normal",
+                        lineHeight: 1.25,
+                      },
+                      "& .MuiDataGrid-columnHeader": {
+                        py: 1,
+                      },
+                      "& .MuiDataGrid-row": {
+                        maxHeight: "none !important",
+                      },
+                      "& .MuiDataGrid-cell": {
+                        alignItems: "flex-start",
+                        py: 0.5,
+                      },
+                      "& .MuiDataGrid-cellContent": {
+                        whiteSpace: "normal",
+                        lineHeight: 1.35,
+                      },
                     }}
                   />
                 </Box>
@@ -882,20 +1360,52 @@ export default function AiRegistrationImportPage() {
                 {!credentials.length ? (
                   <Alert severity="info">Đã lưu xong, không phát sinh tài khoản tạm mới.</Alert>
                 ) : (
-                  <Box sx={{ height: 360, width: "100%" }}>
-                    <DataGrid
-                      rows={credentials.map((row, index) => ({
-                        id: `${row.userId}-${index}`,
-                        ...row,
-                      }))}
-                      columns={credentialColumns}
-                      disableRowSelectionOnClick
-                      pageSizeOptions={[10, 25, 50]}
-                      initialState={{
-                        pagination: { paginationModel: { page: 0, pageSize: 10 } },
-                      }}
-                    />
-                  </Box>
+                  <Stack spacing={2}>
+                    <Stack
+                      direction={{ xs: "column", md: "row" }}
+                      spacing={1}
+                      useFlexGap
+                      flexWrap="wrap"
+                    >
+                      <Button
+                        variant="outlined"
+                        startIcon={<FileDownloadIcon />}
+                        endIcon={<ArrowDropDownIcon />}
+                        onClick={handleOpenUserExportMenu}
+                      >
+                        Xuất thông tin user vừa tạo
+                      </Button>
+                    </Stack>
+
+                    <Menu
+                      anchorEl={userExportAnchorEl}
+                      open={Boolean(userExportAnchorEl)}
+                      onClose={handleCloseUserExportMenu}
+                    >
+                      <MenuItem onClick={() => handleExportCreatedUsers("excel")}>
+                        Xuất Excel
+                      </MenuItem>
+                      <MenuItem onClick={() => handleExportCreatedUsers("csv")}>Xuất CSV</MenuItem>
+                      <MenuItem onClick={() => handleExportCreatedUsers("json")}>
+                        Xuất JSON
+                      </MenuItem>
+                    </Menu>
+
+                    <Box sx={{ height: 360, width: "100%" }}>
+                      <DataGrid
+                        rows={credentialExportModel.rows.map((row, index) => ({
+                          id: `${row.userId || row.rowId || "user"}-${index}`,
+                          ...row,
+                        }))}
+                        columns={credentialColumns}
+                        disableRowSelectionOnClick
+                        pageSizeOptions={[10, 25, 50]}
+                        initialState={{
+                          pagination: { paginationModel: { page: 0, pageSize: 10 } },
+                        }}
+                      />
+                    </Box>
+                  </Stack>
                 )}
               </CardContent>
             </Card>
@@ -903,13 +1413,102 @@ export default function AiRegistrationImportPage() {
         </Stack>
       </Box>
 
+      <Dialog
+        open={paymentDialogOpen}
+        onClose={() => {
+          if (!committing) setPaymentDialogOpen(false);
+        }}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Xác nhận thanh toán trước khi tạo đăng ký</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Typography variant="body2" color="text.secondary">
+              {
+                "Tick các dòng đã xác nhận thanh toán. Dòng được chọn sẽ lưu là đã thanh toán, dòng còn lại sẽ lưu là chưa thanh toán."
+              }
+            </Typography>
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={allReadyPaid}
+                  indeterminate={partiallyPaid}
+                  onChange={(event) => handleToggleAllPaidRows(event.target.checked)}
+                />
+              }
+              label={`Tất cả (${readyRows.length} dòng)`}
+            />
+
+            <Stack spacing={1} sx={{ maxHeight: 420, overflowY: "auto", pr: 1 }}>
+              {readyRows.map((row) => (
+                <Box
+                  key={row.rowId}
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 2,
+                    px: 1.5,
+                    py: 1,
+                  }}
+                >
+                  <FormControlLabel
+                    sx={{ m: 0, alignItems: "flex-start", width: "100%" }}
+                    control={
+                      <Checkbox
+                        checked={paidRowIdSet.has(row.rowId)}
+                        onChange={() => handleTogglePaidRow(row.rowId)}
+                        sx={{ mt: 0.25 }}
+                      />
+                    }
+                    label={
+                      <Stack spacing={0.25} sx={{ py: 0.25 }}>
+                        <Typography variant="body2" fontWeight={700}>
+                          {`Dòng ${row.sourceRowNumber}: ${row.primary?.fullName || "-"}${
+                            tournament?.eventType === "single"
+                              ? ""
+                              : ` • ${row.secondary?.fullName || "-"}`
+                          }`}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Thanh toán preview: {row.paymentStatus || "Chưa rõ"}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Sẽ lưu:{" "}
+                          {paidRowIdSet.has(row.rowId) ? "Đã thanh toán" : "Chưa thanh toán"}
+                        </Typography>
+                      </Stack>
+                    }
+                  />
+                </Box>
+              ))}
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={committing} onClick={() => setPaymentDialogOpen(false)}>
+            Hủy
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            startIcon={committing ? <CircularProgress size={16} /> : <DoneAllIcon />}
+            disabled={!readyRows.length || committing}
+            onClick={handleConfirmCommitAllReady}
+          >
+            {committing ? "Đang tạo đăng ký..." : `Xác nhận tạo ${readyRows.length} đăng ký`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar
         open={snack.open}
         autoHideDuration={4000}
         onClose={() => setSnack((prev) => ({ ...prev, open: false }))}
       >
         <Alert severity={snack.type} variant="filled">
-          {snack.msg}
+          {brandAiCopy(snack.msg)}
         </Alert>
       </Snackbar>
       <Footer />
