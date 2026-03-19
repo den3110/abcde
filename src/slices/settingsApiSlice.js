@@ -1,5 +1,5 @@
 // src/slices/settingsApiSlice.js
-import { apiSlice } from "./apiSlice"; // dùng chung base như dự án bạn
+import { apiSlice } from "./apiSlice"; // dÃ¹ng chung base nhÆ° dá»± Ã¡n báº¡n
 
 export const settingsApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({

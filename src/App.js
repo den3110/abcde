@@ -16,7 +16,7 @@ Coded by www.creative-tim.com
 import { useState, useEffect, useMemo } from "react";
 
 // react-router components
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 
 // @mui material components
 import { ThemeProvider } from "@mui/material/styles";
@@ -68,6 +68,7 @@ export default function App() {
   const [onMouseEnter, setOnMouseEnter] = useState(false);
   const [rtlCache, setRtlCache] = useState(null);
   const { pathname } = useLocation();
+  const navigate = useNavigate();
 
   // Cache for the rtl
   useMemo(() => {
@@ -108,6 +109,18 @@ export default function App() {
     document.documentElement.scrollTop = 0;
     document.scrollingElement.scrollTop = 0;
   }, [pathname]);
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      navigate("/authentication/sign-in", {
+        replace: true,
+        state: { from: { pathname } },
+      });
+    };
+
+    window.addEventListener("app:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("app:unauthorized", handleUnauthorized);
+  }, [navigate, pathname]);
 
   const getRoutes = (allRoutes) =>
     allRoutes.map((route) => {
