@@ -561,8 +561,8 @@ export default function DriveExportMonitorPage() {
       await retryExport(recordingId).unwrap();
       refetch();
       refetchWorkerHealth();
-    } catch (_) {}
-    finally {
+    } catch (_) {
+    } finally {
       setRetryingRecordingId(null);
     }
   };
