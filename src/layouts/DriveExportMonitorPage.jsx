@@ -638,7 +638,8 @@ export default function DriveExportMonitorPage() {
                 Giám sát Máy chủ Ghi hình - Drive
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.75 }}>
-                Theo dõi tiến trình worker export, backlog lên Drive, và các bản ghi đã sẵn sàng phát lại
+                Theo dõi tiến trình worker export, backlog lên Drive, và các bản ghi đã sẵn sàng
+                phát lại
               </Typography>
             </Box>
 
