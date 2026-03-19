@@ -73,33 +73,6 @@ const TABLE_HEADER_CELL_SX = {
 };
 
 function SummaryCard({ label, value, icon, color }) {
-  const handleQueueRegeneration = useCallback(async () => {
-    try {
-      const id = toast.info("Dang tao hang cho gen lai anh AI...", { autoClose: false });
-      const res = await queueImageRegenerationJob({
-        imageFilter: filters.imageFilter,
-        origin: filters.origin,
-        keyword: filters.keyword,
-        limit: summary.total || items.length || 30,
-      }).unwrap();
-      toast.dismiss(id);
-      toast.success(
-        `Da tao job ${res?.job?.id || ""} voi ${res?.selectedCount || 0} anh trong hang cho.`
-      );
-      refetch();
-    } catch (err) {
-      toast.error(err?.data?.message || "Tao hang cho gen lai anh that bai.");
-    }
-  }, [
-    filters.imageFilter,
-    filters.keyword,
-    filters.origin,
-    items.length,
-    queueImageRegenerationJob,
-    refetch,
-    summary.total,
-  ]);
-
   return (
     <Paper
       sx={{
@@ -258,6 +231,33 @@ export default function NewsImageMonitorPage() {
   const handleSearch = useCallback(() => {
     handleFilterChange("keyword", searchText.trim());
   }, [searchText, handleFilterChange]);
+
+  const handleQueueRegeneration = useCallback(async () => {
+    try {
+      const id = toast.info("Dang tao hang cho gen lai anh AI...", { autoClose: false });
+      const res = await queueImageRegenerationJob({
+        imageFilter: filters.imageFilter,
+        origin: filters.origin,
+        keyword: filters.keyword,
+        limit: summary.total || items.length || 30,
+      }).unwrap();
+      toast.dismiss(id);
+      toast.success(
+        `Da tao job ${res?.job?.id || ""} voi ${res?.selectedCount || 0} anh trong hang cho.`
+      );
+      refetch();
+    } catch (err) {
+      toast.error(err?.data?.message || "Tao hang cho gen lai anh that bai.");
+    }
+  }, [
+    filters.imageFilter,
+    filters.keyword,
+    filters.origin,
+    items.length,
+    queueImageRegenerationJob,
+    refetch,
+    summary.total,
+  ]);
 
   const handleBackfill = useCallback(async () => {
     try {
