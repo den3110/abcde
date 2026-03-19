@@ -154,6 +154,96 @@ function SummaryCard({ title, value, hint, color = "text.primary" }) {
   );
 }
 
+function StorageOverviewCard({ storage }) {
+  const usedBytes = Number(storage?.usedBytes || 0);
+  const remainingBytes =
+    storage?.remainingBytes == null ? null : Number(storage.remainingBytes || 0);
+  const totalBytes = storage?.totalBytes == null ? null : Number(storage.totalBytes || 0);
+  const percentUsed = storage?.percentUsed == null ? null : Number(storage.percentUsed || 0);
+  const configured = Boolean(storage?.configured);
+
+  return (
+    <Card sx={{ borderRadius: 3 }}>
+      <CardContent>
+        <Stack spacing={1.5}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", md: "center" }}
+          >
+            <Stack spacing={0.35}>
+              <Typography variant="h6" fontWeight={800}>
+                R2 Storage
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.72 }}>
+                Chi tinh source segments recording dang con nam tren R2.
+              </Typography>
+            </Stack>
+
+            <Chip
+              size="small"
+              color={configured ? "primary" : "warning"}
+              variant="outlined"
+              label={
+                configured
+                  ? `${percentUsed}% da dung`
+                  : "Chua cau hinh tong dung luong"
+              }
+            />
+          </Stack>
+
+          {configured ? (
+            <LinearProgress
+              variant="determinate"
+              value={Math.max(0, Math.min(100, percentUsed))}
+              sx={{ height: 10, borderRadius: 999 }}
+            />
+          ) : null}
+
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={4}>
+              <Stack spacing={0.35}>
+                <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                  Da dung
+                </Typography>
+                <Typography variant="h5" fontWeight={800} color="warning.main">
+                  {formatBytes(usedBytes)}
+                </Typography>
+              </Stack>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Stack spacing={0.35}>
+                <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                  Con trong
+                </Typography>
+                <Typography variant="h5" fontWeight={800} color="success.main">
+                  {remainingBytes == null ? "Chua biet" : formatBytes(remainingBytes)}
+                </Typography>
+              </Stack>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Stack spacing={0.35}>
+                <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                  Tong
+                </Typography>
+                <Typography variant="h5" fontWeight={800}>
+                  {totalBytes == null ? "Chua cau hinh" : formatBytes(totalBytes)}
+                </Typography>
+              </Stack>
+            </Grid>
+          </Grid>
+
+          <Typography variant="caption" sx={{ opacity: 0.68 }}>
+            Dang co {storage?.recordingsWithSourceOnR2 || 0} recording con giu du lieu nguon tren
+            R2.
+          </Typography>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ProgressCell({ row }) {
   const { displaySegment, totalSegments, uploadedSegments, segmentPercent, overallPercent } =
     getRowProgressSummary(row);
@@ -324,6 +414,11 @@ function RecordingDetailDialog({ row, open, onClose }) {
               label={`Output: ${formatDuration(row?.durationSeconds)} / ${formatBytes(
                 row?.sizeBytes
               )}`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`R2 source: ${formatBytes(row?.r2SourceBytes)}`}
             />
           </Stack>
 
@@ -553,6 +648,7 @@ export default function LiveRecordingMonitorPage() {
   const rows = snapshot?.rows || [];
   const summary = snapshot?.summary || {};
   const meta = snapshot?.meta || {};
+  const r2Storage = summary?.r2Storage || {};
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -629,6 +725,9 @@ export default function LiveRecordingMonitorPage() {
             </Typography>
             <Typography variant="caption" sx={{ opacity: 0.7 }}>
               Segments: {row.segmentSummary?.totalSegments || 0}
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              R2: {formatBytes(row.r2SourceBytes)}
             </Typography>
           </Stack>
         ),
@@ -766,6 +865,8 @@ export default function LiveRecordingMonitorPage() {
               />
             </Grid>
           </Grid>
+
+          <StorageOverviewCard storage={r2Storage} />
 
           <Card sx={{ borderRadius: 3 }}>
             <CardContent>

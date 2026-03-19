@@ -57,6 +57,7 @@ import LiveRecordingMonitorPage from "layouts/LiveRecordingMonitorPage";
 import DriveExportMonitorPage from "layouts/DriveExportMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
+import NewsImageMonitorPage from "layouts/NewsImageMonitorPage";
 import NewsListPage from "layouts/NewsListPage";
 import NewsDetailPage from "layouts/NewsDetailPage";
 import AdminSystemPage from "layouts/AdminSystemPage";
@@ -103,6 +104,17 @@ const routes = [
     private: true,
     roles: ["admin"],
     show: true, // hiện trên sidebar
+  },
+  {
+    type: "collapse",
+    name: "Quản lý Ảnh AI",
+    key: "news-image-monitor",
+    icon: <Icon fontSize="small">auto_awesome</Icon>,
+    route: "/admin/news-image-monitor",
+    component: <NewsImageMonitorPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
   },
 
   {
