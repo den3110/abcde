@@ -15,7 +15,27 @@ export const settingsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["SystemSettings"],
     }),
+    getRecordingDriveStatus: builder.query({
+      query: () => ({ url: "/admin/recording-drive/status" }),
+      providesTags: ["RecordingDriveStatus"],
+    }),
+    recordingDriveOAuthInit: builder.query({
+      query: () => ({ url: "/admin/recording-drive/oauth/init" }),
+    }),
+    disconnectRecordingDrive: builder.mutation({
+      query: () => ({
+        url: "/admin/recording-drive/disconnect",
+        method: "POST",
+      }),
+      invalidatesTags: ["RecordingDriveStatus"],
+    }),
   }),
 });
 
-export const { useGetSystemSettingsQuery, useUpdateSystemSettingsMutation } = settingsApiSlice;
+export const {
+  useGetSystemSettingsQuery,
+  useUpdateSystemSettingsMutation,
+  useGetRecordingDriveStatusQuery,
+  useLazyRecordingDriveOAuthInitQuery,
+  useDisconnectRecordingDriveMutation,
+} = settingsApiSlice;

@@ -236,6 +236,22 @@ function FailedJobItemsDialog({ job, open, onClose }) {
   );
 }
 
+FailedJobItemsDialog.propTypes = {
+  job: PropTypes.shape({
+    id: PropTypes.string,
+    items: PropTypes.arrayOf(
+      PropTypes.shape({
+        title: PropTypes.string,
+        slug: PropTypes.string,
+        status: PropTypes.string,
+        error: PropTypes.string,
+      })
+    ),
+  }),
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+};
+
 export default function NewsImageMonitorPage() {
   const [filters, setFilters] = useState({
     page: 1,
