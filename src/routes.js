@@ -625,7 +625,7 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Avatar Optimization",
+    name: "Tối ưu Ảnh Đại Diện",
     key: "admin-avatar-optimization",
     icon: <Icon fontSize="small">auto_fix_high</Icon>,
     route: "/admin/avatar-optimization",

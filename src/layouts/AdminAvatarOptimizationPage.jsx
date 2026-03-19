@@ -62,9 +62,9 @@ function formatDuration(ms = 0) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "Khong co";
+  if (!value) return "Không có";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Khong co";
+  if (Number.isNaN(date.getTime())) return "Không có";
 
   return new Intl.DateTimeFormat("vi-VN", {
     dateStyle: "short",
@@ -125,19 +125,19 @@ function UserSampleCard({ title, item }) {
     <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
       <Stack spacing={0.5}>
         <Typography fontWeight={700} noWrap>
-          {item?.name || item?.nickname || "Khong co"}
+          {item?.name || item?.nickname || "Không có"}
         </Typography>
         <Typography variant="body2" color="text.secondary" noWrap>
-          {item?.phone || item?.avatar || "Khong co"}
+          {item?.phone || item?.avatar || "Không có"}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           {title}:{" "}
           {item?.avatarOptimization?.optimizedAt || item?.updatedAt
             ? formatDateTime(item?.avatarOptimization?.optimizedAt || item?.updatedAt)
-            : "Khong co"}
+            : "Không có"}
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
-          {item?.avatar || "Khong co"}
+          {item?.avatar || "Không có"}
         </Typography>
       </Stack>
     </Paper>
@@ -235,11 +235,11 @@ export default function AdminAvatarOptimizationPage() {
       const result = await runSweep().unwrap();
       showSnack(
         result?.started ? "success" : "info",
-        result?.started ? "Da kich hoat sweep avatar." : "Sweep dang chay tu luong khac."
+        result?.started ? "Đã kích hoạt quét ảnh đại diện." : "Tác vụ quét đang chạy ở luồng khác."
       );
       await refetch();
     } catch (runError) {
-      showSnack("error", runError?.data?.message || "Khong chay duoc sweep avatar.");
+      showSnack("error", runError?.data?.message || "Không chạy được tác vụ quét ảnh đại diện.");
     }
   };
 
@@ -248,11 +248,11 @@ export default function AdminAvatarOptimizationPage() {
       const result = await runCleanup().unwrap();
       showSnack(
         result?.started ? "success" : "info",
-        result?.started ? "Da kich hoat don trash." : "Cleanup dang chay tu luong khac."
+        result?.started ? "Đã kích hoạt dọn thùng rác." : "Tác vụ dọn đang chạy ở luồng khác."
       );
       await refetch();
     } catch (runError) {
-      showSnack("error", runError?.data?.message || "Khong chay duoc cleanup.");
+      showSnack("error", runError?.data?.message || "Không chạy được tác vụ dọn dẹp.");
     }
   };
 
@@ -270,10 +270,10 @@ export default function AdminAvatarOptimizationPage() {
           >
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                Avatar Optimization
+                Tối ưu Ảnh Đại Diện
               </Typography>
               <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                Theo doi quet nen, chay tay va kiem tra vung trash cho avatar user.
+                Theo dõi quét nền, chạy thủ công và kiểm tra thùng rác cho ảnh đại diện người dùng.
               </Typography>
             </Box>
 
@@ -289,7 +289,7 @@ export default function AdminAvatarOptimizationPage() {
                     onChange={(event) => setAutoRefresh(event.target.checked)}
                   />
                 }
-                label="Tu lam moi 5 giay"
+                label="Tự làm mới mỗi 5 giây"
               />
               <Button
                 variant="outlined"
@@ -297,7 +297,7 @@ export default function AdminAvatarOptimizationPage() {
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
-                Lam moi
+                Làm mới
               </Button>
               <Button
                 variant="contained"
@@ -305,7 +305,7 @@ export default function AdminAvatarOptimizationPage() {
                 onClick={handleRunSweep}
                 disabled={isRunningSweepAction || Boolean(sweep?.running)}
               >
-                Chay sweep ngay
+                Chạy quét ngay
               </Button>
               <Button
                 variant="outlined"
@@ -314,7 +314,7 @@ export default function AdminAvatarOptimizationPage() {
                 onClick={handleRunCleanup}
                 disabled={isRunningCleanupAction || Boolean(cleanup?.running)}
               >
-                Don trash ngay
+                Dọn thùng rác ngay
               </Button>
             </Stack>
           </Stack>
@@ -334,11 +334,11 @@ export default function AdminAvatarOptimizationPage() {
               }}
             >
               <CircularProgress />
-              <Typography color="text.secondary">Dang tai trang thai...</Typography>
+              <Typography color="text.secondary">Đang tải trạng thái...</Typography>
             </Paper>
           ) : error ? (
             <Alert severity="error">
-              {error?.data?.message || "Khong tai duoc trang thai avatar optimization."}
+              {error?.data?.message || "Không tải được trạng thái tối ưu ảnh đại diện."}
             </Alert>
           ) : (
             <Stack spacing={2.5}>
@@ -354,33 +354,33 @@ export default function AdminAvatarOptimizationPage() {
                 }}
               >
                 <MetricCard
-                  label="User co avatar"
+                  label="Người dùng có ảnh đại diện"
                   value={summary.totalAvatarUsers || 0}
-                  caption="Tong user dang co gia tri avatar"
+                  caption="Tổng số người dùng đang có ảnh đại diện"
                   tone="info"
                 />
                 <MetricCard
-                  label="Dang cho xu ly"
+                  label="Đang chờ xử lý"
                   value={summary.pendingUsers || 0}
-                  caption="Avatar chua sync xong theo trang thai moi nhat"
+                  caption="Ảnh đại diện chưa đồng bộ xong theo trạng thái mới nhất"
                   tone="warning"
                 />
                 <MetricCard
-                  label="Da dong bo"
+                  label="Đã đồng bộ"
                   value={summary.upToDateUsers || 0}
-                  caption="Avatar da duoc danh dau khop voi model hien tai"
+                  caption="Ảnh đại diện đã được đánh dấu khớp với dữ liệu hiện tại"
                   tone="success"
                 />
                 <MetricCard
-                  label="Avatar toi uu dang dung"
+                  label="Ảnh tối ưu đang dùng"
                   value={summary.activeOptimizedUsers || 0}
-                  caption="Model user dang tro toi avatar optimized"
+                  caption="Tài khoản người dùng đang trỏ tới ảnh đã tối ưu"
                   tone="info"
                 />
                 <MetricCard
-                  label="File trong trash"
+                  label="Tệp trong thùng rác"
                   value={trash.files || 0}
-                  caption={`${formatBytes(trash.totalBytes || 0)} dang nam trong _trash`}
+                  caption={`${formatBytes(trash.totalBytes || 0)} đang nằm trong thùng rác`}
                   tone="warning"
                 />
               </Box>
@@ -401,35 +401,35 @@ export default function AdminAvatarOptimizationPage() {
                       mb={1.5}
                     >
                       <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                        Sweep avatar
+                        Quét ảnh đại diện
                       </Typography>
                       <StatusChip
                         running={Boolean(sweep?.running)}
-                        idleLabel="Dang nghi"
-                        runningLabel="Dang chay"
+                        idleLabel="Đang nghỉ"
+                        runningLabel="Đang chạy"
                       />
                     </Stack>
 
                     <Stack spacing={1}>
                       <Typography variant="body2" color="text.secondary">
-                        Lan bat dau: {formatDateTime(sweep?.lastStartedAt)}
+                        Lần bắt đầu: {formatDateTime(sweep?.lastStartedAt)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Lan ket thuc: {formatDateTime(sweep?.lastFinishedAt)}
+                        Lần kết thúc: {formatDateTime(sweep?.lastFinishedAt)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Thoi luong: {formatDuration(sweep?.lastDurationMs)}
+                        Thời lượng: {formatDuration(sweep?.lastDurationMs)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Ly do: {sweep?.lastReason || "Khong co"}
+                        Lý do: {sweep?.lastReason || "Không có"}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Ket qua:{" "}
+                        Kết quả:{" "}
                         {sweep?.lastResult
-                          ? `${sweep.lastResult.processed || 0} user, ${
+                          ? `${sweep.lastResult.processed || 0} người dùng, ${
                               sweep.lastResult.optimized || 0
-                            } avatar toi uu`
-                          : "Khong co"}
+                            } ảnh tối ưu`
+                          : "Không có"}
                       </Typography>
                       {sweep?.lastError ? (
                         <Alert severity="error" sx={{ mt: 1 }}>
@@ -449,30 +449,30 @@ export default function AdminAvatarOptimizationPage() {
                       mb={1.5}
                     >
                       <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                        Cleanup trash
+                        Dọn thùng rác
                       </Typography>
                       <StatusChip
                         running={Boolean(cleanup?.running)}
-                        idleLabel="Dang nghi"
-                        runningLabel="Dang chay"
+                        idleLabel="Đang nghỉ"
+                        runningLabel="Đang chạy"
                       />
                     </Stack>
 
                     <Stack spacing={1}>
                       <Typography variant="body2" color="text.secondary">
-                        Lan bat dau: {formatDateTime(cleanup?.lastStartedAt)}
+                        Lần bắt đầu: {formatDateTime(cleanup?.lastStartedAt)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Lan ket thuc: {formatDateTime(cleanup?.lastFinishedAt)}
+                        Lần kết thúc: {formatDateTime(cleanup?.lastFinishedAt)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Thoi luong: {formatDuration(cleanup?.lastDurationMs)}
+                        Thời lượng: {formatDuration(cleanup?.lastDurationMs)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Ket qua:{" "}
+                        Kết quả:{" "}
                         {cleanup?.lastResult
-                          ? `${cleanup.lastResult.removed || 0} file da don`
-                          : "Khong co"}
+                          ? `${cleanup.lastResult.removed || 0} tệp đã dọn`
+                          : "Không có"}
                       </Typography>
                       {cleanup?.lastError ? (
                         <Alert severity="error" sx={{ mt: 1 }}>
@@ -494,7 +494,7 @@ export default function AdminAvatarOptimizationPage() {
                 <Card sx={{ borderRadius: 3 }}>
                   <CardContent>
                     <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>
-                      User cho xu ly
+                      Người dùng chờ xử lý
                     </Typography>
                     {samples?.pending?.length ? (
                       <Box
@@ -508,11 +508,11 @@ export default function AdminAvatarOptimizationPage() {
                         }}
                       >
                         {samples.pending.map((item) => (
-                          <UserSampleCard key={item._id} title="Cap nhat user" item={item} />
+                          <UserSampleCard key={item._id} title="Cập nhật lúc" item={item} />
                         ))}
                       </Box>
                     ) : (
-                      <Alert severity="success">Khong con user nao dang cho toi uu.</Alert>
+                      <Alert severity="success">Không còn người dùng nào đang chờ tối ưu.</Alert>
                     )}
                   </CardContent>
                 </Card>
@@ -520,16 +520,16 @@ export default function AdminAvatarOptimizationPage() {
                 <Card sx={{ borderRadius: 3 }}>
                   <CardContent>
                     <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>
-                      User vua toi uu
+                      Người dùng vừa tối ưu
                     </Typography>
                     {samples?.recentOptimized?.length ? (
                       <Stack spacing={1.5}>
                         {samples.recentOptimized.map((item) => (
-                          <UserSampleCard key={item._id} title="Toi uu luc" item={item} />
+                          <UserSampleCard key={item._id} title="Tối ưu lúc" item={item} />
                         ))}
                       </Stack>
                     ) : (
-                      <Alert severity="info">Chua co avatar optimized nao de hien thi.</Alert>
+                      <Alert severity="info">Chưa có ảnh tối ưu nào để hiển thị.</Alert>
                     )}
                   </CardContent>
                 </Card>
@@ -545,23 +545,23 @@ export default function AdminAvatarOptimizationPage() {
                 <Card sx={{ borderRadius: 3 }}>
                   <CardContent>
                     <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>
-                      Cau hinh nen
+                      Cấu hình nền
                     </Typography>
                     <Stack spacing={1}>
                       <Typography variant="body2" color="text.secondary">
-                        Nguong dung luong: {formatBytes(config?.sweep?.thresholdBytes || 0)}
+                        Ngưỡng dung lượng: {formatBytes(config?.sweep?.thresholdBytes || 0)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Canh toi da: {config?.sweep?.maxDimension || 0}px
+                        Cạnh tối đa: {config?.sweep?.maxDimension || 0}px
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Chat luong webp: {config?.sweep?.quality || 0}
+                        Chất lượng WebP: {config?.sweep?.quality || 0}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Tiet kiem toi thieu: {formatBytes(config?.sweep?.minSavedBytes || 0)}
+                        Tiết kiệm tối thiểu: {formatBytes(config?.sweep?.minSavedBytes || 0)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Mui gio: {config?.sweep?.timezone || "Khong co"}
+                        Múi giờ: {config?.sweep?.timezone || "Không có"}
                       </Typography>
                       <Divider sx={{ my: 1 }} />
                       <Chip
@@ -569,8 +569,8 @@ export default function AdminAvatarOptimizationPage() {
                         color={config?.sweep?.deleteOriginals ? "warning" : "default"}
                         label={
                           config?.sweep?.deleteOriginals
-                            ? "Anh goc se duoc dua vao _trash sau khi model doi sang anh moi"
-                            : "Anh goc dang duoc giu lai sau optimize"
+                            ? "Ảnh gốc sẽ được đưa vào thùng rác sau khi đổi sang ảnh mới"
+                            : "Ảnh gốc đang được giữ lại sau khi tối ưu"
                         }
                         sx={{ alignSelf: "flex-start" }}
                       />
@@ -581,23 +581,23 @@ export default function AdminAvatarOptimizationPage() {
                 <Card sx={{ borderRadius: 3 }}>
                   <CardContent>
                     <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>
-                      Vung trash avatar
+                      Thùng rác ảnh đại diện
                     </Typography>
                     <Stack spacing={1}>
                       <Typography variant="body2" color="text.secondary">
-                        Thu muc: {trash?.root || "Khong co"}
+                        Thư mục: {trash?.root || "Không có"}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        So file: {trash?.files || 0}
+                        Số tệp: {trash?.files || 0}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Dung luong: {formatBytes(trash?.totalBytes || 0)}
+                        Dung lượng: {formatBytes(trash?.totalBytes || 0)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        File cu nhat: {formatDateTime(trash?.oldestFileAt)}
+                        Tệp cũ nhất: {formatDateTime(trash?.oldestFileAt)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        File moi nhat: {formatDateTime(trash?.newestFileAt)}
+                        Tệp mới nhất: {formatDateTime(trash?.newestFileAt)}
                       </Typography>
                     </Stack>
                   </CardContent>

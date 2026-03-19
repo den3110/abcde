@@ -32,7 +32,6 @@ export function getUserRoles(user) {
   if (user.isSuperUser || user.isSuperAdmin) {
     roles.add("superadmin");
     roles.add("superuser");
-    roles.add("admin");
   }
 
   return Array.from(roles).map(normalizeRole).filter(Boolean);
