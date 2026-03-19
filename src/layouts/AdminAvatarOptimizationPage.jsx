@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import PropTypes from "prop-types";
 import { Navigate } from "react-router-dom";
 import {
   Alert,
@@ -142,6 +143,47 @@ function UserSampleCard({ title, item }) {
     </Paper>
   );
 }
+
+MetricCard.propTypes = {
+  label: PropTypes.node.isRequired,
+  value: PropTypes.node.isRequired,
+  caption: PropTypes.node,
+  tone: PropTypes.oneOf(["default", "warning", "success", "info"]),
+};
+
+MetricCard.defaultProps = {
+  caption: null,
+  tone: "default",
+};
+
+StatusChip.propTypes = {
+  running: PropTypes.bool,
+  idleLabel: PropTypes.string.isRequired,
+  runningLabel: PropTypes.string.isRequired,
+};
+
+StatusChip.defaultProps = {
+  running: false,
+};
+
+UserSampleCard.propTypes = {
+  title: PropTypes.string.isRequired,
+  item: PropTypes.shape({
+    _id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    name: PropTypes.string,
+    nickname: PropTypes.string,
+    phone: PropTypes.string,
+    avatar: PropTypes.string,
+    updatedAt: PropTypes.string,
+    avatarOptimization: PropTypes.shape({
+      optimizedAt: PropTypes.string,
+    }),
+  }),
+};
+
+UserSampleCard.defaultProps = {
+  item: null,
+};
 
 export default function AdminAvatarOptimizationPage() {
   const { data: verifyData } = useVerifyQuery();
