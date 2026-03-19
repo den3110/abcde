@@ -362,16 +362,38 @@ export default function NewsImageMonitorPage() {
 
         {/* Articles table */}
         <Paper sx={{ overflow: "hidden" }}>
-          <TableContainer sx={{ maxHeight: 540 }}>
-            <Table stickyHeader size="small" sx={{ minWidth: 800 }}>
+          <TableContainer
+            sx={{
+              maxHeight: 540,
+              "& .MuiTableCell-root": {
+                verticalAlign: "top",
+              },
+            }}
+          >
+            <Table
+              stickyHeader
+              size="small"
+              sx={{
+                minWidth: 980,
+                tableLayout: "fixed",
+              }}
+            >
+              <colgroup>
+                <col style={{ width: 92 }} />
+                <col style={{ width: 460 }} />
+                <col style={{ width: 136 }} />
+                <col style={{ width: 170 }} />
+                <col style={{ width: 136 }} />
+                <col style={{ width: 130 }} />
+              </colgroup>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600, width: 80 }}>Ảnh</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Ảnh</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Tiêu đề</TableCell>
-                  <TableCell sx={{ fontWeight: 600, width: 120 }}>Origin</TableCell>
-                  <TableCell sx={{ fontWeight: 600, width: 160 }}>Nguồn ảnh</TableCell>
-                  <TableCell sx={{ fontWeight: 600, width: 120 }}>Trạng thái</TableCell>
-                  <TableCell sx={{ fontWeight: 600, width: 120 }}>Ngày tạo</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Origin</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Nguồn ảnh</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Trạng thái</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Ngày tạo</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -404,16 +426,27 @@ export default function NewsImageMonitorPage() {
                             variant="body2"
                             fontWeight={500}
                             sx={{
-                              maxWidth: 280,
+                              width: "100%",
                               overflow: "hidden",
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
+                              display: "block",
                             }}
                           >
                             {article.title || "(Không tiêu đề)"}
                           </Typography>
                         </Tooltip>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{
+                            display: "block",
+                            width: "100%",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
                           {article.slug}
                         </Typography>
                       </TableCell>
