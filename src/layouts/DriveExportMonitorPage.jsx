@@ -205,10 +205,10 @@ function WorkerHealthPanel({ health }) {
           >
             <Box>
               <Typography variant="h6" fontWeight={800}>
-                Worker health
+                Tình trạng Worker
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.7 }}>
-                Theo doi heartbeat va job export len Drive theo thoi gian thuc
+                Theo dõi heartbeat và tiến trình đẩy lên Drive theo thời gian thực
               </Typography>
             </Box>
             <WorkerStatusChip health={health} />
@@ -635,10 +635,10 @@ export default function DriveExportMonitorPage() {
           >
             <Box>
               <Typography variant="h4" fontWeight={800}>
-                Drive Export Monitor
+                Giám sát Máy chủ Ghi hình - Drive
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.75 }}>
-                Theo doi worker export, backlog len Drive, va cac recording da san sang phat lai
+                Theo dõi tiến trình worker export, backlog lên Drive, và các bản ghi đã sẵn sàng phát lại
               </Typography>
             </Box>
 
