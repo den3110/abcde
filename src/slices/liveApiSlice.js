@@ -32,8 +32,19 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
       providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
     }),
+    getLiveRecordingWorkerHealth: builder.query({
+      query: () => ({
+        url: "/live/recordings/v2/admin/worker-health",
+        method: "GET",
+      }),
+      keepUnusedDataFor: 5,
+    }),
   }),
   overrideExisting: false,
 });
 
-export const { useAdminListLiveSessionsQuery, useGetLiveRecordingMonitorQuery } = liveApiSlice;
+export const {
+  useAdminListLiveSessionsQuery,
+  useGetLiveRecordingMonitorQuery,
+  useGetLiveRecordingWorkerHealthQuery,
+} = liveApiSlice;
