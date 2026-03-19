@@ -61,6 +61,7 @@ import NewsDetailPage from "layouts/NewsDetailPage";
 import AdminSystemPage from "layouts/AdminSystemPage";
 import AuditLogsPage from "layouts/AuditLogsPage";
 import OTAAdminPage from "layouts/ota/OTAAdminPage";
+import AdminAvatarOptimizationPage from "layouts/AdminAvatarOptimizationPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -620,6 +621,18 @@ const routes = [
     component: <LiveRecordingMonitorPage />,
     private: true,
     roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Avatar Optimization",
+    key: "admin-avatar-optimization",
+    icon: <Icon fontSize="small">auto_fix_high</Icon>,
+    route: "/admin/avatar-optimization",
+    component: <AdminAvatarOptimizationPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
     show: true,
   },
 ];

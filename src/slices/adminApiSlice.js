@@ -170,6 +170,25 @@ export const adminApiSlice = apiSlice.injectEndpoints({
         return { url: `/audit/users/${userId}?${params.toString()}`, method: "GET" };
       },
     }),
+    getAvatarOptimizationStatus: builder.query({
+      query: () => ({
+        url: "/admin/avatar-optimization/status",
+        method: "GET",
+      }),
+      keepUnusedDataFor: 5,
+    }),
+    runAvatarOptimizationSweep: builder.mutation({
+      query: () => ({
+        url: "/admin/avatar-optimization/run",
+        method: "POST",
+      }),
+    }),
+    runAvatarOptimizationCleanup: builder.mutation({
+      query: () => ({
+        url: "/admin/avatar-optimization/cleanup",
+        method: "POST",
+      }),
+    }),
   }),
 });
 
@@ -193,4 +212,7 @@ export const {
   useFillCccdForUserMutation,
   useGetAuditUsersSummaryQuery,
   useGetUserAuditQuery,
+  useGetAvatarOptimizationStatusQuery,
+  useRunAvatarOptimizationSweepMutation,
+  useRunAvatarOptimizationCleanupMutation,
 } = adminApiSlice;

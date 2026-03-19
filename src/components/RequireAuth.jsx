@@ -1,13 +1,9 @@
 import PropTypes from "prop-types";
-import { Navigate, useLocation } from "react-router-dom";
-import CircularProgress from "@mui/material/CircularProgress";
 import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
+import { Navigate, useLocation } from "react-router-dom";
 import { useVerifyQuery } from "slices/authApiSlice";
-
-const normalizeRole = (role) =>
-  String(role || "")
-    .trim()
-    .toLowerCase();
+import { getUserRoles, isStrictSuperAdminUser, normalizeRole } from "utils/authz";
 
 function extractUser(data) {
   if (!data) return null;
@@ -15,25 +11,13 @@ function extractUser(data) {
   return data;
 }
 
-function collectRoles(user) {
-  if (!user) return [];
-  const roles = new Set([
-    ...(Array.isArray(user.roles) ? user.roles : []),
-    ...(user.role ? [user.role] : []),
-  ]);
-  if (user.isAdmin) roles.add("admin");
-  if (user.isSuperUser || user.isSuperAdmin) {
-    roles.add("superadmin");
-    roles.add("superuser");
-    roles.add("admin");
-  }
-  return Array.from(roles).map(normalizeRole).filter(Boolean);
-}
-
-export default function RequireAuth({ roles, redirectTo = "/dashboard", children }) {
+export default function RequireAuth({
+  roles,
+  redirectTo = "/dashboard",
+  requireAdminAndSuperAdmin = false,
+  children,
+}) {
   const location = useLocation();
-
-  // Gọi verify để lấy user hiện tại
   const { data, isFetching, error } = useVerifyQuery();
   const user = extractUser(data);
 
@@ -45,19 +29,17 @@ export default function RequireAuth({ roles, redirectTo = "/dashboard", children
     );
   }
 
-  // Nếu 401/403 hoặc không có user => bắt đăng nhập
   const status = error?.status ?? error?.originalStatus;
   if (status === 401 || status === 403 || !user) {
     return <Navigate to="/authentication/sign-in" state={{ from: location }} replace />;
   }
 
-  // Kiểm tra quyền
-  const userRoles = collectRoles(user);
+  const userRoles = getUserRoles(user);
   const wantedRoles = (roles || []).map(normalizeRole).filter(Boolean);
-  const allowed = wantedRoles.length === 0 ? true : wantedRoles.some((r) => userRoles.includes(r));
+  const allowed =
+    wantedRoles.length === 0 ? true : wantedRoles.some((role) => userRoles.includes(role));
 
-  if (!allowed) {
-    // Thiếu quyền: đá về redirectTo (mặc định /dashboard)
+  if (!allowed || (requireAdminAndSuperAdmin && !isStrictSuperAdminUser(user))) {
     return (
       <Navigate
         to={redirectTo}
@@ -71,7 +53,8 @@ export default function RequireAuth({ roles, redirectTo = "/dashboard", children
 }
 
 RequireAuth.propTypes = {
-  roles: PropTypes.arrayOf(PropTypes.string), // ví dụ: ["admin"] hoặc ["referee"]
-  redirectTo: PropTypes.string, // trang fallback khi thiếu quyền
+  roles: PropTypes.arrayOf(PropTypes.string),
+  redirectTo: PropTypes.string,
+  requireAdminAndSuperAdmin: PropTypes.bool,
   children: PropTypes.node.isRequired,
 };

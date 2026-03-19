@@ -31,6 +31,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { logout as clearAuth } from "slices/authSlice";
 import { useLogoutMutation } from "slices/authApiSlice";
 import { apiSlice } from "slices/apiSlice";
+import { getUserRoles, isStrictSuperAdminUser, normalizeRole } from "utils/authz";
 
 // Icons
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -43,31 +44,14 @@ function clearAllCookies() {
   });
 }
 
-// helpers role
-const normalizeRole = (role) =>
-  String(role || "")
-    .trim()
-    .toLowerCase();
-const getUserRoles = (user) => {
-  if (!user) return [];
-  const roles = new Set([
-    ...(Array.isArray(user.roles) ? user.roles : []),
-    ...(typeof user.role === "string" ? [user.role] : []),
-  ]);
-  if (user.isAdmin) roles.add("admin");
-  if (user.isSuperUser || user.isSuperAdmin) {
-    roles.add("superadmin");
-    roles.add("superuser");
-    roles.add("admin");
-  }
-  return Array.from(roles).map(normalizeRole).filter(Boolean);
-};
-
 const canView = (route, user) => {
   // non-private route -> visible unless show=false
   if (!route.private) return route.show !== false;
   // private route -> must be logged in
   if (!user) return false;
+  if (route.requireAdminAndSuperAdmin) {
+    return isStrictSuperAdminUser(user);
+  }
   // if roles are defined -> user needs at least one matching role
   if (route.roles && route.roles.length > 0) {
     const roles = getUserRoles(user);

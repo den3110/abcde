@@ -1,10 +1,28 @@
-const normalizeRole = (role) =>
+export const normalizeRole = (role) =>
   String(role || "")
     .trim()
     .toLowerCase();
 
+export function isAdminUser(user) {
+  if (!user) return false;
+
+  const roles = new Set([
+    ...(Array.isArray(user.roles) ? user.roles : []),
+    ...(typeof user.role === "string" ? [user.role] : []),
+  ]);
+
+  if (user.isAdmin) roles.add("admin");
+
+  return Array.from(roles).map(normalizeRole).includes("admin");
+}
+
+export function isStrictSuperAdminUser(user) {
+  return isAdminUser(user) && Boolean(user?.isSuperUser || user?.isSuperAdmin);
+}
+
 export function getUserRoles(user) {
   if (!user) return [];
+
   const roles = new Set([
     ...(Array.isArray(user.roles) ? user.roles : []),
     ...(typeof user.role === "string" ? [user.role] : []),
@@ -21,17 +39,19 @@ export function getUserRoles(user) {
 }
 
 export function hasAnyRole(user, allowed = []) {
-  if (!allowed || allowed.length === 0) return true; // route không set roles => ai login cũng vào
+  if (!allowed || allowed.length === 0) return true;
+
   const roles = getUserRoles(user);
   const wanted = allowed.map(normalizeRole).filter(Boolean);
-  return wanted.some((r) => roles.includes(r));
+
+  return wanted.some((role) => roles.includes(role));
 }
 
-// chỉ lấy các route hiển thị lên Sidenav theo role
 export function filterRoutesForNav(routes, user) {
   return routes
-    .filter((r) => r.type === "collapse") // chỉ mục có trên menu
-    .filter((r) => r.show !== false) // tôn trọng show: false
-    .filter((r) => (r.private ? !!user : true)) // mục private => cần login
-    .filter((r) => hasAnyRole(user, r.roles)); // lọc theo roles
+    .filter((route) => route.type === "collapse")
+    .filter((route) => route.show !== false)
+    .filter((route) => (route.private ? !!user : true))
+    .filter((route) => (route.requireAdminAndSuperAdmin ? isStrictSuperAdminUser(user) : true))
+    .filter((route) => hasAnyRole(user, route.roles));
 }
