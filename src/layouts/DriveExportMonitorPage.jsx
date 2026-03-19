@@ -112,12 +112,12 @@ function WorkerStatusChip({ health }) {
     status === "busy" ? "info" : alive ? "success" : status === "stale" ? "warning" : "default";
   const label =
     status === "busy"
-      ? "Worker busy"
+      ? "Worker đang bận"
       : alive
-      ? "Worker alive"
+      ? "Worker hoạt động"
       : status === "stale"
-      ? "Worker stale"
-      : "Worker offline";
+      ? "Worker bị treo"
+      : "Worker ngoại tuyến";
   return <Chip size="small" color={color} label={label} />;
 }
 
@@ -269,7 +269,7 @@ function WorkerHealthPanel({ health }) {
             <>
               <Divider />
               <Alert severity="warning">
-                Last failed at {formatDateTime(worker?.lastFailedAt)}: {worker.lastFailedReason}
+                Lỗi gần nhất lúc {formatDateTime(worker?.lastFailedAt)}: {worker.lastFailedReason}
               </Alert>
             </>
           ) : null}
@@ -291,7 +291,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
       <DialogTitle sx={{ pb: 1.5 }}>
         <Stack spacing={0.75}>
           <Typography variant="h5" fontWeight={800}>
-            Chi tiet export len Drive
+            Chi tiết export lên Drive
           </Typography>
           <Typography variant="body2" sx={{ opacity: 0.78 }}>
             {row.participantsLabel || "Unknown match"}
@@ -329,7 +329,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
 
           {missingDriveLinks ? (
             <Alert severity="warning">
-              Recording da ready trong DB nhung chua co link Drive/Play day du.
+              Bản ghi đã sẵn sàng trong DB nhưng chưa có đầy đủ link Drive/Phát.
             </Alert>
           ) : null}
 
@@ -356,14 +356,14 @@ function RecordingDetailDialog({ row, open, onClose }) {
               <SummaryCard
                 title="Duration"
                 value={formatDuration(row.durationSeconds)}
-                hint="Tong thoi luong da ghi"
+                hint="Tổng thời lượng đã ghi"
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
                 title="Output size"
                 value={formatBytes(row.sizeBytes)}
-                hint="Kich thuoc file cuoi"
+                hint="Kích thước file cuối"
               />
             </Grid>
             <Grid item xs={12} md={3}>
@@ -378,11 +378,11 @@ function RecordingDetailDialog({ row, open, onClose }) {
           <Divider />
 
           {segments.length === 0 ? (
-            <Alert severity="info">Chua co segment nao duoc ghi vao DB.</Alert>
+            <Alert severity="info">Chưa có segment nào được ghi vào DB.</Alert>
           ) : (
             <Stack spacing={1.25}>
               <Typography variant="h6" fontWeight={700}>
-                Danh sach segment
+                Danh sách segment
               </Typography>
               {segments.map((segment) => (
                 <Card
@@ -424,7 +424,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose}>Dong</Button>
+        <Button onClick={onClose}>Đóng</Button>
       </DialogActions>
     </Dialog>
   );
@@ -544,13 +544,13 @@ export default function DriveExportMonitorPage() {
     () => [
       {
         field: "status",
-        headerName: "Status",
+        headerName: "Trạng thái",
         minWidth: 130,
         renderCell: ({ row }) => <StatusChip status={row.status} />,
       },
       {
         field: "match",
-        headerName: "Match",
+        headerName: "Trận đấu",
         flex: 1.2,
         minWidth: 280,
         sortable: false,
@@ -558,7 +558,7 @@ export default function DriveExportMonitorPage() {
       },
       {
         field: "output",
-        headerName: "Output",
+        headerName: "Đầu ra",
         minWidth: 180,
         sortable: false,
         renderCell: ({ row }) => (
@@ -577,7 +577,7 @@ export default function DriveExportMonitorPage() {
       },
       {
         field: "drive",
-        headerName: "Drive / Play",
+        headerName: "Drive / Phát",
         minWidth: 260,
         sortable: false,
         filterable: false,
@@ -585,7 +585,7 @@ export default function DriveExportMonitorPage() {
       },
       {
         field: "updatedAt",
-        headerName: "Updated",
+        headerName: "Cập nhật",
         minWidth: 160,
         renderCell: ({ row }) => (
           <Stack spacing={0.3} sx={{ py: 0.6 }}>
@@ -598,7 +598,7 @@ export default function DriveExportMonitorPage() {
       },
       {
         field: "error",
-        headerName: "Last error",
+        headerName: "Lỗi gần nhất",
         flex: 1,
         minWidth: 240,
         sortable: false,
@@ -696,7 +696,7 @@ export default function DriveExportMonitorPage() {
                 value={
                   currentExportRow?.matchCode || workerHealth?.worker?.currentRecordingId || "idle"
                 }
-                hint={currentExportRow?.participantsLabel || "Khong co job export hien tai"}
+                hint={currentExportRow?.participantsLabel || "Không có job export hiện tại"}
                 color="info.main"
               />
             </Grid>
@@ -704,7 +704,7 @@ export default function DriveExportMonitorPage() {
               <SummaryCard
                 title="Exporting"
                 value={summary.exporting.length}
-                hint="Dang ghep va day len Drive"
+                hint="Đang ghép và đẩy lên Drive"
                 color="info.main"
               />
             </Grid>
@@ -712,7 +712,7 @@ export default function DriveExportMonitorPage() {
               <SummaryCard
                 title="Ready"
                 value={summary.ready.length}
-                hint="Da co file tren Drive"
+                hint="Đã có file trên Drive"
                 color="success.main"
               />
             </Grid>
@@ -720,7 +720,7 @@ export default function DriveExportMonitorPage() {
               <SummaryCard
                 title="Failed"
                 value={summary.failed.length}
-                hint="Can kiem tra loi export"
+                hint="Cần kiểm tra lỗi export"
                 color="error.main"
               />
             </Grid>
@@ -740,7 +740,7 @@ export default function DriveExportMonitorPage() {
                   <TextField
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search recording, match, tournament, drive file, error..."
+                    placeholder="Tìm kiếm bản ghi, trận đấu, giải đấu, tệp drive, lỗi..."
                     InputProps={{
                       startAdornment: <SearchIcon sx={{ mr: 1, opacity: 0.5 }} />,
                     }}
@@ -753,14 +753,15 @@ export default function DriveExportMonitorPage() {
                     onChange={(e) => setStatusFilter(e.target.value)}
                     sx={{ width: { xs: "100%", md: 220 } }}
                   >
-                    <MenuItem value="ALL">All export states</MenuItem>
-                    <MenuItem value="exporting">Exporting</MenuItem>
-                    <MenuItem value="ready">Ready</MenuItem>
-                    <MenuItem value="failed">Failed</MenuItem>
+                    <MenuItem value="ALL">Tất cả trạng thái</MenuItem>
+                    <MenuItem value="exporting">Đang xuất</MenuItem>
+                    <MenuItem value="ready">Sẵn sàng</MenuItem>
+                    <MenuItem value="failed">Lỗi</MenuItem>
                   </TextField>
                 </Stack>
 
                 <DataGrid
+                  getRowHeight={() => "auto"}
                   autoHeight
                   rows={filteredRows}
                   columns={columns}

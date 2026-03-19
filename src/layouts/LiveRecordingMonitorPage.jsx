@@ -32,7 +32,10 @@ import { DataGrid, GridToolbar } from "@mui/x-data-grid";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
-import { useGetLiveRecordingMonitorQuery } from "slices/liveApiSlice";
+import {
+  useGetLiveRecordingMonitorQuery,
+  useGetLiveRecordingWorkerHealthQuery,
+} from "slices/liveApiSlice";
 
 dayjs.extend(relativeTime);
 
@@ -132,6 +135,31 @@ function StatusChip({ status }) {
     label: status || "Unknown",
   };
   return <Chip size="small" color={meta.color} label={meta.label} />;
+}
+
+function ExportStageCell({ row }) {
+  const exportPipeline = row?.exportPipeline || {};
+  const stageLabel = exportPipeline.label || "-";
+  const detail = exportPipeline.detail || "";
+
+  if (row?.status !== "exporting") {
+    return (
+      <Typography variant="caption" sx={{ py: 0.6, opacity: 0.72 }}>
+        {row?.status === "ready" ? "Da xong" : row?.status === "failed" ? "That bai" : "-"}
+      </Typography>
+    );
+  }
+
+  return (
+    <Stack spacing={0.35} sx={{ py: 0.6 }}>
+      <Typography variant="body2" fontWeight={700}>
+        {stageLabel}
+      </Typography>
+      <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: "normal" }}>
+        {detail || "Dang doi cap nhat tu worker"}
+      </Typography>
+    </Stack>
+  );
 }
 
 function SummaryCard({ title, value, hint, color = "text.primary" }) {
@@ -404,6 +432,14 @@ function RecordingDetailDialog({ row, open, onClose }) {
               variant="outlined"
               label={`Tien do: ${overallPercent}%`}
             />
+            {row?.exportPipeline?.label ? (
+              <Chip
+                size="small"
+                color="info"
+                variant="outlined"
+                label={`Export: ${row.exportPipeline.label}`}
+              />
+            ) : null}
             <Chip
               size="small"
               variant="outlined"
@@ -416,6 +452,14 @@ function RecordingDetailDialog({ row, open, onClose }) {
               variant="outlined"
               label={`R2 source: ${formatBytes(row?.r2SourceBytes)}`}
             />
+            {row?.exportPipeline?.label ? (
+              <Chip
+                size="small"
+                variant="outlined"
+                color="info"
+                label={`Export: ${row.exportPipeline.label}`}
+              />
+            ) : null}
           </Stack>
 
           <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -462,6 +506,13 @@ function RecordingDetailDialog({ row, open, onClose }) {
               </Button>
             ) : null}
           </Stack>
+
+          {row?.exportPipeline?.label ? (
+            <Alert severity="info">
+              {row.exportPipeline.label}
+              {row.exportPipeline.detail ? ` - ${row.exportPipeline.detail}` : ""}
+            </Alert>
+          ) : null}
 
           {segments.length === 0 ? (
             <Alert severity="info">Chua co segment nao duoc ghi vao DB.</Alert>
@@ -604,6 +655,11 @@ export default function LiveRecordingMonitorPage() {
   const [selectedRowId, setSelectedRowId] = useState(null);
 
   const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
+  const { data: workerHealthPoll } = useGetLiveRecordingWorkerHealthQuery(undefined, {
+    pollingInterval: 10000,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+  });
 
   useEffect(() => {
     if (initialSnapshot) setSnapshot(initialSnapshot);
@@ -645,6 +701,8 @@ export default function LiveRecordingMonitorPage() {
   const summary = snapshot?.summary || {};
   const meta = snapshot?.meta || {};
   const r2Storage = summary?.r2Storage || {};
+  const workerHealth = workerHealthPoll || meta?.workerHealth || null;
+  const exportingRows = rows.filter((row) => row.status === "exporting");
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -663,6 +721,8 @@ export default function LiveRecordingMonitorPage() {
         row.courtLabel,
         row.modeLabel,
         row.status,
+        row.exportPipeline?.label,
+        row.exportPipeline?.detail,
         row.error,
       ]
         .filter(Boolean)
@@ -697,6 +757,13 @@ export default function LiveRecordingMonitorPage() {
         minWidth: 280,
         sortable: false,
         renderCell: ({ row }) => <MatchCell row={row} />,
+      },
+      {
+        field: "exportPipeline",
+        headerName: "Export / Worker",
+        minWidth: 250,
+        sortable: false,
+        renderCell: ({ row }) => <ExportStageCell row={row} />,
       },
       {
         field: "progress",
@@ -824,6 +891,13 @@ export default function LiveRecordingMonitorPage() {
 
           {isError ? (
             <Alert severity="error">Failed to load recording monitor snapshot.</Alert>
+          ) : null}
+
+          {workerHealth && !workerHealth.alive && exportingRows.length > 0 ? (
+            <Alert severity="warning">
+              Worker export khong con heartbeat nhung van con {exportingRows.length} recording dang
+              exporting.
+            </Alert>
           ) : null}
 
           <Grid container spacing={2}>

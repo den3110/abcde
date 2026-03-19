@@ -110,7 +110,7 @@ const routes = [
     name: "Quản lý Ảnh AI",
     key: "news-image-monitor",
     icon: <Icon fontSize="small">auto_awesome</Icon>,
-    route: "/admin/news-image-monitor",
+    route: "/admin/ai-image-monitor",
     component: <NewsImageMonitorPage />,
     private: true,
     roles: ["admin"],

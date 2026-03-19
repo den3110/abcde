@@ -363,15 +363,15 @@ export default function NewsImageMonitorPage() {
         {/* Articles table */}
         <Paper sx={{ overflow: "hidden" }}>
           <TableContainer sx={{ maxHeight: 540 }}>
-            <Table stickyHeader size="small">
+            <Table stickyHeader size="small" sx={{ minWidth: 800 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600 }}>Ảnh</TableCell>
+                  <TableCell sx={{ fontWeight: 600, width: 80 }}>Ảnh</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Tiêu đề</TableCell>
-                  <TableCell sx={{ fontWeight: 600, minWidth: 100 }}>Origin</TableCell>
-                  <TableCell sx={{ fontWeight: 600, minWidth: 120 }}>Nguồn ảnh</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Trạng thái</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Ngày tạo</TableCell>
+                  <TableCell sx={{ fontWeight: 600, width: 120 }}>Origin</TableCell>
+                  <TableCell sx={{ fontWeight: 600, width: 160 }}>Nguồn ảnh</TableCell>
+                  <TableCell sx={{ fontWeight: 600, width: 120 }}>Trạng thái</TableCell>
+                  <TableCell sx={{ fontWeight: 600, width: 120 }}>Ngày tạo</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
