@@ -24,6 +24,10 @@ import {
   TableRow,
   Pagination,
   Avatar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ImageIcon from "@mui/icons-material/Image";
@@ -197,6 +201,41 @@ function formatDateTime(value) {
   return date.toLocaleString("vi-VN");
 }
 
+function FailedJobItemsDialog({ job, open, onClose }) {
+  if (!job) return null;
+  const failedItems = (job.items || []).filter((i) => i.status === "failed");
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Danh sách ảnh lỗi (Job {job.id.slice(-6)})</DialogTitle>
+      <DialogContent dividers>
+        {failedItems.length === 0 ? (
+          <Typography variant="body2">Không có ảnh nào bị lỗi trong job này.</Typography>
+        ) : (
+          <Stack spacing={2}>
+            {failedItems.map((item, idx) => (
+              <Alert severity="error" key={idx} sx={{ alignItems: "flex-start" }}>
+                <Typography variant="subtitle2" fontWeight={700}>
+                  {item.title}
+                </Typography>
+                <Typography variant="caption" sx={{ display: "block", mb: 0.5, opacity: 0.8 }}>
+                  Slug: {item.slug}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Lỗi:</strong> {item.error || "Không có chi tiết lỗi"}
+                </Typography>
+              </Alert>
+            ))}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Đóng</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 export default function NewsImageMonitorPage() {
   const [filters, setFilters] = useState({
     page: 1,
@@ -205,6 +244,7 @@ export default function NewsImageMonitorPage() {
     keyword: "",
   });
   const [searchText, setSearchText] = useState("");
+  const [viewFailedJob, setViewFailedJob] = useState(null);
 
   const { data, isLoading, isFetching, refetch } = useGetNewsImageStatsQuery(filters, {
     pollingInterval: 15000,
@@ -538,8 +578,24 @@ export default function NewsImageMonitorPage() {
                   <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                     <Typography variant="caption" color="text.secondary">
                       Progress: {activeRegenJob.progressPercent || 0}% • Completed{" "}
-                      {activeRegenJob.completedItems || 0} • Failed{" "}
-                      {activeRegenJob.failedItems || 0} • Pending {activeRegenJob.queuedItems || 0}
+                      {activeRegenJob.completedItems || 0} •{" "}
+                      {activeRegenJob.failedItems > 0 ? (
+                        <Box
+                          component="span"
+                          sx={{
+                            color: "error.main",
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                            fontWeight: 600,
+                          }}
+                          onClick={() => setViewFailedJob(activeRegenJob)}
+                        >
+                          Failed {activeRegenJob.failedItems}
+                        </Box>
+                      ) : (
+                        `Failed 0`
+                      )}{" "}
+                      • Pending {activeRegenJob.queuedItems || 0}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       Tạo lúc: {formatDateTime(activeRegenJob.createdAt)}
@@ -591,6 +647,16 @@ export default function NewsImageMonitorPage() {
                           <Typography variant="body2" fontWeight={600}>
                             {job.completedItems}/{job.totalItems} đã xử lý
                           </Typography>
+                          {job.failedItems > 0 && (
+                            <Chip
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              label={`${job.failedItems} lỗi`}
+                              onClick={() => setViewFailedJob(job)}
+                              sx={{ cursor: "pointer" }}
+                            />
+                          )}
                         </Stack>
                         <Typography variant="caption" color="text.secondary">
                           Tạo: {formatDateTime(job.createdAt)} • Cập nhật:{" "}
@@ -766,6 +832,12 @@ export default function NewsImageMonitorPage() {
             </Stack>
           )}
         </Paper>
+
+        <FailedJobItemsDialog
+          job={viewFailedJob}
+          open={Boolean(viewFailedJob)}
+          onClose={() => setViewFailedJob(null)}
+        />
       </Box>
     </DashboardLayout>
   );
