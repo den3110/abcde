@@ -7,6 +7,7 @@ import {
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -449,9 +450,10 @@ export default function DriveExportMonitorPage() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [snapshot, setSnapshot] = useState(null);
   const [selectedRowId, setSelectedRowId] = useState(null);
+  const [retryingRecordingId, setRetryingRecordingId] = useState(null);
 
   const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
-  const [retryExport, { isLoading: isRetryingExport }] = useRetryLiveRecordingExportMutation();
+  const [retryExport] = useRetryLiveRecordingExportMutation();
   const {
     data: workerHealth,
     isError: workerHealthError,
@@ -555,10 +557,14 @@ export default function DriveExportMonitorPage() {
 
   const handleRetryExport = async (recordingId) => {
     try {
+      setRetryingRecordingId(recordingId);
       await retryExport(recordingId).unwrap();
       refetch();
       refetchWorkerHealth();
     } catch (_) {}
+    finally {
+      setRetryingRecordingId(null);
+    }
   };
 
   const columns = useMemo(
@@ -616,13 +622,18 @@ export default function DriveExportMonitorPage() {
                 size="small"
                 color="warning"
                 variant="outlined"
-                disabled={isRetryingExport}
+                disabled={Boolean(retryingRecordingId)}
                 onClick={(event) => {
                   event.stopPropagation();
                   handleRetryExport(row.recordingId);
                 }}
+                startIcon={
+                  retryingRecordingId === row.recordingId ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : null
+                }
               >
-                Retry export
+                {retryingRecordingId === row.recordingId ? "Dang retry..." : "Retry export"}
               </Button>
             ) : null}
           </Stack>
@@ -664,7 +675,7 @@ export default function DriveExportMonitorPage() {
         ),
       },
     ],
-    []
+    [retryingRecordingId]
   );
 
   return (

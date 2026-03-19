@@ -181,13 +181,13 @@ function formatRelativeTime(value) {
   const minute = 60 * 1000;
   const hour = 60 * minute;
 
-  if (absMs < minute) return diffMs >= 0 ? "ngay bay gio" : "vua xong";
+  if (absMs < minute) return diffMs >= 0 ? "ngay bây giờ" : "vừa xong";
   if (absMs < hour) {
     const minutes = Math.round(absMs / minute);
-    return diffMs >= 0 ? `${minutes}p nua` : `${minutes}p truoc`;
+    return diffMs >= 0 ? `${minutes}p nữa` : `${minutes}p trước`;
   }
   const hours = Math.round(absMs / hour);
-  return diffMs >= 0 ? `${hours}h nua` : `${hours}h truoc`;
+  return diffMs >= 0 ? `${hours}h nữa` : `${hours}h trước`;
 }
 
 function formatDateTime(value) {
@@ -234,7 +234,7 @@ export default function NewsImageMonitorPage() {
 
   const handleQueueRegeneration = useCallback(async () => {
     try {
-      const id = toast.info("Dang tao hang cho gen lai anh AI...", { autoClose: false });
+      const id = toast.info("Đang tạo hàng chờ gen lại ảnh AI...", { autoClose: false });
       const res = await queueImageRegenerationJob({
         imageFilter: filters.imageFilter,
         origin: filters.origin,
@@ -243,11 +243,11 @@ export default function NewsImageMonitorPage() {
       }).unwrap();
       toast.dismiss(id);
       toast.success(
-        `Da tao job ${res?.job?.id || ""} voi ${res?.selectedCount || 0} anh trong hang cho.`
+        `Đã tạo job ${res?.job?.id || ""} với ${res?.selectedCount || 0} ảnh trong hàng chờ.`
       );
       refetch();
     } catch (err) {
-      toast.error(err?.data?.message || "Tao hang cho gen lai anh that bai.");
+      toast.error(err?.data?.message || "Tạo hàng chờ gen lại ảnh thất bại.");
     }
   }, [
     filters.imageFilter,
@@ -320,7 +320,7 @@ export default function NewsImageMonitorPage() {
               onClick={handleQueueRegeneration}
               disabled={isQueueingRegeneration}
             >
-              {isQueueingRegeneration ? "Dang xep hang..." : "Gen lai anh AI"}
+              {isQueueingRegeneration ? "Đang xếp hàng..." : "Gen lại ảnh AI"}
             </Button>
             <Button
               variant="contained"
@@ -451,11 +451,11 @@ export default function NewsImageMonitorPage() {
             >
               <Box>
                 <Typography variant="h6" fontWeight={700}>
-                  Hang cho gen lai anh AI
+                  Hàng chờ gen lại ảnh AI
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Moi anh duoc xu ly lan luot. Sau khi xong 1 anh, worker se cho 2 phut truoc khi
-                  toi anh tiep theo.
+                  Mỗi ảnh được xử lý lần lượt. Sau khi xong 1 ảnh, worker sẽ chờ 2 phút trước khi
+                  tới ảnh tiếp theo.
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -465,8 +465,8 @@ export default function NewsImageMonitorPage() {
                     aiHealth?.status === "online"
                       ? "AI image online"
                       : aiHealth?.status === "misconfigured"
-                      ? "AI image chua cau hinh"
-                      : "AI image dang loi"
+                      ? "AI image chưa cấu hình"
+                      : "AI image đang lỗi"
                   }
                 />
                 <Chip variant="outlined" label={`Latency: ${aiHealth?.latencyMs ?? 0}ms`} />
@@ -495,14 +495,14 @@ export default function NewsImageMonitorPage() {
                   >
                     <Box>
                       <Typography variant="subtitle1" fontWeight={700}>
-                        Job dang hoat dong
+                        Job đang hoạt động
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {activeRegenJob.currentItem?.title
-                          ? `Dang xu ly: ${activeRegenJob.currentItem.title}`
+                          ? `Đang xử lý: ${activeRegenJob.currentItem.title}`
                           : activeRegenJob.nextRunAt
-                          ? `Anh tiep theo se vao luc ${formatDateTime(activeRegenJob.nextRunAt)}`
-                          : "Dang doi worker bat dau"}
+                          ? `Ảnh tiếp theo sẽ vào lúc ${formatDateTime(activeRegenJob.nextRunAt)}`
+                          : "Đang đợi worker bắt đầu"}
                       </Typography>
                     </Box>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -510,10 +510,10 @@ export default function NewsImageMonitorPage() {
                         color={activeRegenJob.state === "processing" ? "info" : "warning"}
                         label={
                           activeRegenJob.state === "processing"
-                            ? "Dang gen anh"
+                            ? "Đang gen ảnh"
                             : activeRegenJob.state === "cooldown"
-                            ? "Dang cho luot tiep theo"
-                            : "Dang xep hang"
+                            ? "Đang chờ lượt tiếp theo"
+                            : "Đang xếp hàng"
                         }
                       />
                       <Chip
@@ -523,7 +523,7 @@ export default function NewsImageMonitorPage() {
                       {activeRegenJob.cooldownRemainingMs > 0 ? (
                         <Chip
                           variant="outlined"
-                          label={`Con ${formatRelativeTime(activeRegenJob.nextRunAt)}`}
+                          label={`Còn ${formatRelativeTime(activeRegenJob.nextRunAt)}`}
                         />
                       ) : null}
                     </Stack>
@@ -542,10 +542,10 @@ export default function NewsImageMonitorPage() {
                       {activeRegenJob.failedItems || 0} • Pending {activeRegenJob.queuedItems || 0}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Tao luc: {formatDateTime(activeRegenJob.createdAt)}
+                      Tạo lúc: {formatDateTime(activeRegenJob.createdAt)}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Lan cap nhat cuoi: {formatRelativeTime(activeRegenJob.lastProcessedAt)}
+                      Lần cập nhật cuối: {formatRelativeTime(activeRegenJob.lastProcessedAt)}
                     </Typography>
                   </Stack>
 
@@ -556,15 +556,15 @@ export default function NewsImageMonitorPage() {
               </Paper>
             ) : (
               <Alert severity="info">
-                Hien chua co job gen lai anh AI nao dang chay. Bam &quot;Gen lai anh AI&quot; de dua
-                cac bai generated trong bo loc hien tai vao hang cho.
+                Hiện chưa có job gen lại ảnh AI nào đang chạy. Bấm &quot;Gen lại ảnh AI&quot; để đưa
+                các bài generated trong bộ lọc hiện tại vào hàng chờ.
               </Alert>
             )}
 
             {recentRegenJobs.length ? (
               <Stack spacing={1}>
                 <Typography variant="subtitle2" fontWeight={700}>
-                  Job gan day
+                  Job gần đây
                 </Typography>
                 {recentRegenJobs.map((job) => (
                   <Paper key={job.id} variant="outlined" sx={{ p: 1.5 }}>
@@ -589,11 +589,11 @@ export default function NewsImageMonitorPage() {
                             label={job.status}
                           />
                           <Typography variant="body2" fontWeight={600}>
-                            {job.completedItems}/{job.totalItems} da xu ly
+                            {job.completedItems}/{job.totalItems} đã xử lý
                           </Typography>
                         </Stack>
                         <Typography variant="caption" color="text.secondary">
-                          Tao: {formatDateTime(job.createdAt)} • Cap nhat:{" "}
+                          Tạo: {formatDateTime(job.createdAt)} • Cập nhật:{" "}
                           {formatRelativeTime(job.updatedAt)}
                         </Typography>
                       </Stack>

@@ -40,11 +40,11 @@ import {
 dayjs.extend(relativeTime);
 
 const STATUS_META = {
-  recording: { color: "error", label: "Recording" },
-  uploading: { color: "warning", label: "Uploading" },
-  exporting: { color: "info", label: "Exporting" },
-  ready: { color: "success", label: "Ready" },
-  failed: { color: "error", label: "Failed" },
+  recording: { color: "error", label: "Đang ghi" },
+  uploading: { color: "warning", label: "Đang tải lên" },
+  exporting: { color: "info", label: "Đang xuất" },
+  ready: { color: "success", label: "Sẵn sàng" },
+  failed: { color: "error", label: "Lỗi" },
 };
 
 function formatRelative(ts) {
@@ -83,17 +83,17 @@ function formatDuration(seconds) {
 function formatSegmentUploadStatus(status) {
   switch (status) {
     case "presigned":
-      return "Da cap URL upload";
+      return "Đã cấp URL";
     case "uploading_parts":
-      return "Dang upload part";
+      return "Đang upload part";
     case "uploaded":
-      return "Da upload";
+      return "Đã upload";
     case "failed":
-      return "That bai";
+      return "Thất bại";
     case "aborted":
-      return "Da huy";
+      return "Đã hủy";
     default:
-      return status || "Khong ro";
+      return status || "Không rõ";
   }
 }
 
@@ -145,7 +145,7 @@ function ExportStageCell({ row }) {
   if (row?.status !== "exporting") {
     return (
       <Typography variant="caption" sx={{ py: 0.6, opacity: 0.72 }}>
-        {row?.status === "ready" ? "Da xong" : row?.status === "failed" ? "That bai" : "-"}
+        {row?.status === "ready" ? "Đã xong" : row?.status === "failed" ? "Thất bại" : "-"}
       </Typography>
     );
   }
@@ -156,7 +156,7 @@ function ExportStageCell({ row }) {
         {stageLabel}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: "normal" }}>
-        {detail || "Dang doi cap nhat tu worker"}
+        {detail || "Đang đợi cập nhật từ worker"}
       </Typography>
     </Stack>
   );
@@ -213,7 +213,7 @@ function StorageOverviewCard({ storage }) {
               size="small"
               color={configured ? "primary" : "warning"}
               variant="outlined"
-              label={configured ? `${percentUsed}% da dung` : "Chua cau hinh tong dung luong"}
+              label={configured ? `${percentUsed}% đã dùng` : "Chưa cấu hình dung lượng"}
             />
           </Stack>
 
@@ -242,7 +242,7 @@ function StorageOverviewCard({ storage }) {
                   Con trong
                 </Typography>
                 <Typography variant="h5" fontWeight={800} color="success.main">
-                  {remainingBytes == null ? "Chua biet" : formatBytes(remainingBytes)}
+                  {remainingBytes == null ? "Chưa rõ" : formatBytes(remainingBytes)}
                 </Typography>
               </Stack>
             </Grid>
@@ -252,7 +252,7 @@ function StorageOverviewCard({ storage }) {
                   Tong
                 </Typography>
                 <Typography variant="h5" fontWeight={800}>
-                  {totalBytes == null ? "Chua cau hinh" : formatBytes(totalBytes)}
+                  {totalBytes == null ? "Chưa cấu hình" : formatBytes(totalBytes)}
                 </Typography>
               </Stack>
             </Grid>
@@ -278,10 +278,10 @@ function ProgressCell({ row }) {
       ? `${displaySegment?.completedPartCount || 0}/${totalParts} parts`
       : `${displaySegment?.completedPartCount || 0} parts`;
 
-  let helperText = "Dang ghi, chua tao segment nao";
+  let helperText = "Đang ghi, chưa có đoạn cắt nào";
   if (displaySegment) {
     if (displaySegment.uploadStatus === "uploading_parts" && !hasKnownBytes) {
-      helperText = "Dang cho part dau tien xong de tinh % chinh xac";
+      helperText = "Đang đợi part đầu tiên";
     } else if (hasKnownBytes) {
       helperText = `${segmentPercent}% - ${formatBytes(
         displaySegment.completedBytes || 0
@@ -290,7 +290,7 @@ function ProgressCell({ row }) {
       helperText = `${formatSegmentUploadStatus(displaySegment.uploadStatus)} - ${partText}`;
     }
   } else if (totalSegments > 0) {
-    helperText = "Chua co segment nao dang upload";
+    helperText = "Chưa có đoạn cắt tải lên";
   }
 
   return (
@@ -302,7 +302,7 @@ function ProgressCell({ row }) {
         <Chip
           size="small"
           color={row.status === "failed" ? "error" : "primary"}
-          label={`${overallPercent}% tong the`}
+          label={`Tổng ${overallPercent}%`}
           variant="outlined"
         />
         {displaySegment ? (
@@ -328,7 +328,7 @@ function MatchCell({ row }) {
   return (
     <Stack spacing={0.45} sx={{ py: 0.6 }}>
       <Typography variant="body2" fontWeight={700} sx={{ whiteSpace: "normal" }}>
-        {row.participantsLabel || "Unknown match"}
+        {row.participantsLabel || "Chưa rõ trận đấu"}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.8 }}>
         Match: {row.matchCode || row.matchId || "-"}
@@ -408,7 +408,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
             Chi tiet recording
           </Typography>
           <Typography variant="body2" sx={{ opacity: 0.78 }}>
-            {row?.participantsLabel || "Unknown match"}
+            {row?.participantsLabel || "Chưa rõ trận đấu"}
           </Typography>
           <Typography variant="caption" sx={{ opacity: 0.65 }}>
             {row?.competitionLabel || "-"}
@@ -430,7 +430,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
               size="small"
               color="primary"
               variant="outlined"
-              label={`Tien do: ${overallPercent}%`}
+              label={`Tiến độ: ${overallPercent}%`}
             />
             {row?.exportPipeline?.label ? (
               <Chip
@@ -515,7 +515,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
           ) : null}
 
           {segments.length === 0 ? (
-            <Alert severity="info">Chua co segment nao duoc ghi vao DB.</Alert>
+            <Alert severity="info">Chưa có đoạn cắt nào được lưu vào DB.</Alert>
           ) : (
             <Stack spacing={1.25}>
               <Typography variant="h6" fontWeight={700}>
@@ -585,7 +585,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
                                 ? `${formatBytes(segment.completedBytes || 0)} / ${formatBytes(
                                     segment.totalSizeBytes || 0
                                   )}`
-                                : "Dang cho part dau tien"}
+                                : "Đang đợi part đầu tiên"}
                             </Typography>
                           </Grid>
 
@@ -640,7 +640,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose}>Dong</Button>
+        <Button onClick={onClose}>Đóng</Button>
       </DialogActions>
     </Dialog>
   );
@@ -741,18 +741,18 @@ export default function LiveRecordingMonitorPage() {
     () => [
       {
         field: "status",
-        headerName: "Status",
+        headerName: "Trạng thái",
         minWidth: 130,
         renderCell: ({ row }) => <StatusChip status={row.status} />,
       },
       {
         field: "modeLabel",
-        headerName: "Mode",
+        headerName: "Chế độ",
         minWidth: 170,
       },
       {
         field: "match",
-        headerName: "Match",
+        headerName: "Trận đấu",
         flex: 1.2,
         minWidth: 280,
         sortable: false,
@@ -760,14 +760,14 @@ export default function LiveRecordingMonitorPage() {
       },
       {
         field: "exportPipeline",
-        headerName: "Export / Worker",
+        headerName: "Xuất / Worker",
         minWidth: 250,
         sortable: false,
         renderCell: ({ row }) => <ExportStageCell row={row} />,
       },
       {
         field: "progress",
-        headerName: "Upload Progress",
+        headerName: "Tiến độ tải lên",
         flex: 1,
         minWidth: 260,
         sortable: false,
@@ -775,7 +775,7 @@ export default function LiveRecordingMonitorPage() {
       },
       {
         field: "output",
-        headerName: "Output",
+        headerName: "Đầu ra",
         minWidth: 180,
         sortable: false,
         renderCell: ({ row }) => (
@@ -797,7 +797,7 @@ export default function LiveRecordingMonitorPage() {
       },
       {
         field: "updatedAt",
-        headerName: "Updated",
+        headerName: "Cập nhật",
         minWidth: 150,
         renderCell: ({ row }) => (
           <Stack spacing={0.3} sx={{ py: 0.6 }}>
@@ -810,7 +810,7 @@ export default function LiveRecordingMonitorPage() {
       },
       {
         field: "error",
-        headerName: "Error",
+        headerName: "Lỗi",
         flex: 0.85,
         minWidth: 220,
         sortable: false,
