@@ -185,11 +185,7 @@ function StorageOverviewCard({ storage }) {
               size="small"
               color={configured ? "primary" : "warning"}
               variant="outlined"
-              label={
-                configured
-                  ? `${percentUsed}% da dung`
-                  : "Chua cau hinh tong dung luong"
-              }
+              label={configured ? `${percentUsed}% da dung` : "Chua cau hinh tong dung luong"}
             />
           </Stack>
 

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from "react";
+import PropTypes from "prop-types";
 import {
   Box,
   Paper,
@@ -94,6 +95,13 @@ function SummaryCard({ label, value, icon, color }) {
   );
 }
 
+SummaryCard.propTypes = {
+  label: PropTypes.node.isRequired,
+  value: PropTypes.node.isRequired,
+  icon: PropTypes.node.isRequired,
+  color: PropTypes.string.isRequired,
+};
+
 function ImageThumb({ url }) {
   const [broken, setBroken] = useState(false);
 
@@ -101,10 +109,7 @@ function ImageThumb({ url }) {
     if (!url) return null;
     if (/^https?:\/\//i.test(url)) return url;
     if (url.startsWith("/")) {
-      const base =
-        import.meta.env.VITE_API_BASE_URL ||
-        import.meta.env.VITE_API_URL ||
-        "";
+      const base = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "";
       return `${base.replace(/\/api\/?$/, "")}${url}`;
     }
     return url;
@@ -146,6 +151,10 @@ function ImageThumb({ url }) {
   );
 }
 
+ImageThumb.propTypes = {
+  url: PropTypes.string,
+};
+
 function classifyImageOrigin(heroImageUrl) {
   if (!heroImageUrl || /^data:image\//i.test(heroImageUrl)) return "none";
   if (/^\/uploads\/public\/seo-news\//.test(heroImageUrl)) return "generated-gateway";
@@ -162,12 +171,7 @@ export default function NewsImageMonitorPage() {
   });
   const [searchText, setSearchText] = useState("");
 
-  const {
-    data,
-    isLoading,
-    isFetching,
-    refetch,
-  } = useGetNewsImageStatsQuery(filters);
+  const { data, isLoading, isFetching, refetch } = useGetNewsImageStatsQuery(filters);
 
   const [backfillImages, { isLoading: isBackfilling }] = useBackfillNewsImagesMutation();
   const [cleanupImages, { isLoading: isCleaning }] = useCleanupGatewayImagesMutation();
@@ -203,9 +207,7 @@ export default function NewsImageMonitorPage() {
       const id = toast.info("Đang cleanup source images...", { autoClose: false });
       const res = await cleanupImages({ olderThanMinutes: 30, limit: 100 }).unwrap();
       toast.dismiss(id);
-      toast.success(
-        `Cleanup xong! Đã xóa: ${res?.deleted ?? 0}, Bỏ qua: ${res?.skipped ?? 0}`
-      );
+      toast.success(`Cleanup xong! Đã xóa: ${res?.deleted ?? 0}, Bỏ qua: ${res?.skipped ?? 0}`);
       refetch();
     } catch (err) {
       toast.error(err?.data?.message || "Cleanup thất bại.");
@@ -217,12 +219,7 @@ export default function NewsImageMonitorPage() {
       <DashboardNavbar />
       <Box p={2}>
         {/* Header */}
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          mb={2}
-        >
+        <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
           <Box>
             <Typography variant="h5" fontWeight={600}>
               Quản lý Ảnh AI — Tin tức
