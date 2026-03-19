@@ -34,6 +34,7 @@ import { useSocket } from "context/SocketContext";
 import {
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
+  useRetryLiveRecordingExportMutation,
 } from "slices/liveApiSlice";
 
 dayjs.extend(relativeTime);
@@ -187,6 +188,17 @@ function ExportLinks({ row }) {
         </Button>
       ) : null}
     </Stack>
+  );
+}
+
+function canRetryExport(row) {
+  const stage = row?.exportPipeline?.stage || "";
+  const staleReason = row?.exportPipeline?.staleReason || "";
+  return (
+    row?.status === "failed" ||
+    stage === "stale_no_job" ||
+    staleReason === "stale_no_job" ||
+    staleReason === "worker_offline"
   );
 }
 
@@ -439,6 +451,7 @@ export default function DriveExportMonitorPage() {
   const [selectedRowId, setSelectedRowId] = useState(null);
 
   const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
+  const [retryExport, { isLoading: isRetryingExport }] = useRetryLiveRecordingExportMutation();
   const {
     data: workerHealth,
     isError: workerHealthError,
@@ -540,6 +553,14 @@ export default function DriveExportMonitorPage() {
     ["stale", "offline"].includes(workerHealth?.status || "offline") &&
     summary.exporting.length > 0;
 
+  const handleRetryExport = async (recordingId) => {
+    try {
+      await retryExport(recordingId).unwrap();
+      refetch();
+      refetchWorkerHealth();
+    } catch (_) {}
+  };
+
   const columns = useMemo(
     () => [
       {
@@ -578,10 +599,34 @@ export default function DriveExportMonitorPage() {
       {
         field: "drive",
         headerName: "Drive / Phát",
-        minWidth: 260,
+        minWidth: 360,
         sortable: false,
         filterable: false,
-        renderCell: ({ row }) => <ExportLinks row={row} />,
+        renderCell: ({ row }) => (
+          <Stack
+            direction="row"
+            spacing={0.75}
+            alignItems="center"
+            sx={{ py: 0.6 }}
+            flexWrap="wrap"
+          >
+            <ExportLinks row={row} />
+            {canRetryExport(row) ? (
+              <Button
+                size="small"
+                color="warning"
+                variant="outlined"
+                disabled={isRetryingExport}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleRetryExport(row.recordingId);
+                }}
+              >
+                Retry export
+              </Button>
+            ) : null}
+          </Stack>
+        ),
       },
       {
         field: "updatedAt",

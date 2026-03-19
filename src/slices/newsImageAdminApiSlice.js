@@ -36,6 +36,14 @@ export const newsImageAdminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["NewsImageStats"],
     }),
+    queueNewsImageRegenerationJob: builder.mutation({
+      query: (body) => ({
+        url: "/admin/seo-news/images/regeneration-jobs",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["NewsImageStats"],
+    }),
   }),
 });
 
@@ -43,4 +51,5 @@ export const {
   useGetNewsImageStatsQuery,
   useBackfillNewsImagesMutation,
   useCleanupGatewayImagesMutation,
+  useQueueNewsImageRegenerationJobMutation,
 } = newsImageAdminApiSlice;

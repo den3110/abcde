@@ -63,8 +63,8 @@ const baseQuery = async (args, api, extra) => {
     // 3. Remove auth from Redux and reset RTKQ cache
     api.dispatch(logout());
     api.dispatch(apiSlice.util.resetApiState());
-    // 4. Redirect to login
-    window.location.assign("/authentication/sign-in");
+    // 4. Bỏ dòng force redirect native này tránh reload trang (để React Router tự Navigate mượt mà)
+    // window.location.assign("/authentication/sign-in");
   }
 
   return result;
