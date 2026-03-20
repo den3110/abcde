@@ -104,6 +104,7 @@ export default function SystemSettingsPage() {
   const [form, setForm] = useState(null);
   const [showFab, setShowFab] = useState(false);
   const topSaveRef = useRef(null);
+  const recordingDrivePopupRef = useRef(null);
 
   const buildSettingsPayload = (source) => ({
     maintenance: {
@@ -161,8 +162,13 @@ export default function SystemSettingsPage() {
 
   useEffect(() => {
     const handleRecordingDriveAuthDone = (event) => {
-      if (event.origin !== window.location.origin) return;
       if (event.data?.type !== "recording-drive-auth-done") return;
+      if (recordingDrivePopupRef.current && !recordingDrivePopupRef.current.closed) {
+        try {
+          recordingDrivePopupRef.current.close();
+        } catch (_) {}
+      }
+      recordingDrivePopupRef.current = null;
       refetch();
       refetchRecordingDriveStatus();
       if (event.data?.ok) {
@@ -279,6 +285,7 @@ export default function SystemSettingsPage() {
         "recording-drive-auth",
         "popup=yes,width=720,height=800"
       );
+      recordingDrivePopupRef.current = popup || null;
       if (!popup) {
         toast.error("Trinh duyet da chan popup. Hay cho phep popup roi thu lai.");
       }
