@@ -141,6 +141,9 @@ function MatchCell({ row }) {
 
 function ExportLinks({ row }) {
   const canPlay = row.status === "ready" && Boolean(row.playbackUrl);
+  const rawHref = row.rawStreamAvailable
+    ? row.rawStreamUrl || row.driveRawUrl
+    : row.driveRawUrl || null;
   return (
     <Stack direction="row" spacing={0.5} alignItems="center" sx={{ py: 0.6 }} flexWrap="wrap">
       {canPlay ? (
@@ -158,13 +161,13 @@ function ExportLinks({ row }) {
           Play
         </Button>
       ) : null}
-      {row.driveRawUrl ? (
+      {rawHref ? (
         <Button
           size="small"
           color="success"
           variant="outlined"
           component={Link}
-          href={row.driveRawUrl}
+          href={rawHref}
           target="_blank"
           rel="noopener noreferrer"
           startIcon={<CloudDownloadIcon />}
@@ -296,8 +299,11 @@ function RecordingDetailDialog({ row, open, onClose }) {
   if (!row) return null;
 
   const segments = row?.segmentSummary?.segments || [];
+  const rawHref = row?.rawStreamAvailable
+    ? row?.rawStreamUrl || row?.driveRawUrl
+    : row?.driveRawUrl || null;
   const missingDriveLinks =
-    row.status === "ready" && !row.driveRawUrl && !row.drivePreviewUrl && !row.playbackUrl;
+    row.status === "ready" && !rawHref && !row.drivePreviewUrl && !row.playbackUrl;
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth scroll="paper">
@@ -348,6 +354,20 @@ function RecordingDetailDialog({ row, open, onClose }) {
 
           <Stack direction="row" spacing={1} flexWrap="wrap">
             <ExportLinks row={row} />
+            {row?.rawStatusUrl ? (
+              <Button
+                size="small"
+                color="primary"
+                variant="outlined"
+                component={Link}
+                href={row.rawStatusUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                startIcon={<SearchIcon />}
+              >
+                Raw status
+              </Button>
+            ) : null}
           </Stack>
 
           {row.error ? <Alert severity="error">{row.error}</Alert> : null}

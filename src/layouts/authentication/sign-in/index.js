@@ -1,21 +1,19 @@
 import { useState } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
-import Grid from "@mui/material/Grid";
+import { useLocation, useNavigate } from "react-router-dom";
+import Alert from "@mui/material/Alert";
 import Card from "@mui/material/Card";
 import Switch from "@mui/material/Switch";
-import Alert from "@mui/material/Alert";
 
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
-import MDInput from "components/MDInput";
 import MDButton from "components/MDButton";
+import MDInput from "components/MDInput";
+import MDTypography from "components/MDTypography";
 
 import BasicLayout from "../components/BasicLayout";
 import bgImage from "assets/images/bg-sign-in-basic.jpeg";
 
 import { useDispatch } from "react-redux";
-import { useLoginMutation } from "slices/authApiSlice";
-import { setUser } from "slices/authSlice";
+import { authApiSlice, useLoginMutation } from "slices/authApiSlice";
 import { setCredentials } from "slices/authSlice";
 
 export default function SignIn() {
@@ -28,26 +26,26 @@ export default function SignIn() {
   const location = useLocation();
   const from = location.state?.from?.pathname || "/dashboard";
 
-  // LoginScreen.jsx (trích phần submit handler)
-  const submit = async (e) => {
-    e.preventDefault();
+  const submit = async (event) => {
+    event.preventDefault();
     setError("");
 
     try {
-      // BE trả { user, token }
       const { user, token } = await login(form).unwrap();
-
-      // Gom lại object duy nhất để tiện lưu trữ
       const userInfo = { ...user, token };
 
-      // Lưu vào Redux
       dispatch(setCredentials({ user, token }));
+      dispatch(
+        authApiSlice.util.upsertQueryData("verify", undefined, {
+          user,
+          token,
+        })
+      );
 
-      // Tuỳ chọn nhớ phiên
-      if (remember) localStorage.setItem("userInfo", JSON.stringify(userInfo));
+      if (remember) {
+        localStorage.setItem("userInfo", JSON.stringify(userInfo));
+      }
 
-      // === Phần điều hướng theo role ===
-      // Thu thập role từ nhiều chỗ để an toàn
       const roles = new Set([
         ...(Array.isArray(user?.roles) ? user.roles : []),
         ...(user?.role ? [user.role] : []),
@@ -56,8 +54,6 @@ export default function SignIn() {
 
       const isAdmin = roles.has("admin");
       const isReferee = roles.has("referee");
-
-      // referee-only -> về trang referee/matches
       const redirectTo = isReferee && !isAdmin ? "/referee/matches" : from;
 
       navigate(redirectTo, { replace: true });
@@ -85,11 +81,11 @@ export default function SignIn() {
         </MDBox>
 
         <MDBox pt={4} pb={3} px={3}>
-          {error && (
+          {error ? (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
-          )}
+          ) : null}
 
           <MDBox component="form" onSubmit={submit}>
             <MDBox mb={2}>
@@ -98,27 +94,28 @@ export default function SignIn() {
                 label="Email"
                 fullWidth
                 value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
                 required
               />
             </MDBox>
+
             <MDBox mb={2}>
               <MDInput
                 type="password"
                 label="Password"
                 fullWidth
                 value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
                 required
               />
             </MDBox>
 
             <MDBox display="flex" alignItems="center" ml={-1}>
-              <Switch checked={remember} onChange={() => setRemember(!remember)} />
+              <Switch checked={remember} onChange={() => setRemember((prev) => !prev)} />
               <MDTypography
                 variant="button"
                 color="text"
-                onClick={() => setRemember(!remember)}
+                onClick={() => setRemember((prev) => !prev)}
                 sx={{ cursor: "pointer", userSelect: "none", ml: -1 }}
               >
                 &nbsp;&nbsp;Remember me
@@ -133,7 +130,7 @@ export default function SignIn() {
                 type="submit"
                 disabled={isLoading}
               >
-                {isLoading ? "Signing in…" : "Sign In"}
+                {isLoading ? "Signing in..." : "Sign In"}
               </MDButton>
             </MDBox>
           </MDBox>

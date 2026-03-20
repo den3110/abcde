@@ -342,6 +342,9 @@ function MatchCell({ row }) {
 
 function ActionsCell({ row }) {
   const canPlay = row.status === "ready" && Boolean(row.playbackUrl);
+  const rawHref = row.rawStreamAvailable
+    ? row.rawStreamUrl || row.driveRawUrl
+    : row.driveRawUrl || null;
 
   return (
     <Stack direction="row" spacing={0.5} alignItems="center" sx={{ py: 0.6 }} flexWrap="wrap">
@@ -360,13 +363,13 @@ function ActionsCell({ row }) {
           Play
         </Button>
       ) : null}
-      {row.driveRawUrl ? (
+      {rawHref ? (
         <Button
           size="small"
           color="success"
           variant="outlined"
           component={Link}
-          href={row.driveRawUrl}
+          href={rawHref}
           target="_blank"
           rel="noopener noreferrer"
           startIcon={<CloudDownloadIcon />}
@@ -396,6 +399,9 @@ function ActionsCell({ row }) {
 
 function RecordingDetailDialog({ row, open, onClose }) {
   const segments = row?.segmentSummary?.segments || [];
+  const rawHref = row?.rawStreamAvailable
+    ? row?.rawStreamUrl || row?.driveRawUrl
+    : row?.driveRawUrl || null;
   const { totalSegments, uploadedSegments, overallPercent } = row
     ? getRowProgressSummary(row)
     : { totalSegments: 0, uploadedSegments: 0, overallPercent: 0 };
@@ -477,18 +483,32 @@ function RecordingDetailDialog({ row, open, onClose }) {
                 Play
               </Button>
             ) : null}
-            {row?.driveRawUrl ? (
+            {rawHref ? (
               <Button
                 size="small"
                 color="success"
                 variant="outlined"
                 component={Link}
-                href={row.driveRawUrl}
+                href={rawHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 startIcon={<CloudDownloadIcon />}
               >
                 Raw
+              </Button>
+            ) : null}
+            {row?.rawStatusUrl ? (
+              <Button
+                size="small"
+                color="primary"
+                variant="outlined"
+                component={Link}
+                href={row.rawStatusUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                startIcon={<SearchIcon />}
+              >
+                Raw status
               </Button>
             ) : null}
             {row?.drivePreviewUrl ? (

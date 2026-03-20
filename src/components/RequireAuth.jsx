@@ -1,6 +1,7 @@
 import PropTypes from "prop-types";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
+import { useSelector } from "react-redux";
 import { Navigate, useLocation } from "react-router-dom";
 import { useVerifyQuery } from "slices/authApiSlice";
 import { getUserRoles, isStrictSuperAdminUser, normalizeRole } from "utils/authz";
@@ -18,10 +19,19 @@ export default function RequireAuth({
   children,
 }) {
   const location = useLocation();
-  const { data, isFetching, error } = useVerifyQuery();
-  const user = extractUser(data);
+  const userInfo = useSelector((state) => state.auth.userInfo);
+  const hasLocalSession = Boolean(userInfo?.token);
+  const { data, isFetching, error } = useVerifyQuery(undefined, {
+    skip: !hasLocalSession,
+    refetchOnMountOrArgChange: true,
+  });
+  const user = extractUser(data) || userInfo;
 
-  if (isFetching) {
+  if (!hasLocalSession) {
+    return <Navigate to="/authentication/sign-in" state={{ from: location }} replace />;
+  }
+
+  if (isFetching && !extractUser(data)) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", mt: 10 }}>
         <CircularProgress />
