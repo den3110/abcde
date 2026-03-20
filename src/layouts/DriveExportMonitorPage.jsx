@@ -237,8 +237,8 @@ function WorkerHealthPanel({ health, currentExportRow }) {
   const pipeline = currentExportRow?.exportPipeline || null;
   const pipelineStage = pipeline?.stage || null;
   const isBusy = health?.alive && worker?.currentRecordingId;
-  const stageLabel = pipelineStage ? (PIPELINE_STAGE_LABELS[pipelineStage] || pipelineStage) : null;
-  const stagePercent = pipelineStage ? (PIPELINE_STAGE_PERCENT[pipelineStage] ?? null) : null;
+  const stageLabel = pipelineStage ? PIPELINE_STAGE_LABELS[pipelineStage] || pipelineStage : null;
+  const stagePercent = pipelineStage ? PIPELINE_STAGE_PERCENT[pipelineStage] ?? null : null;
   const matchLabel = currentExportRow?.participantsLabel || "";
   const matchCode = currentExportRow?.matchCode || "";
   const jobElapsed = worker?.currentJobStartedAt
@@ -321,7 +321,12 @@ function WorkerHealthPanel({ health, currentExportRow }) {
             <>
               <Divider />
               <Box>
-                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  sx={{ mb: 0.5 }}
+                >
                   <Stack direction="row" spacing={1} alignItems="center">
                     <Chip
                       size="small"
@@ -332,7 +337,8 @@ function WorkerHealthPanel({ health, currentExportRow }) {
                     />
                     {matchCode ? (
                       <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                        {matchCode}{matchLabel ? ` — ${matchLabel}` : ""}
+                        {matchCode}
+                        {matchLabel ? ` — ${matchLabel}` : ""}
                       </Typography>
                     ) : null}
                   </Stack>
@@ -356,7 +362,10 @@ function WorkerHealthPanel({ health, currentExportRow }) {
                   }}
                 />
                 {stagePercent != null ? (
-                  <Typography variant="caption" sx={{ opacity: 0.55, mt: 0.25, display: "block", textAlign: "right" }}>
+                  <Typography
+                    variant="caption"
+                    sx={{ opacity: 0.55, mt: 0.25, display: "block", textAlign: "right" }}
+                  >
                     ~{stagePercent}%
                   </Typography>
                 ) : null}
