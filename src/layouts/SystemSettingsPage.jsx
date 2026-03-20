@@ -105,6 +105,47 @@ export default function SystemSettingsPage() {
   const [showFab, setShowFab] = useState(false);
   const topSaveRef = useRef(null);
 
+  const buildSettingsPayload = (source) => ({
+    maintenance: {
+      enabled: !!source.maintenance?.enabled,
+      message: source.maintenance?.message ?? "",
+    },
+    registration: {
+      open: !!source.registration?.open,
+      requireOptionalProfileFields: !!source.registration?.requireOptionalProfileFields,
+    },
+    kyc: {
+      enabled: !!source.kyc?.enabled,
+      autoApprove: !!source.kyc?.autoApprove,
+      faceMatchThreshold: source.kyc?.faceMatchThreshold ?? 0.78,
+    },
+    security: {
+      enforce2FAForAdmins: !!source.security?.enforce2FAForAdmins,
+      sessionTTLHours: source.security?.sessionTTLHours ?? 72,
+    },
+    uploads: {
+      maxAvatarSizeMB: source.uploads?.maxAvatarSizeMB ?? 5,
+      avatarLogoEnabled: !!source.uploads?.avatarLogoEnabled,
+    },
+    notifications: {
+      telegramEnabled: !!source.notifications?.telegramEnabled,
+      telegramComplaintChatId: source.notifications?.telegramComplaintChatId ?? "",
+      systemPushEnabled: !!source.notifications?.systemPushEnabled,
+    },
+    links: {
+      guideUrl: source.links?.guideUrl ?? "",
+    },
+    ota: {
+      forceUpdateEnabled: !!source.ota?.forceUpdateEnabled,
+    },
+    recordingDrive: {
+      enabled: !!source.recordingDrive?.enabled,
+      mode: getInitialRecordingDriveMode(source.recordingDrive?.mode),
+      folderId: source.recordingDrive?.folderId ?? "",
+      sharedDriveId: source.recordingDrive?.sharedDriveId ?? "",
+    },
+  });
+
   useEffect(() => {
     if (!data) return;
     setForm({
@@ -122,6 +163,7 @@ export default function SystemSettingsPage() {
     const handleRecordingDriveAuthDone = (event) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type !== "recording-drive-auth-done") return;
+      refetch();
       refetchRecordingDriveStatus();
       if (event.data?.ok) {
         toast.success("Da ket noi Google Drive cho recording.");
@@ -147,6 +189,16 @@ export default function SystemSettingsPage() {
     observer.observe(topSaveRef.current);
     return () => observer.disconnect();
   }, [isLoading, form]);
+
+  const persistSettings = async (source, { showSuccessToast = true } = {}) => {
+    const payload = buildSettingsPayload(source);
+    await updateSettings(payload).unwrap();
+    if (showSuccessToast) {
+      toast.success("Da luu cai dat he thong");
+    }
+    refetch();
+    refetchRecordingDriveStatus();
+  };
 
   const onToggle = (path) => (event) => {
     const checked = event.target.checked;
@@ -204,51 +256,7 @@ export default function SystemSettingsPage() {
 
   const handleSave = async () => {
     try {
-      const payload = {
-        maintenance: {
-          enabled: !!form.maintenance?.enabled,
-          message: form.maintenance?.message ?? "",
-        },
-        registration: {
-          open: !!form.registration?.open,
-          requireOptionalProfileFields: !!form.registration?.requireOptionalProfileFields,
-        },
-        kyc: {
-          enabled: !!form.kyc?.enabled,
-          autoApprove: !!form.kyc?.autoApprove,
-          faceMatchThreshold: form.kyc?.faceMatchThreshold ?? 0.78,
-        },
-        security: {
-          enforce2FAForAdmins: !!form.security?.enforce2FAForAdmins,
-          sessionTTLHours: form.security?.sessionTTLHours ?? 72,
-        },
-        uploads: {
-          maxAvatarSizeMB: form.uploads?.maxAvatarSizeMB ?? 5,
-          avatarLogoEnabled: !!form.uploads?.avatarLogoEnabled,
-        },
-        notifications: {
-          telegramEnabled: !!form.notifications?.telegramEnabled,
-          telegramComplaintChatId: form.notifications?.telegramComplaintChatId ?? "",
-          systemPushEnabled: !!form.notifications?.systemPushEnabled,
-        },
-        links: {
-          guideUrl: form.links?.guideUrl ?? "",
-        },
-        ota: {
-          forceUpdateEnabled: !!form.ota?.forceUpdateEnabled,
-        },
-        recordingDrive: {
-          enabled: !!form.recordingDrive?.enabled,
-          mode: getInitialRecordingDriveMode(form.recordingDrive?.mode),
-          folderId: form.recordingDrive?.folderId ?? "",
-          sharedDriveId: form.recordingDrive?.sharedDriveId ?? "",
-        },
-      };
-
-      await updateSettings(payload).unwrap();
-      toast.success("Da luu cai dat he thong");
-      refetch();
-      refetchRecordingDriveStatus();
+      await persistSettings(form);
     } catch (error) {
       console.error(error);
       toast.error("Luu that bai");
@@ -257,6 +265,11 @@ export default function SystemSettingsPage() {
 
   const handleOpenRecordingDriveAuth = async () => {
     try {
+      if (!form?.recordingDrive?.folderId?.trim()) {
+        toast.error("Hay nhap Folder ID roi luu/ket noi lai.");
+        return;
+      }
+      await persistSettings(form, { showSuccessToast: false });
       const result = await getRecordingDriveOAuthInit().unwrap();
       if (!result?.authUrl) {
         throw new Error("Khong tao duoc duong dan ket noi Google Drive");
