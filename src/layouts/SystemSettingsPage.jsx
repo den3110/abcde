@@ -370,7 +370,7 @@ export default function SystemSettingsPage() {
       <Box p={2}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h5" fontWeight={800}>
-            Cai dat he thong
+            Cài đặt hệ thống
           </Typography>
           <Box ref={topSaveRef}>
             <Button variant="contained" onClick={handleSave} disabled={isSaving}>
@@ -531,7 +531,7 @@ export default function SystemSettingsPage() {
                 onClick={() => setRecordingDriveMode("oauthUser")}
                 fullWidth
               >
-                My Drive ca nhan (OAuth)
+                My Drive cá nhân (OAuth)
               </Button>
             </Stack>
 
@@ -564,7 +564,7 @@ export default function SystemSettingsPage() {
                 label="Mode đang chạy"
                 value={
                   recordingDriveStatus?.mode === "oauthUser"
-                    ? "My Drive ca nhan (OAuth)"
+                    ? "My Drive cá nhân (OAuth)"
                     : "Shared Drive (Service Account)"
                 }
                 InputProps={{ readOnly: true }}
@@ -639,10 +639,10 @@ export default function SystemSettingsPage() {
           </Section>
           <Section
             title="Live recording"
-            desc="Tá»± Ä‘á»™ng chá»‘t báº£n ghi vÃ  chuyá»ƒn sang export náº¿u thiáº¿t bá»‹ Ä‘ang live bá»‹ sáº­p nguá»“n hoáº·c ngá»«ng upload quÃ¡ lÃ¢u."
+            desc="Tự động chốt bản ghi và chuyển sang export nếu thiết bị đang live bị sập nguồn hoặc ngừng upload quá lâu."
           >
             <TextField
-              label="Timeout khÃ´ng cÃ³ segment má»›i (phÃºt)"
+              label="Timeout không có segment mới (phút)"
               type="number"
               inputProps={{ min: 1, max: 1440 }}
               value={form.liveRecording?.autoExportNoSegmentMinutes ?? 15}
@@ -650,7 +650,7 @@ export default function SystemSettingsPage() {
                 min: 1,
                 max: 1440,
               })}
-              helperText="Máº·c Ä‘á»‹nh 15 phÃºt. Khi quÃ¡ ngÆ°á»¡ng vÃ  Ä‘Ã£ cÃ³ Ã­t nháº¥t má»™t segment upload thÃ nh cÃ´ng, backend sáº½ tá»± chuyá»ƒn recording sang export."
+              helperText="Mặc định 15 phút. Khi quá ngưỡng và đã có ít nhất một segment upload thành công, backend sẽ tự chuyển recording sang export."
               fullWidth
             />
           </Section>
