@@ -172,9 +172,9 @@ export default function SystemSettingsPage() {
       refetch();
       refetchRecordingDriveStatus();
       if (event.data?.ok) {
-        toast.success("Da ket noi Google Drive cho recording.");
+        toast.success("Đã kết nối Google Drive cho bản ghi.");
       } else {
-        toast.error(event.data?.message || "Ket noi Google Drive that bai.");
+        toast.error(event.data?.message || "Kết nối Google Drive thất bại.");
       }
     };
 
@@ -200,7 +200,7 @@ export default function SystemSettingsPage() {
     const payload = buildSettingsPayload(source);
     await updateSettings(payload).unwrap();
     if (showSuccessToast) {
-      toast.success("Da luu cai dat he thong");
+      toast.success("Đã lưu cài đặt hệ thống");
     }
     refetch();
     refetchRecordingDriveStatus();
@@ -265,20 +265,20 @@ export default function SystemSettingsPage() {
       await persistSettings(form);
     } catch (error) {
       console.error(error);
-      toast.error("Luu that bai");
+      toast.error("Lưu thất bại");
     }
   };
 
   const handleOpenRecordingDriveAuth = async () => {
     try {
       if (!form?.recordingDrive?.folderId?.trim()) {
-        toast.error("Hay nhap Folder ID roi luu/ket noi lai.");
+        toast.error("Hãy nhập Folder ID rồi lưu/kết nối lại.");
         return;
       }
       await persistSettings(form, { showSuccessToast: false });
       const result = await getRecordingDriveOAuthInit().unwrap();
       if (!result?.authUrl) {
-        throw new Error("Khong tao duoc duong dan ket noi Google Drive");
+        throw new Error("Không tạo được đường dẫn kết nối Google Drive");
       }
       const popup = window.open(
         result.authUrl,
@@ -287,20 +287,20 @@ export default function SystemSettingsPage() {
       );
       recordingDrivePopupRef.current = popup || null;
       if (!popup) {
-        toast.error("Trinh duyet da chan popup. Hay cho phep popup roi thu lai.");
+        toast.error("Trình duyệt đã chặn popup. Hãy cho phép popup rồi thử lại.");
       }
     } catch (error) {
-      toast.error(error?.data?.message || error?.message || "Khong mo duoc ket noi Google Drive");
+      toast.error(error?.data?.message || error?.message || "Không mở được kết nối Google Drive");
     }
   };
 
   const handleDisconnectRecordingDrive = async () => {
     try {
       await disconnectRecordingDrive().unwrap();
-      toast.success("Da ngat ket noi Google Drive cho recording.");
+      toast.success("Đã ngắt kết nối Google Drive cho bản ghi.");
       refetchRecordingDriveStatus();
     } catch (error) {
-      toast.error(error?.data?.message || error?.message || "Khong the ngat ket noi Google Drive");
+      toast.error(error?.data?.message || error?.message || "Không thể ngắt kết nối Google Drive");
     }
   };
 
@@ -323,7 +323,7 @@ export default function SystemSettingsPage() {
   if (isError) {
     return (
       <Box p={2}>
-        <Alert severity="error">Khong tai duoc cai dat. Vui long thu lai.</Alert>
+        <Alert severity="error">Không tải được cài đặt. Vui lòng thử lại.</Alert>
       </Box>
     );
   }
@@ -349,7 +349,7 @@ export default function SystemSettingsPage() {
           </Stack>
 
           <Box sx={{ position: "absolute", top: 12, right: 12 }}>
-            <Tooltip title="Dang tai cai dat">
+            <Tooltip title="Đang tải cài đặt">
               <CircularProgress size={20} />
             </Tooltip>
           </Box>
@@ -368,7 +368,7 @@ export default function SystemSettingsPage() {
           </Typography>
           <Box ref={topSaveRef}>
             <Button variant="contained" onClick={handleSave} disabled={isSaving}>
-              {isSaving ? "Dang luu..." : "Luu thay doi"}
+              {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
             </Button>
           </Box>
         </Stack>
@@ -376,16 +376,16 @@ export default function SystemSettingsPage() {
         <Stack spacing={2}>
           <Section
             title="KYC"
-            desc="Bat/tat KYC, tu dong duyet va dieu chinh nguong khop khuon mat (0-1)."
+            desc="Bật/tắt KYC, tự động duyệt và điều chỉnh ngưỡng khớp khuôn mặt (0-1)."
           >
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography>Bat KYC</Typography>
+              <Typography>Bật KYC</Typography>
               <Switch checked={!!form.kyc?.enabled} onChange={onToggle("kyc.enabled")} />
             </Stack>
 
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Tooltip title="Khi bat, ho so hop le se duoc duyet ngay ma khong can mod xet duyet.">
-                <Typography>Tu dong duyet KYC</Typography>
+              <Tooltip title="Khi bật, hồ sơ hợp lệ sẽ được duyệt ngay mà không cần duyệt thủ công.">
+                <Typography>Tự động duyệt KYC</Typography>
               </Tooltip>
               <Switch checked={!!form.kyc?.autoApprove} onChange={onToggle("kyc.autoApprove")} />
             </Stack>
@@ -400,35 +400,35 @@ export default function SystemSettingsPage() {
                 max: 1,
                 step: 0.01,
               })}
-              helperText="0.00-1.00 (de xuat 0.75-0.85)"
+              helperText="0.00-1.00 (đề xuất 0.75-0.85)"
               fullWidth
             />
           </Section>
 
-          <Section title="He thong & bao tri" desc="Dong toan bo he thong khi bao tri.">
+          <Section title="Hệ thống & bảo trì" desc="Đóng toàn bộ hệ thống khi bảo trì.">
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography>Bao tri (Maintenance mode)</Typography>
+              <Typography>Bảo trì (Maintenance mode)</Typography>
               <Switch
                 checked={!!form.maintenance?.enabled}
                 onChange={onToggle("maintenance.enabled")}
               />
             </Stack>
             <TextField
-              label="Thong bao bao tri"
+              label="Thông báo bảo trì"
               value={form.maintenance?.message ?? ""}
               onChange={onChange("maintenance.message")}
-              placeholder="Vi du: He thong bao tri luc 23:00-01:00."
+              placeholder="Ví dụ: Hệ thống bảo trì lúc 23:00-01:00."
               fullWidth
             />
           </Section>
 
           <Section
             title="OTA"
-            desc="Bat de chan app va bat buoc nguoi dung cap nhat truoc khi vao."
+            desc="Bật để chặn app và bắt buộc người dùng cập nhật trước khi vào."
           >
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Tooltip title="Khi bat, backend se chan app cu va yeu cau cap nhat.">
-                <Typography>Bat buoc cap nhat OTA</Typography>
+              <Tooltip title="Khi bật, backend sẽ chặn app cũ và yêu cầu cập nhật.">
+                <Typography>Bắt buộc cập nhật OTA</Typography>
               </Tooltip>
               <Switch
                 checked={!!form.ota?.forceUpdateEnabled}
@@ -437,9 +437,9 @@ export default function SystemSettingsPage() {
             </Stack>
           </Section>
 
-          <Section title="Dang ky tai khoan" desc="Mo/dong dang ky nguoi dung moi.">
+          <Section title="Đăng ký tài khoản" desc="Mở/đóng đăng ký người dùng mới.">
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography>Cho phep dang ky moi</Typography>
+              <Typography>Cho phép đăng ký mới</Typography>
               <Switch
                 checked={!!form.registration?.open}
                 onChange={onToggle("registration.open")}
@@ -447,8 +447,8 @@ export default function SystemSettingsPage() {
             </Stack>
 
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Tooltip title="Khi bat, cac truong SDT, gioi tinh, tinh/thanh va ngay sinh se bat buoc khi dang ky.">
-                <Typography>Bat buoc thong tin ho so mo rong</Typography>
+              <Tooltip title="Khi bật, SĐT, giới tính, tỉnh/thành và ngày sinh sẽ bắt buộc khi đăng ký.">
+                <Typography>Bắt buộc thông tin hồ sơ mở rộng</Typography>
               </Tooltip>
               <Switch
                 checked={!!form.registration?.requireOptionalProfileFields}
@@ -457,16 +457,16 @@ export default function SystemSettingsPage() {
             </Stack>
           </Section>
 
-          <Section title="Bao mat">
+          <Section title="Bảo mật">
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography>Bat buoc 2FA cho Admin</Typography>
+              <Typography>Bắt buộc 2FA cho Admin</Typography>
               <Switch
                 checked={!!form.security?.enforce2FAForAdmins}
                 onChange={onToggle("security.enforce2FAForAdmins")}
               />
             </Stack>
             <TextField
-              label="Phien dang nhap (gio)"
+              label="Phiên đăng nhập (giờ)"
               type="number"
               inputProps={{ min: 1, max: 720 }}
               value={form.security?.sessionTTLHours ?? 72}
@@ -477,8 +477,8 @@ export default function SystemSettingsPage() {
 
           <Section title="Upload">
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Tooltip title="Khi bat, he thong se tu dong chen logo len anh dai dien nguoi dung neu server da cau hinh logo.">
-                <Typography>Chen logo vao anh dai dien</Typography>
+              <Tooltip title="Khi bật, hệ thống sẽ tự động chèn logo lên ảnh đại diện người dùng nếu server đã cấu hình logo.">
+                <Typography>Chèn logo vào ảnh đại diện</Typography>
               </Tooltip>
               <Switch
                 checked={!!form.uploads?.avatarLogoEnabled}
@@ -487,7 +487,7 @@ export default function SystemSettingsPage() {
             </Stack>
 
             <TextField
-              label="Gioi han anh dai dien (MB)"
+              label="Giới hạn ảnh đại diện (MB)"
               type="number"
               inputProps={{ min: 1, max: 50 }}
               value={form.uploads?.maxAvatarSizeMB ?? 5}
@@ -497,11 +497,11 @@ export default function SystemSettingsPage() {
           </Section>
 
           <Section
-            title="Drive export cho recording"
-            desc="Chon cach dua file record cuoi cung len Google Drive. Shared Drive dung service account. My Drive ca nhan dung OAuth cua user."
+            title="Drive export bản ghi"
+            desc="Chọn cách đưa file bản ghi cuối cùng lên Google Drive. Shared Drive dùng service account. My Drive cá nhân dùng OAuth của user."
           >
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography>Bat export len Drive</Typography>
+              <Typography>Bật export lên Drive</Typography>
               <Switch
                 checked={!!form.recordingDrive?.enabled}
                 onChange={onToggle("recordingDrive.enabled")}
@@ -531,8 +531,8 @@ export default function SystemSettingsPage() {
 
             <Alert severity={recordingDriveAlertSeverityValue}>
               {isRecordingDriveStatusLoading
-                ? "Dang kiem tra ket noi Google Drive..."
-                : recordingDriveStatus?.message || "Chua co trang thai Google Drive."}
+                ? "Đang kiểm tra kết nối Google Drive..."
+                : recordingDriveStatus?.message || "Chưa có trạng thái Google Drive."}
             </Alert>
 
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
@@ -540,14 +540,14 @@ export default function SystemSettingsPage() {
                 label="Folder ID"
                 value={form.recordingDrive?.folderId ?? ""}
                 onChange={onChange("recordingDrive.folderId")}
-                placeholder="Folder dich de luu video recording"
+                placeholder="Folder đích tạo bản ghi"
                 fullWidth
               />
               <TextField
                 label="Shared Drive ID"
                 value={form.recordingDrive?.sharedDriveId ?? ""}
                 onChange={onChange("recordingDrive.sharedDriveId")}
-                placeholder="Chi dung cho mode service account"
+                placeholder="Chỉ dùng cho mode service account"
                 disabled={form.recordingDrive?.mode === "oauthUser"}
                 fullWidth
               />
@@ -555,7 +555,7 @@ export default function SystemSettingsPage() {
 
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
-                label="Mode dang chay"
+                label="Mode đang chạy"
                 value={
                   recordingDriveStatus?.mode === "oauthUser"
                     ? "My Drive ca nhan (OAuth)"
@@ -565,7 +565,7 @@ export default function SystemSettingsPage() {
                 fullWidth
               />
               <TextField
-                label="Tai khoan da ket noi"
+                label="Tài khoản đã kết nối"
                 value={recordingDriveStatus?.accountEmail || "-"}
                 InputProps={{ readOnly: true }}
                 fullWidth
@@ -578,14 +578,14 @@ export default function SystemSettingsPage() {
                 onClick={handleOpenRecordingDriveAuth}
                 disabled={form.recordingDrive?.mode !== "oauthUser" || isRecordingDriveConnecting}
               >
-                {isRecordingDriveConnecting ? "Dang mo ket noi..." : "Ket noi Google Drive"}
+                {isRecordingDriveConnecting ? "Đang mở kết nối..." : "Kết nối Google Drive"}
               </Button>
               <Button
                 variant="outlined"
                 onClick={() => refetchRecordingDriveStatus()}
                 disabled={isRecordingDriveStatusLoading}
               >
-                {isRecordingDriveStatusLoading ? "Dang kiem tra..." : "Kiem tra ket noi"}
+                {isRecordingDriveStatusLoading ? "Đang kiểm tra..." : "Kiểm tra kết nối"}
               </Button>
               <Button
                 color="error"
@@ -597,14 +597,14 @@ export default function SystemSettingsPage() {
                   isRecordingDriveDisconnecting
                 }
               >
-                {isRecordingDriveDisconnecting ? "Dang ngat..." : "Ngat ket noi"}
+                {isRecordingDriveDisconnecting ? "Đang ngắt..." : "Ngắt kết nối"}
               </Button>
             </Stack>
           </Section>
 
-          <Section title="Su kien" desc="Cai dat thong bao lien quan den he thong.">
+          <Section title="Sự kiện" desc="Cài đặt thông báo liên quan đến hệ thống.">
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography>Bat thong bao day (Push) toan he thong</Typography>
+              <Typography>Bật thông báo đẩy (Push) toàn hệ thống</Typography>
               <Switch
                 checked={!!form.notifications?.systemPushEnabled}
                 onChange={onToggle("notifications.systemPushEnabled")}
@@ -613,11 +613,11 @@ export default function SystemSettingsPage() {
           </Section>
 
           <Section
-            title="Thong bao (Telegram)"
-            desc="Token de o ENV. Tai day chi bat/tat va dat Chat ID."
+            title="Thông báo (Telegram)"
+            desc="Token đã để ở ENV. Tại đây chỉ bật/tắt và đặt Chat ID."
           >
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography>Bat Telegram</Typography>
+              <Typography>Bật Telegram</Typography>
               <Switch
                 checked={!!form.notifications?.telegramEnabled}
                 onChange={onToggle("notifications.telegramEnabled")}
@@ -633,11 +633,11 @@ export default function SystemSettingsPage() {
           </Section>
 
           <Section
-            title="Link huong dan"
-            desc="Duong dan toi trang huong dan su dung, FAQ hoac docs."
+            title="Link hướng dẫn"
+            desc="Đường dẫn tới trang hướng dẫn sử dụng, FAQ hoặc docs."
           >
             <TextField
-              label="URL huong dan"
+              label="URL hướng dẫn"
               value={form.links?.guideUrl ?? ""}
               onChange={onChange("links.guideUrl")}
               placeholder="https://docs.pickletour.vn/huong-dan"
@@ -671,7 +671,7 @@ export default function SystemSettingsPage() {
         ) : (
           <SaveIcon sx={{ mr: 1 }} />
         )}
-        {isSaving ? "Dang luu..." : "Luu thay doi"}
+        {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
       </Fab>
     </DashboardLayout>
   );
