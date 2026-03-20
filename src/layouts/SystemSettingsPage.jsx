@@ -145,6 +145,9 @@ export default function SystemSettingsPage() {
       folderId: source.recordingDrive?.folderId ?? "",
       sharedDriveId: source.recordingDrive?.sharedDriveId ?? "",
     },
+    liveRecording: {
+      autoExportNoSegmentMinutes: source.liveRecording?.autoExportNoSegmentMinutes ?? 15,
+    },
   });
 
   useEffect(() => {
@@ -156,6 +159,9 @@ export default function SystemSettingsPage() {
         mode: getInitialRecordingDriveMode(data.recordingDrive?.mode),
         folderId: data.recordingDrive?.folderId ?? "",
         sharedDriveId: data.recordingDrive?.sharedDriveId ?? "",
+      },
+      liveRecording: {
+        autoExportNoSegmentMinutes: data.liveRecording?.autoExportNoSegmentMinutes ?? 15,
       },
     });
   }, [data]);
@@ -628,6 +634,23 @@ export default function SystemSettingsPage() {
               value={form.notifications?.telegramComplaintChatId ?? ""}
               onChange={onChange("notifications.telegramComplaintChatId")}
               placeholder="-1001234567890"
+              fullWidth
+            />
+          </Section>
+          <Section
+            title="Live recording"
+            desc="Tá»± Ä‘á»™ng chá»‘t báº£n ghi vÃ  chuyá»ƒn sang export náº¿u thiáº¿t bá»‹ Ä‘ang live bá»‹ sáº­p nguá»“n hoáº·c ngá»«ng upload quÃ¡ lÃ¢u."
+          >
+            <TextField
+              label="Timeout khÃ´ng cÃ³ segment má»›i (phÃºt)"
+              type="number"
+              inputProps={{ min: 1, max: 1440 }}
+              value={form.liveRecording?.autoExportNoSegmentMinutes ?? 15}
+              onChange={onNumber("liveRecording.autoExportNoSegmentMinutes", {
+                min: 1,
+                max: 1440,
+              })}
+              helperText="Máº·c Ä‘á»‹nh 15 phÃºt. Khi quÃ¡ ngÆ°á»¡ng vÃ  Ä‘Ã£ cÃ³ Ã­t nháº¥t má»™t segment upload thÃ nh cÃ´ng, backend sáº½ tá»± chuyá»ƒn recording sang export."
               fullWidth
             />
           </Section>

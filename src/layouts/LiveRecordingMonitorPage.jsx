@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -698,6 +699,7 @@ export default function LiveRecordingMonitorPage() {
   const [socketOn, setSocketOn] = useState(Boolean(socket?.connected));
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [tournamentFilter, setTournamentFilter] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [forceExportingId, setForceExportingId] = useState(null);
@@ -754,10 +756,24 @@ export default function LiveRecordingMonitorPage() {
   const workerHealth = workerHealthPoll || meta?.workerHealth || null;
   const exportingRows = rows.filter((row) => row.status === "exporting");
 
+  const tournamentOptions = useMemo(() => {
+    const map = new Map();
+    for (const row of rows) {
+      const name = row.tournamentName;
+      if (!name) continue;
+      if (!map.has(name)) {
+        map.set(name, { name, status: row.tournamentStatus || "", count: 0 });
+      }
+      map.get(name).count += 1;
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return rows.filter((row) => {
       if (statusFilter !== "ALL" && row.status !== statusFilter) return false;
+      if (tournamentFilter && row.tournamentName !== tournamentFilter) return false;
       if (!keyword) return true;
       const haystack = [
         row.recordingId,
@@ -780,7 +796,7 @@ export default function LiveRecordingMonitorPage() {
         .toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [rows, search, statusFilter]);
+  }, [rows, search, statusFilter, tournamentFilter]);
 
   const selectedRow = useMemo(
     () => rows.find((row) => row.id === selectedRowId) || null,
@@ -1034,6 +1050,64 @@ export default function LiveRecordingMonitorPage() {
                     InputProps={{
                       startAdornment: <SearchIcon sx={{ mr: 1, opacity: 0.5 }} />,
                     }}
+                  />
+                  <Autocomplete
+                    value={tournamentFilter}
+                    onChange={(_, newValue) => setTournamentFilter(newValue)}
+                    options={tournamentOptions.map((t) => t.name)}
+                    renderInput={(params) => (
+                      <TextField {...params} placeholder="Tất cả giải đấu" />
+                    )}
+                    renderOption={(props, option) => {
+                      const tourInfo = tournamentOptions.find((t) => t.name === option);
+                      const statusColor =
+                        tourInfo?.status === "ongoing"
+                          ? "warning"
+                          : tourInfo?.status === "finished"
+                          ? "success"
+                          : tourInfo?.status === "upcoming"
+                          ? "info"
+                          : "default";
+                      const statusLabel =
+                        tourInfo?.status === "ongoing"
+                          ? "Đang diễn ra"
+                          : tourInfo?.status === "finished"
+                          ? "Đã kết thúc"
+                          : tourInfo?.status === "upcoming"
+                          ? "Sắp diễn ra"
+                          : tourInfo?.status || "";
+                      return (
+                        <li {...props} key={option}>
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                            sx={{ width: "100%" }}
+                          >
+                            <Typography variant="body2" noWrap sx={{ flex: 1 }}>
+                              {option}
+                            </Typography>
+                            {statusLabel ? (
+                              <Chip
+                                size="small"
+                                label={statusLabel}
+                                color={statusColor}
+                                sx={{ fontWeight: 600, fontSize: 11 }}
+                              />
+                            ) : null}
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={tourInfo?.count || 0}
+                              sx={{ minWidth: 28, fontWeight: 700 }}
+                            />
+                          </Stack>
+                        </li>
+                      );
+                    }}
+                    sx={{ minWidth: 300 }}
+                    clearOnEscape
+                    disablePortal={false}
                   />
                   <TextField
                     select
