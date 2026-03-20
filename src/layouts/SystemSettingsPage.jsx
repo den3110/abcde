@@ -88,6 +88,19 @@ SectionSkeleton.defaultProps = {
 const getInitialRecordingDriveMode = (value) =>
   value === "oauthUser" ? "oauthUser" : "serviceAccount";
 
+const hydrateFormState = (source) => ({
+  ...structuredClone(source || {}),
+  recordingDrive: {
+    enabled: source?.recordingDrive?.enabled ?? true,
+    mode: getInitialRecordingDriveMode(source?.recordingDrive?.mode),
+    folderId: source?.recordingDrive?.folderId ?? "",
+    sharedDriveId: source?.recordingDrive?.sharedDriveId ?? "",
+  },
+  liveRecording: {
+    autoExportNoSegmentMinutes: source?.liveRecording?.autoExportNoSegmentMinutes ?? 15,
+  },
+});
+
 export default function SystemSettingsPage() {
   const { data, isLoading, isError, refetch } = useGetSystemSettingsQuery();
   const {
@@ -152,18 +165,7 @@ export default function SystemSettingsPage() {
 
   useEffect(() => {
     if (!data) return;
-    setForm({
-      ...structuredClone(data),
-      recordingDrive: {
-        enabled: data.recordingDrive?.enabled ?? true,
-        mode: getInitialRecordingDriveMode(data.recordingDrive?.mode),
-        folderId: data.recordingDrive?.folderId ?? "",
-        sharedDriveId: data.recordingDrive?.sharedDriveId ?? "",
-      },
-      liveRecording: {
-        autoExportNoSegmentMinutes: data.liveRecording?.autoExportNoSegmentMinutes ?? 15,
-      },
-    });
+    setForm(hydrateFormState(data));
   }, [data]);
 
   useEffect(() => {
@@ -204,12 +206,12 @@ export default function SystemSettingsPage() {
 
   const persistSettings = async (source, { showSuccessToast = true } = {}) => {
     const payload = buildSettingsPayload(source);
-    await updateSettings(payload).unwrap();
+    const updated = await updateSettings(payload).unwrap();
+    setForm(hydrateFormState(updated));
     if (showSuccessToast) {
       toast.success("Đã lưu cài đặt hệ thống");
     }
-    refetch();
-    refetchRecordingDriveStatus();
+    await Promise.all([refetch(), refetchRecordingDriveStatus()]);
   };
 
   const onToggle = (path) => (event) => {
