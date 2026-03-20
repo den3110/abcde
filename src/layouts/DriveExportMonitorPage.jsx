@@ -14,6 +14,7 @@ import {
   DialogTitle,
   Divider,
   Grid,
+  LinearProgress,
   Link,
   MenuItem,
   Stack,
@@ -206,8 +207,43 @@ function canRetryExport(row) {
   );
 }
 
-function WorkerHealthPanel({ health }) {
+const PIPELINE_STAGE_LABELS = {
+  queued: "Đang chờ worker nhận job",
+  queued_retry: "Đang đợi retry",
+  awaiting_queue_sync: "Đang đồng bộ trạng thái queue",
+  downloading: "Tải segment từ R2",
+  merging: "Đang ghép video",
+  uploading_drive: "Đang upload lên Drive",
+  cleaning_r2: "Đang dọn segment trên R2",
+  completed: "Hoàn tất",
+  failed: "Export thất bại",
+  stale_no_job: "Export treo — không có job",
+  worker_offline: "Worker ngoại tuyến",
+};
+
+const PIPELINE_STAGE_PERCENT = {
+  queued: 5,
+  queued_retry: 5,
+  awaiting_queue_sync: 8,
+  downloading: 25,
+  merging: 55,
+  uploading_drive: 80,
+  cleaning_r2: 95,
+  completed: 100,
+};
+
+function WorkerHealthPanel({ health, currentExportRow }) {
   const worker = health?.worker || null;
+  const pipeline = currentExportRow?.exportPipeline || null;
+  const pipelineStage = pipeline?.stage || null;
+  const isBusy = health?.alive && worker?.currentRecordingId;
+  const stageLabel = pipelineStage ? (PIPELINE_STAGE_LABELS[pipelineStage] || pipelineStage) : null;
+  const stagePercent = pipelineStage ? (PIPELINE_STAGE_PERCENT[pipelineStage] ?? null) : null;
+  const matchLabel = currentExportRow?.participantsLabel || "";
+  const matchCode = currentExportRow?.matchCode || "";
+  const jobElapsed = worker?.currentJobStartedAt
+    ? dayjs(worker.currentJobStartedAt).fromNow(true)
+    : null;
 
   return (
     <Card sx={{ borderRadius: 3 }}>
@@ -280,6 +316,53 @@ function WorkerHealthPanel({ health }) {
               </Typography>
             </Grid>
           </Grid>
+
+          {isBusy && pipelineStage ? (
+            <>
+              <Divider />
+              <Box>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Chip
+                      size="small"
+                      label={stageLabel}
+                      color="info"
+                      variant="outlined"
+                      sx={{ fontWeight: 600 }}
+                    />
+                    {matchCode ? (
+                      <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                        {matchCode}{matchLabel ? ` — ${matchLabel}` : ""}
+                      </Typography>
+                    ) : null}
+                  </Stack>
+                  {jobElapsed ? (
+                    <Typography variant="caption" sx={{ opacity: 0.6 }}>
+                      {jobElapsed}
+                    </Typography>
+                  ) : null}
+                </Stack>
+                <LinearProgress
+                  variant={stagePercent != null ? "determinate" : "indeterminate"}
+                  value={stagePercent ?? undefined}
+                  sx={{
+                    height: 8,
+                    borderRadius: 4,
+                    bgcolor: "action.hover",
+                    "& .MuiLinearProgress-bar": {
+                      borderRadius: 4,
+                      background: "linear-gradient(90deg, #3b82f6, #6366f1)",
+                    },
+                  }}
+                />
+                {stagePercent != null ? (
+                  <Typography variant="caption" sx={{ opacity: 0.55, mt: 0.25, display: "block", textAlign: "right" }}>
+                    ~{stagePercent}%
+                  </Typography>
+                ) : null}
+              </Box>
+            </>
+          ) : null}
 
           {worker?.lastFailedReason ? (
             <>
@@ -803,7 +886,7 @@ export default function DriveExportMonitorPage() {
             </Grid>
           </Grid>
 
-          <WorkerHealthPanel health={workerHealth} />
+          <WorkerHealthPanel health={workerHealth} currentExportRow={currentExportRow} />
 
           <Card sx={{ borderRadius: 3 }}>
             <CardContent>
