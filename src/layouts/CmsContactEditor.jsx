@@ -61,8 +61,15 @@ export default function CmsContactEditor() {
       salesEmail: "",
     },
     socials: { facebook: "", youtube: "", zalo: "" },
-    // 🆕 Thêm 2 field APK
-    apps: { appStore: "", playStore: "", apkPickleTour: "", apkReferee: "" },
+    // 🆕 Thêm field app download
+    apps: {
+      appStore: "",
+      playStore: "",
+      apkPickleTour: "",
+      apkReferee: "",
+      liveAppIos: "",
+      liveAppApk: "",
+    },
   });
 
   // Chỉ hydrate 1 lần để tránh overwrite khi user đã gõ
@@ -178,6 +185,12 @@ export default function CmsContactEditor() {
               </Grid>
 
               {/* Skeleton cho 2 field APK */}
+              <Grid item xs={12} md={6}>
+                <FieldSkeleton />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <FieldSkeleton />
+              </Grid>
               <Grid item xs={12} md={6}>
                 <FieldSkeleton />
               </Grid>
@@ -354,6 +367,29 @@ export default function CmsContactEditor() {
                     onChange={setApp("apkReferee")}
                     disabled={disabledAll}
                     helperText="Dán link public từ trang Quản lý file (/dl/file/:id)"
+                  />
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    label="iOS App Live URL"
+                    placeholder="https://apps.apple.com/app/idXXXXXXXXX"
+                    fullWidth
+                    value={form.apps.liveAppIos}
+                    onChange={setApp("liveAppIos")}
+                    disabled={disabledAll}
+                    helperText="Link App Store của PickleTour Live"
+                  />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    label="APK App Live URL"
+                    placeholder="https://your-domain/dl/file/XXXX"
+                    fullWidth
+                    value={form.apps.liveAppApk}
+                    onChange={setApp("liveAppApk")}
+                    disabled={disabledAll}
+                    helperText="Link APK public của PickleTour Live"
                   />
                 </Grid>
               </Grid>
