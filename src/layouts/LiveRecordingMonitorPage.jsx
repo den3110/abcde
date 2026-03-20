@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -33,6 +33,7 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
 import {
+  useForceLiveRecordingExportMutation,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
 } from "slices/liveApiSlice";
@@ -127,6 +128,12 @@ function getRowProgressSummary(row) {
     segmentPercent,
     overallPercent: Math.max(0, Math.min(100, overallPercent)),
   };
+}
+
+function canForceRowToExport(row) {
+  const totalSegments = Number(row?.segmentSummary?.totalSegments || 0);
+  const uploadedSegments = Number(row?.segmentSummary?.uploadedSegments || 0);
+  return row?.status === "uploading" && totalSegments > 0 && uploadedSegments === totalSegments;
 }
 
 function StatusChip({ status }) {
@@ -340,14 +347,34 @@ function MatchCell({ row }) {
   );
 }
 
-function ActionsCell({ row }) {
+function ActionsCell({ row, onForceExport, forceExportingId }) {
   const canPlay = row.status === "ready" && Boolean(row.playbackUrl);
   const rawHref = row.rawStreamAvailable
     ? row.rawStreamUrl || row.driveRawUrl
     : row.driveRawUrl || null;
+  const canForceExport = canForceRowToExport(row);
+  const forcingThisRow = forceExportingId === row.recordingId;
 
   return (
     <Stack direction="row" spacing={0.5} alignItems="center" sx={{ py: 0.6 }} flexWrap="wrap">
+      {row.status === "uploading" ? (
+        <Button
+          size="small"
+          color="warning"
+          variant={canForceExport ? "contained" : "outlined"}
+          disabled={!canForceExport || forcingThisRow}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (canForceExport && onForceExport) {
+              onForceExport(row);
+            }
+          }}
+          sx={{ minWidth: 0 }}
+        >
+          {forcingThisRow ? "Dang chuyen..." : "Chuyen exporting"}
+        </Button>
+      ) : null}
       {canPlay ? (
         <Button
           size="small"
@@ -673,8 +700,11 @@ export default function LiveRecordingMonitorPage() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [snapshot, setSnapshot] = useState(null);
   const [selectedRowId, setSelectedRowId] = useState(null);
+  const [forceExportingId, setForceExportingId] = useState(null);
+  const [actionError, setActionError] = useState("");
 
   const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
+  const [forceLiveRecordingExport] = useForceLiveRecordingExportMutation();
   const { data: workerHealthPoll } = useGetLiveRecordingWorkerHealthQuery(undefined, {
     pollingInterval: 10000,
     refetchOnFocus: true,
@@ -755,6 +785,28 @@ export default function LiveRecordingMonitorPage() {
   const selectedRow = useMemo(
     () => rows.find((row) => row.id === selectedRowId) || null,
     [rows, selectedRowId]
+  );
+
+  const handleForceExport = useCallback(
+    async (row) => {
+      if (!row?.recordingId || forceExportingId || !canForceRowToExport(row)) {
+        return;
+      }
+
+      setActionError("");
+      setForceExportingId(row.recordingId);
+      try {
+        await forceLiveRecordingExport(row.recordingId).unwrap();
+        await refetch();
+      } catch (error) {
+        setActionError(
+          error?.data?.message || error?.error || "Khong the chuyen recording sang exporting."
+        );
+      } finally {
+        setForceExportingId(null);
+      }
+    },
+    [forceExportingId, forceLiveRecordingExport, refetch]
   );
 
   const columns = useMemo(
@@ -849,14 +901,20 @@ export default function LiveRecordingMonitorPage() {
       },
       {
         field: "actions",
-        headerName: "Links",
-        minWidth: 240,
+        headerName: "Links / Actions",
+        minWidth: 380,
         sortable: false,
         filterable: false,
-        renderCell: ({ row }) => <ActionsCell row={row} />,
+        renderCell: ({ row }) => (
+          <ActionsCell
+            row={row}
+            onForceExport={handleForceExport}
+            forceExportingId={forceExportingId}
+          />
+        ),
       },
     ],
-    []
+    [forceExportingId, handleForceExport]
   );
 
   return (
@@ -912,6 +970,8 @@ export default function LiveRecordingMonitorPage() {
           {isError ? (
             <Alert severity="error">Failed to load recording monitor snapshot.</Alert>
           ) : null}
+
+          {actionError ? <Alert severity="error">{actionError}</Alert> : null}
 
           {workerHealth && !workerHealth.alive && exportingRows.length > 0 ? (
             <Alert severity="warning">

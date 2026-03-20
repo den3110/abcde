@@ -45,12 +45,19 @@ export const liveApiSlice = apiSlice.injectEndpoints({
         method: "POST",
       }),
     }),
+    forceLiveRecordingExport: builder.mutation({
+      query: (recordingId) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/force-export`,
+        method: "POST",
+      }),
+    }),
   }),
   overrideExisting: false,
 });
 
 export const {
   useAdminListLiveSessionsQuery,
+  useForceLiveRecordingExportMutation,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useRetryLiveRecordingExportMutation,
