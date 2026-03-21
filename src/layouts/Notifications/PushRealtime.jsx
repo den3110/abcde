@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import PropTypes from "prop-types";
 import {
   Alert,
   Box,
@@ -79,6 +80,12 @@ function SummaryCard({ title, value, hint, color = "text.primary" }) {
     </Card>
   );
 }
+SummaryCard.propTypes = {
+  title: PropTypes.string,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  hint: PropTypes.string,
+  color: PropTypes.string,
+};
 
 function StatusChip({ status }) {
   const colorMap = {
@@ -90,6 +97,9 @@ function StatusChip({ status }) {
   };
   return <Chip size="small" color={colorMap[status] || "default"} label={status || "unknown"} />;
 }
+StatusChip.propTypes = {
+  status: PropTypes.string,
+};
 
 function SourceChip({ sourceKind }) {
   const colorMap = {
@@ -106,6 +116,9 @@ function SourceChip({ sourceKind }) {
     />
   );
 }
+SourceChip.propTypes = {
+  sourceKind: PropTypes.string,
+};
 
 function KeyValueList({ title, rows = [] }) {
   return (
@@ -141,6 +154,10 @@ function KeyValueList({ title, rows = [] }) {
     </Card>
   );
 }
+KeyValueList.propTypes = {
+  title: PropTypes.string,
+  rows: PropTypes.arrayOf(PropTypes.shape({ label: PropTypes.string, value: PropTypes.any })),
+};
 
 function JsonCard({ title, value }) {
   return (
@@ -169,6 +186,10 @@ function JsonCard({ title, value }) {
     </Card>
   );
 }
+JsonCard.propTypes = {
+  title: PropTypes.string,
+  value: PropTypes.any,
+};
 
 export default function PushRealtimePage() {
   const socket = useSocket();
@@ -421,8 +442,8 @@ export default function PushRealtimePage() {
                     </Typography>
                   </Stack>
                   <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                    Monitor all server-side Expo push dispatches, including admin sends and
-                    system events.
+                    Monitor all server-side Expo push dispatches, including admin sends and system
+                    events.
                   </Typography>
                 </Stack>
 
@@ -452,14 +473,18 @@ export default function PushRealtimePage() {
               <SummaryCard
                 title="Dispatch 24h"
                 value={formatNumber(summary?.dispatches?.last24h?.total || 0)}
-                hint={`completed ${formatNumber(summary?.dispatches?.last24h?.completed || 0)} / failed ${formatNumber(summary?.dispatches?.last24h?.failed || 0)}`}
+                hint={`completed ${formatNumber(
+                  summary?.dispatches?.last24h?.completed || 0
+                )} / failed ${formatNumber(summary?.dispatches?.last24h?.failed || 0)}`}
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
                 title="Dispatch 7d"
                 value={formatNumber(summary?.dispatches?.last7d?.total || 0)}
-                hint={`skipped ${formatNumber(summary?.dispatches?.last7d?.skipped || 0)} / queued ${formatNumber(summary?.dispatches?.queued || 0)}`}
+                hint={`skipped ${formatNumber(
+                  summary?.dispatches?.last7d?.skipped || 0
+                )} / queued ${formatNumber(summary?.dispatches?.queued || 0)}`}
               />
             </Grid>
             <Grid item xs={12} md={3}>
@@ -474,7 +499,9 @@ export default function PushRealtimePage() {
               <SummaryCard
                 title="Enabled Tokens"
                 value={formatNumber(summary?.tokens?.enabled || 0)}
-                hint={`disabled ${formatNumber(summary?.tokens?.disabled || 0)} / active 24h ${formatNumber(summary?.tokens?.active24h || 0)}`}
+                hint={`disabled ${formatNumber(
+                  summary?.tokens?.disabled || 0
+                )} / active 24h ${formatNumber(summary?.tokens?.active24h || 0)}`}
                 color="success.main"
               />
             </Grid>
@@ -733,10 +760,7 @@ export default function PushRealtimePage() {
 
               <Grid container spacing={2}>
                 <Grid item xs={12} md={6}>
-                  <JsonCard
-                    title="Error Breakdown"
-                    value={detail?.summary?.errorBreakdown || {}}
-                  />
+                  <JsonCard title="Error Breakdown" value={detail?.summary?.errorBreakdown || {}} />
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <JsonCard title="Sample Failures" value={detail?.sampleFailures || []} />

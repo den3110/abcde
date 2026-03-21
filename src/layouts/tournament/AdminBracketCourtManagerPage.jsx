@@ -352,8 +352,7 @@ export default function AdminBracketCourtManagerPage() {
   const [assignNextHttp] = useAssignNextHttpMutation();
   const [assignSpecificHttp] = useAssignSpecificHttpMutation();
   const [setCourtMatchList, { isLoading: savingMatchList }] = useSetCourtMatchListMutation();
-  const [clearCourtMatchList, { isLoading: clearingMatchList }] =
-    useClearCourtMatchListMutation();
+  const [clearCourtMatchList, { isLoading: clearingMatchList }] = useClearCourtMatchListMutation();
   const [advanceCourtMatchList, { isLoading: advancingMatchList }] =
     useAdvanceCourtMatchListMutation();
 
@@ -371,15 +370,16 @@ export default function AdminBracketCourtManagerPage() {
     refetchOnReconnect: true,
   });
 
-  const allMatchesArgs = bracket || tournamentId ? { tournamentId, bracket, limit: 500 } : skipToken;
-  const {
-    data: allBracketMatches = [],
-    refetch: refetchAllMatches,
-  } = useListMatchesQuery(allMatchesArgs, {
-    refetchOnMountOrArgChange: true,
-    refetchOnFocus: true,
-    refetchOnReconnect: true,
-  });
+  const allMatchesArgs =
+    bracket || tournamentId ? { tournamentId, bracket, limit: 500 } : skipToken;
+  const { data: allBracketMatches = [], refetch: refetchAllMatches } = useListMatchesQuery(
+    allMatchesArgs,
+    {
+      refetchOnMountOrArgChange: true,
+      refetchOnFocus: true,
+      refetchOnReconnect: true,
+    }
+  );
 
   // build map nhanh: id -> match từ socket
   const matchMap = useMemo(() => {
@@ -1079,7 +1079,9 @@ export default function AdminBracketCourtManagerPage() {
   const listDraftMatches = useMemo(
     () =>
       listDraftIds
-        .map((id) => matchMap.get(id) || selectableMatches.find((m) => String(m._id || m.id) === id))
+        .map(
+          (id) => matchMap.get(id) || selectableMatches.find((m) => String(m._id || m.id) === id)
+        )
         .filter(Boolean),
     [listDraftIds, matchMap, selectableMatches]
   );
@@ -1100,7 +1102,9 @@ export default function AdminBracketCourtManagerPage() {
     const currentMatch = listDlgCourt ? getMatchForCourt(listDlgCourt) : null;
     return (
       <Dialog open={listDlgOpen} onClose={closeListDialog} fullWidth maxWidth="lg">
-        <DialogTitle sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <DialogTitle
+          sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+        >
           Gán list trận theo sân
           <IconButton onClick={closeListDialog} size="small">
             <CloseIcon />
@@ -1111,7 +1115,9 @@ export default function AdminBracketCourtManagerPage() {
             <Grid item xs={12}>
               <Alert severity="info">
                 Sân: <strong>{listDlgCourt?.name || "(không rõ)"}</strong>
-                {currentMatch ? ` • Trận hiện tại: ${matchListLabel(currentMatch)}` : " • Sân đang trống"}
+                {currentMatch
+                  ? ` • Trận hiện tại: ${matchListLabel(currentMatch)}`
+                  : " • Sân đang trống"}
               </Alert>
             </Grid>
             <Grid item xs={12} md={6}>

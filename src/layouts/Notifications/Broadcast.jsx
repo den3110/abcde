@@ -129,7 +129,9 @@ export default function BroadcastPage() {
       setSnack({
         open: true,
         severity: "success",
-        msg: `Da xep hang gui push. Dispatch: ${data?.dispatchId || "unknown"} (${data?.status || "queued"})`,
+        msg: `Da xep hang gui push. Dispatch: ${data?.dispatchId || "unknown"} (${
+          data?.status || "queued"
+        })`,
       });
       // reset tối thiểu: giữ filter cho tiện
       setForm((s) => ({ ...s, title: "", body: "", url: "" }));
