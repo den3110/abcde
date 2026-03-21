@@ -10,6 +10,7 @@ export const adminNotifyApi = apiSlice.injectEndpoints({
         method: "POST",
         body,
       }),
+      invalidatesTags: ["PushDispatch"],
     }),
     // 👇 thêm endpoint này
     userBroadcast: builder.mutation({
@@ -18,6 +19,7 @@ export const adminNotifyApi = apiSlice.injectEndpoints({
         method: "POST",
         body: payload,
       }),
+      invalidatesTags: ["PushDispatch"],
     }),
   }),
 });

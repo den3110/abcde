@@ -126,11 +126,10 @@ export default function BroadcastPage() {
         ttl: form.ttl ? Number(form.ttl) : undefined,
       };
       const data = await send(payload).unwrap();
-      const sum = data?.summary || {};
       setSnack({
         open: true,
         severity: "success",
-        msg: `Đã gửi! Tokens: ${sum.tokens ?? "?"}, OK: ${sum.ok ?? "?"}, Err: ${sum.error ?? "?"}`,
+        msg: `Da xep hang gui push. Dispatch: ${data?.dispatchId || "unknown"} (${data?.status || "queued"})`,
       });
       // reset tối thiểu: giữ filter cho tiện
       setForm((s) => ({ ...s, title: "", body: "", url: "" }));
@@ -215,7 +214,9 @@ export default function BroadcastPage() {
         severity: "success",
         msg: `Đã gửi thông báo tới ${
           selectedUser.nickname || selectedUser.name || selectedUser.phone || "user"
-        }! Tokens: ${sum.tokens ?? "?"}, OK: ${sum.ok ?? "?"}, Err: ${sum.error ?? "?"}`,
+        }! Dispatch: ${data?.dispatchId || "unknown"}, Tokens: ${sum.tokens ?? "?"}, Ticket OK: ${
+          sum.ticketOk ?? "?"
+        }, Ticket Err: ${sum.ticketError ?? "?"}`,
       });
       setUserForm({
         title: "",

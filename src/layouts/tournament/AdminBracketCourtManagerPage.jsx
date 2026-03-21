@@ -7,6 +7,10 @@ import {
   useUpsertCourtsMutation,
   useBuildGroupsQueueMutation,
   useAssignNextHttpMutation,
+  useAssignSpecificHttpMutation,
+  useSetCourtMatchListMutation,
+  useClearCourtMatchListMutation,
+  useAdvanceCourtMatchListMutation,
   useListMatchesQuery,
 } from "slices/adminCourtApiSlice";
 import { skipToken } from "@reduxjs/toolkit/query";
@@ -41,6 +45,12 @@ import SaveIcon from "@mui/icons-material/Save";
 import QueuePlayNextIcon from "@mui/icons-material/QueuePlayNext";
 import AutorenewIcon from "@mui/icons-material/Autorenew";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import SkipNextIcon from "@mui/icons-material/SkipNext";
+import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
+import ClearAllIcon from "@mui/icons-material/ClearAll";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { DataGrid } from "@mui/x-data-grid";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -332,10 +342,20 @@ export default function AdminBracketCourtManagerPage() {
   const [assignDlgOpen, setAssignDlgOpen] = useState(false);
   const [assignDlgCourt, setAssignDlgCourt] = useState(null); // court object
   const [assignDlgMatchId, setAssignDlgMatchId] = useState("");
+  const [listDlgOpen, setListDlgOpen] = useState(false);
+  const [listDlgCourt, setListDlgCourt] = useState(null);
+  const [listDraftIds, setListDraftIds] = useState([]);
+  const [listSearch, setListSearch] = useState("");
   // ---------- RTKQ mutations ----------
   const [upsertCourts, { isLoading: savingCourts }] = useUpsertCourtsMutation();
   const [buildQueue, { isLoading: buildingQueue }] = useBuildGroupsQueueMutation();
   const [assignNextHttp] = useAssignNextHttpMutation();
+  const [assignSpecificHttp] = useAssignSpecificHttpMutation();
+  const [setCourtMatchList, { isLoading: savingMatchList }] = useSetCourtMatchListMutation();
+  const [clearCourtMatchList, { isLoading: clearingMatchList }] =
+    useClearCourtMatchListMutation();
+  const [advanceCourtMatchList, { isLoading: advancingMatchList }] =
+    useAdvanceCourtMatchListMutation();
 
   // ---------- RTKQ query: finished matches ----------
   const finishedArgs =
@@ -351,12 +371,27 @@ export default function AdminBracketCourtManagerPage() {
     refetchOnReconnect: true,
   });
 
+  const allMatchesArgs = bracket || tournamentId ? { tournamentId, bracket, limit: 500 } : skipToken;
+  const {
+    data: allBracketMatches = [],
+    refetch: refetchAllMatches,
+  } = useListMatchesQuery(allMatchesArgs, {
+    refetchOnMountOrArgChange: true,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+  });
+
   // build map nhanh: id -> match từ socket
   const matchMap = useMemo(() => {
     const map = new Map();
     for (const m of socketMatches) map.set(String(m._id || m.id), m);
+    for (const m of allBracketMatches || []) {
+      const id = String(m?._id || m?.id || "");
+      if (!id || map.has(id)) continue;
+      map.set(id, m);
+    }
     return map;
-  }, [socketMatches]);
+  }, [socketMatches, allBracketMatches]);
   /* ⭐ NEW: list các trận có thể chọn để "sửa vào sân" */
   const selectableMatches = useMemo(() => {
     const STATUS_RANK = { queued: 0, scheduled: 1, assigned: 2, live: 3, finished: 4 };
@@ -415,11 +450,15 @@ export default function AdminBracketCourtManagerPage() {
       out.push(m);
     };
 
-    // Ưu tiên lấy từ queue trước, rồi bổ sung từ socket (scheduled/queued/assigned)
+    // Ưu tiên lấy từ queue trước, rồi bổ sung từ socket + list match của bracket
     for (const m of queue || []) push(m);
     for (const m of socketMatches || []) {
       const st = String(m?.status || "");
-      if (["scheduled", "queued", "assigned"].includes(st)) push(m);
+      if (["scheduled", "queued", "assigned", "live"].includes(st)) push(m);
+    }
+    for (const m of allBracketMatches || []) {
+      const st = String(m?.status || "");
+      if (["scheduled", "queued", "assigned", "live"].includes(st)) push(m);
     }
 
     // ===== Sort mới =====
@@ -464,7 +503,7 @@ export default function AdminBracketCourtManagerPage() {
     });
 
     return out;
-  }, [queue, socketMatches]);
+  }, [queue, socketMatches, allBracketMatches]);
 
   const matchListLabel = (m) => {
     if (!m) return "";
@@ -491,6 +530,43 @@ export default function AdminBracketCourtManagerPage() {
     m?.courtCode ||
     "";
 
+  const getCourtManualPendingItems = (court) => {
+    const currentId = String(court?.currentMatch || "");
+    return (court?.manualAssignment?.items || []).filter((item) => {
+      if (item?.state !== "pending") return false;
+      const matchId = String(item?.match?._id || item?.matchId || "");
+      return !currentId || matchId !== currentId;
+    });
+  };
+
+  const getListDisableReason = (match, court) => {
+    const matchId = String(match?._id || match?.id || "");
+    const currentCourtId = String(court?._id || court?.id || "");
+    if (!matchId) return "Trận không hợp lệ";
+
+    const reservedCourtId = String(match?.manualAssignmentCourtId || "");
+    if (reservedCourtId && reservedCourtId !== currentCourtId) {
+      return `Đã nằm trong list của ${match?.manualAssignmentCourtName || "sân khác"}`;
+    }
+
+    const assignedCourtId = String(match?.court || "");
+    if (
+      assignedCourtId &&
+      assignedCourtId !== currentCourtId &&
+      ["assigned", "live"].includes(String(match?.status || "").toLowerCase())
+    ) {
+      return `Đang ở ${courtLabelOf(match) || "sân khác"}`;
+    }
+
+    return "";
+  };
+
+  const getListPreviewItems = (court, count = 2) =>
+    getCourtManualPendingItems(court)
+      .map((item) => item.match || matchMap.get(String(item.matchId)) || null)
+      .filter(Boolean)
+      .slice(0, count);
+
   // ---------- Socket rooms ----------
   useEffect(() => {
     if (!socket || !tournamentId || !bracket) return;
@@ -511,9 +587,11 @@ export default function AdminBracketCourtManagerPage() {
     const onMatchFinish = () => {
       reqState();
       refetchFinished?.();
+      refetchAllMatches?.();
     };
     const onMatchUpdate = () => {
       reqState();
+      refetchAllMatches?.();
     };
 
     socket.on("scheduler:state", onState);
@@ -523,10 +601,12 @@ export default function AdminBracketCourtManagerPage() {
 
     reqState();
     refetchFinished?.();
+    refetchAllMatches?.();
 
     const interval = setInterval(() => {
       reqState();
       refetchFinished?.();
+      refetchAllMatches?.();
     }, 60000);
 
     return () => {
@@ -537,7 +617,7 @@ export default function AdminBracketCourtManagerPage() {
       socket.off?.("match:finish", onMatchFinish);
       socket.off?.("match:update", onMatchUpdate);
     };
-  }, [socket, tournamentId, bracket, refetchFinished]);
+  }, [socket, tournamentId, bracket, refetchFinished, refetchAllMatches]);
 
   // ---------- handlers ----------
   const handleSaveCourts = async (e) => {
@@ -581,8 +661,12 @@ export default function AdminBracketCourtManagerPage() {
 
   const handleAssignNext = async (courtId) => {
     if (!tournamentId || !bracket || !courtId) return;
-    socket?.emit?.("scheduler:assignNext", { tournamentId, courtId, bracket });
-    await assignNextHttp({ tournamentId, courtId, bracket }).unwrap();
+    try {
+      await assignNextHttp({ tournamentId, courtId, bracket }).unwrap();
+      socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
+    } catch (e) {
+      toast.error(e?.data?.message || e?.error || "Gán trận kế tiếp thất bại");
+    }
   };
 
   /* ⭐ NEW: mở dialog sửa trận vào sân C */
@@ -622,6 +706,123 @@ export default function AdminBracketCourtManagerPage() {
   };
 
   /* ⭐ NEW: reset tất cả sân và gán */
+  const submitAssignSpecific = async () => {
+    if (!tournamentId || !bracket || !assignDlgCourt || !assignDlgMatchId) {
+      toast.error("Thiếu thông tin sân hoặc trận để gán.");
+      return;
+    }
+    try {
+      await assignSpecificHttp({
+        tournamentId,
+        bracket,
+        courtId: assignDlgCourt._id || assignDlgCourt.id,
+        matchId: assignDlgMatchId,
+        replace: true,
+      }).unwrap();
+      setSnackbar({ open: true, severity: "success", message: "Đã gán trận vào sân." });
+    } catch (e) {
+      setSnackbar({
+        open: true,
+        severity: "error",
+        message: e?.data?.message || e?.error || "Gán trận thất bại.",
+      });
+    } finally {
+      socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
+      closeAssignDialog();
+    }
+  };
+  void handleAssignSpecific;
+
+  const openListDialog = (court) => {
+    const draftIds = getCourtManualPendingItems(court).map((item) =>
+      String(item?.match?._id || item?.matchId || "")
+    );
+    setListDlgCourt(court || null);
+    setListDraftIds(draftIds.filter(Boolean));
+    setListSearch("");
+    setListDlgOpen(true);
+  };
+
+  const closeListDialog = () => {
+    setListDlgOpen(false);
+    setListDlgCourt(null);
+    setListDraftIds([]);
+    setListSearch("");
+  };
+
+  const pushMatchIntoListDraft = (matchId) => {
+    if (!matchId) return;
+    setListDraftIds((prev) => (prev.includes(matchId) ? prev : [...prev, matchId]));
+  };
+
+  const removeMatchFromListDraft = (matchId) => {
+    setListDraftIds((prev) => prev.filter((id) => id !== matchId));
+  };
+
+  const moveMatchDraft = (matchId, direction) => {
+    setListDraftIds((prev) => {
+      const index = prev.findIndex((id) => id === matchId);
+      if (index < 0) return prev;
+      const nextIndex = direction === "up" ? index - 1 : index + 1;
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [picked] = next.splice(index, 1);
+      next.splice(nextIndex, 0, picked);
+      return next;
+    });
+  };
+
+  const handleSaveCourtMatchList = async () => {
+    if (!tournamentId || !bracket || !listDlgCourt) return;
+    try {
+      await setCourtMatchList({
+        tournamentId,
+        courtId: listDlgCourt._id || listDlgCourt.id,
+        bracket,
+        matchIds: listDraftIds,
+      }).unwrap();
+      toast.success("Đã lưu list trận cho sân.");
+      socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
+      closeListDialog();
+    } catch (e) {
+      toast.error(e?.data?.message || e?.error || "Lưu list trận thất bại");
+    }
+  };
+
+  const handleClearCourtMatchList = async (court) => {
+    if (!tournamentId || !bracket || !court) return;
+    try {
+      await clearCourtMatchList({
+        tournamentId,
+        courtId: court._id || court.id,
+        bracket,
+      }).unwrap();
+      toast.success("Đã xoá list trận của sân.");
+      socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
+      if (String(listDlgCourt?._id || listDlgCourt?.id || "") === String(court._id || court.id)) {
+        closeListDialog();
+      }
+    } catch (e) {
+      toast.error(e?.data?.message || e?.error || "Xoá list trận thất bại");
+    }
+  };
+
+  const handleAdvanceCourtMatchList = async (court) => {
+    if (!tournamentId || !bracket || !court) return;
+    try {
+      await advanceCourtMatchList({
+        tournamentId,
+        courtId: court._id || court.id,
+        bracket,
+        action: "skip_current",
+      }).unwrap();
+      toast.success("Đã skip sang trận kế tiếp.");
+      socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
+    } catch (e) {
+      toast.error(e?.data?.message || e?.error || "Skip trận thất bại");
+    }
+  };
+
   const handleResetAllCourts = async () => {
     if (!tournamentId || !bracket) return;
     const ok = window.confirm("Xoá TẤT CẢ sân và các gán trận hiện tại?");
@@ -637,6 +838,7 @@ export default function AdminBracketCourtManagerPage() {
     } finally {
       socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
       refetchFinished?.();
+      refetchAllMatches?.();
     }
   };
 
@@ -644,6 +846,7 @@ export default function AdminBracketCourtManagerPage() {
     if (!tournamentId || !bracket) return;
     socket?.emit?.("scheduler:requestState", { tournamentId, bracket });
     refetchFinished?.();
+    refetchAllMatches?.();
   };
 
   const goMatch = (matchId) => {
@@ -873,6 +1076,163 @@ export default function AdminBracketCourtManagerPage() {
   }, [showPoolFinished, showRRFinished]);
 
   /* ⭐ NEW: Dialog sửa trận vào sân */
+  const listDraftMatches = useMemo(
+    () =>
+      listDraftIds
+        .map((id) => matchMap.get(id) || selectableMatches.find((m) => String(m._id || m.id) === id))
+        .filter(Boolean),
+    [listDraftIds, matchMap, selectableMatches]
+  );
+
+  const listAvailableMatches = useMemo(() => {
+    return selectableMatches.filter((match) => {
+      const matchId = String(match?._id || match?.id || "");
+      if (!matchId || listDraftIds.includes(matchId)) return false;
+      if (listSearch) {
+        const haystack = `${matchListLabel(match)} ${courtLabelOf(match)}`.toLowerCase();
+        if (!haystack.includes(String(listSearch).trim().toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [selectableMatches, listDraftIds, listSearch]);
+
+  const ListDialog = () => {
+    const currentMatch = listDlgCourt ? getMatchForCourt(listDlgCourt) : null;
+    return (
+      <Dialog open={listDlgOpen} onClose={closeListDialog} fullWidth maxWidth="lg">
+        <DialogTitle sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          Gán list trận theo sân
+          <IconButton onClick={closeListDialog} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <Alert severity="info">
+                Sân: <strong>{listDlgCourt?.name || "(không rõ)"}</strong>
+                {currentMatch ? ` • Trận hiện tại: ${matchListLabel(currentMatch)}` : " • Sân đang trống"}
+              </Alert>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
+                <Stack spacing={2}>
+                  <TextField
+                    label="Tìm trận để thêm"
+                    value={listSearch}
+                    onChange={(e) => setListSearch(e.target.value)}
+                    fullWidth
+                  />
+                  <Stack spacing={1} sx={{ maxHeight: 420, overflowY: "auto" }}>
+                    {listAvailableMatches.map((match) => {
+                      const matchId = String(match._id || match.id);
+                      const disabledReason = getListDisableReason(match, listDlgCourt);
+                      return (
+                        <Paper key={matchId} variant="outlined" sx={{ p: 1.25 }}>
+                          <Stack spacing={1}>
+                            <Typography variant="body2" fontWeight={600}>
+                              {matchListLabel(match)}
+                            </Typography>
+                            {disabledReason ? (
+                              <Typography variant="caption" color="error.main">
+                                {disabledReason}
+                              </Typography>
+                            ) : null}
+                            <Stack direction="row" justifyContent="flex-end">
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<PlaylistAddIcon />}
+                                disabled={Boolean(disabledReason)}
+                                onClick={() => pushMatchIntoListDraft(matchId)}
+                              >
+                                Thêm
+                              </Button>
+                            </Stack>
+                          </Stack>
+                        </Paper>
+                      );
+                    })}
+                    {!listAvailableMatches.length && (
+                      <Typography variant="body2" color="text.secondary">
+                        Không còn trận phù hợp để thêm.
+                      </Typography>
+                    )}
+                  </Stack>
+                </Stack>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
+                <Stack spacing={1.5}>
+                  <Typography variant="subtitle2">
+                    List đang chọn ({listDraftMatches.length})
+                  </Typography>
+                  <Stack spacing={1} sx={{ maxHeight: 420, overflowY: "auto" }}>
+                    {listDraftMatches.map((match, index) => {
+                      const matchId = String(match._id || match.id);
+                      return (
+                        <Paper key={matchId} variant="outlined" sx={{ p: 1.25 }}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" fontWeight={600}>
+                              #{index + 1} • {matchListLabel(match)}
+                            </Typography>
+                            <Stack direction="row" spacing={0.5}>
+                              <IconButton
+                                size="small"
+                                onClick={() => moveMatchDraft(matchId, "up")}
+                                disabled={index === 0}
+                              >
+                                <ArrowUpwardIcon fontSize="small" />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={() => moveMatchDraft(matchId, "down")}
+                                disabled={index === listDraftMatches.length - 1}
+                              >
+                                <ArrowDownwardIcon fontSize="small" />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => removeMatchFromListDraft(matchId)}
+                              >
+                                <DeleteOutlineIcon fontSize="small" />
+                              </IconButton>
+                            </Stack>
+                          </Stack>
+                        </Paper>
+                      );
+                    })}
+                    {!listDraftMatches.length && (
+                      <Typography variant="body2" color="text.secondary">
+                        Chưa có trận nào trong list.
+                      </Typography>
+                    )}
+                  </Stack>
+                </Stack>
+              </Paper>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            color="error"
+            startIcon={<ClearAllIcon />}
+            onClick={() => handleClearCourtMatchList(listDlgCourt)}
+            disabled={!listDlgCourt?.listEnabled && !listDraftIds.length}
+          >
+            Clear list
+          </Button>
+          <Button onClick={closeListDialog}>Huỷ</Button>
+          <Button variant="contained" onClick={handleSaveCourtMatchList} disabled={savingMatchList}>
+            {savingMatchList ? "Đang lưu..." : "Lưu list"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
   const AssignDialog = () => {
     const currentLabel =
       assignDlgCourt?.name ||
@@ -899,8 +1259,10 @@ export default function AdminBracketCourtManagerPage() {
             </Alert>
             <Autocomplete
               options={selectableMatches}
+              filterOptions={filterMatches}
               getOptionKey={(o) => String(o._id || o.id)}
               getOptionLabel={(o) => matchListLabel(o)}
+              getOptionDisabled={(o) => Boolean(getListDisableReason(o, assignDlgCourt))}
               value={valueObj}
               onChange={(e, v) => setAssignDlgMatchId(v ? String(v._id || v.id) : "")}
               renderInput={(params) => <TextField {...params} label="Chọn trận để gán" />}
@@ -913,7 +1275,7 @@ export default function AdminBracketCourtManagerPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={closeAssignDialog}>Huỷ</Button>
-          <Button variant="contained" onClick={handleAssignSpecific} disabled={!assignDlgMatchId}>
+          <Button variant="contained" onClick={submitAssignSpecific} disabled={!assignDlgMatchId}>
             Xác nhận gán
           </Button>
         </DialogActions>
@@ -1106,6 +1468,8 @@ export default function AdminBracketCourtManagerPage() {
                   const code = getMatchCodeForCourt(c);
                   const teams = getTeamsForCourt(c);
                   const cs = courtDerivedStatus(c);
+                  const nextMatch = c?.nextMatch || null;
+                  const previewItems = getListPreviewItems(c);
                   return (
                     <Paper
                       key={c._id}
@@ -1130,6 +1494,13 @@ export default function AdminBracketCourtManagerPage() {
                           }
                         />
                         <Typography variant="body2">{statusLabel}</Typography>
+                        {c?.listEnabled && (
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={`List cÃ²n ${c?.remainingCount || 0} tráº­n`}
+                          />
+                        )}
 
                         {hasMatch && (
                           <Chip
@@ -1163,9 +1534,46 @@ export default function AdminBracketCourtManagerPage() {
                             )}
                           </Stack>
                         )}
+                        {nextMatch && (
+                          <Typography variant="caption" color="text.secondary">
+                            Kế tiếp: {matchListLabel(nextMatch)}
+                          </Typography>
+                        )}
+                        {!nextMatch && previewItems.length > 0 && (
+                          <Typography variant="caption" color="text.secondary">
+                            Preview: {previewItems.map((item) => buildMatchCode(item)).join(" • ")}
+                          </Typography>
+                        )}
                       </Stack>
 
-                      <Stack direction="row" spacing={1}>
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<PlaylistAddIcon />}
+                          onClick={() => openListDialog(c)}
+                        >
+                          {c?.listEnabled ? "Sửa list" : "Chọn list"}
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          startIcon={<ClearAllIcon />}
+                          disabled={!c?.listEnabled || clearingMatchList}
+                          onClick={() => handleClearCourtMatchList(c)}
+                        >
+                          Clear list
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<SkipNextIcon />}
+                          disabled={!hasMatch || advancingMatchList}
+                          onClick={() => handleAdvanceCourtMatchList(c)}
+                        >
+                          Skip sang trận kế
+                        </Button>
                         <Button
                           size="small"
                           variant="outlined"
@@ -1294,6 +1702,7 @@ export default function AdminBracketCourtManagerPage() {
           </Alert>
         </Snackbar>
       </Box>
+      <ListDialog />
       <AssignDialog />
     </DashboardLayout>
   );

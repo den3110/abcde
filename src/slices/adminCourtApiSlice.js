@@ -90,7 +90,7 @@ export const adminCourtApiSlice = apiSlice.injectEndpoints({
         const tid = asId(tournamentId);
         const bid = asId(bracket);
         return {
-          url: `/admin/tournaments/${enc(tid)}/courts/state?bracket=${enc(bid)}`,
+          url: `/admin/tournaments/${enc(tid)}/scheduler/state?bracket=${enc(bid)}`,
           method: "GET",
         };
       },
@@ -156,6 +156,33 @@ export const adminCourtApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: [{ type: "Scheduler", id: "STATE" }],
     }),
 
+    setCourtMatchList: builder.mutation({
+      query: ({ tournamentId, courtId, bracket, matchIds }) => ({
+        url: `/admin/tournaments/${tournamentId}/courts/${courtId}/match-list`,
+        method: "PUT",
+        body: { bracket, matchIds },
+      }),
+      invalidatesTags: ["ADMIN_QUEUE", "ADMIN_COURTS", { type: "Scheduler", id: "STATE" }],
+    }),
+
+    clearCourtMatchList: builder.mutation({
+      query: ({ tournamentId, courtId, bracket }) => ({
+        url: `/admin/tournaments/${tournamentId}/courts/${courtId}/match-list`,
+        method: "DELETE",
+        body: { bracket },
+      }),
+      invalidatesTags: ["ADMIN_QUEUE", "ADMIN_COURTS", { type: "Scheduler", id: "STATE" }],
+    }),
+
+    advanceCourtMatchList: builder.mutation({
+      query: ({ tournamentId, courtId, bracket, action = "skip_current" }) => ({
+        url: `/admin/tournaments/${tournamentId}/courts/${courtId}/match-list/advance`,
+        method: "POST",
+        body: { bracket, action },
+      }),
+      invalidatesTags: ["ADMIN_QUEUE", "ADMIN_COURTS", { type: "Scheduler", id: "STATE" }],
+    }),
+
     // ⭐ NEW: Reset tất cả sân & gỡ gán
     resetCourtsHttp: builder.mutation({
       query: ({ tournamentId, bracket }) => ({
@@ -206,6 +233,9 @@ export const {
   useGetSchedulerStateQuery,
   useListMatchesQuery,
   useAssignSpecificHttpMutation,
+  useSetCourtMatchListMutation,
+  useClearCourtMatchListMutation,
+  useAdvanceCourtMatchListMutation,
   useResetCourtsHttpMutation,
   useLazyGetSchedulerMatchesLiteQuery,
 } = adminCourtApiSlice;

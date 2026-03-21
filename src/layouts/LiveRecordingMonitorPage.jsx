@@ -197,6 +197,8 @@ function StorageOverviewCard({ storage }) {
   const totalBytes = storage?.totalBytes == null ? null : Number(storage.totalBytes || 0);
   const percentUsed = storage?.percentUsed == null ? null : Number(storage.percentUsed || 0);
   const configured = Boolean(storage?.configured);
+  const measuredFromR2 = storage?.source === "r2_scan";
+  const scanError = String(storage?.scanError || "").trim();
 
   return (
     <Card sx={{ borderRadius: 3 }}>
@@ -213,7 +215,9 @@ function StorageOverviewCard({ storage }) {
                 R2 Storage
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                Chi tinh source segments recording dang con nam tren R2.
+                {measuredFromR2
+                  ? "Do truc tiep object recording con nam tren R2 (cache ngan)."
+                  : "Dang fallback theo DB estimate vi chua quet duoc R2."}
               </Typography>
             </Stack>
 
@@ -270,6 +274,11 @@ function StorageOverviewCard({ storage }) {
             Dang co {storage?.recordingsWithSourceOnR2 || 0} recording con giu du lieu nguon tren
             R2.
           </Typography>
+          {scanError ? (
+            <Alert severity="warning" sx={{ py: 0 }}>
+              Khong quet duoc R2 truc tiep: {scanError}
+            </Alert>
+          ) : null}
         </Stack>
       </CardContent>
     </Card>

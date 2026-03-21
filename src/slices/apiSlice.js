@@ -64,6 +64,7 @@ export const apiSlice = createApi({
     "Registration",
     "LiveSessions",
     "LiveRecordingMonitor",
+    "PushDispatch",
     "SystemSettings",
     "RecordingDriveStatus",
   ],

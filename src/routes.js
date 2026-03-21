@@ -42,6 +42,7 @@ import RatingTesterPage from "layouts/tools/RatingTesterPage";
 import AdminEvaluatorManagement from "layouts/tournament/AdminEvaluatorManagement";
 import GroupPreassignBoard from "layouts/tournament/GroupPreassignBoard";
 import BroadcastPage from "layouts/Notifications/Broadcast";
+import PushRealtimePage from "layouts/Notifications/PushRealtime";
 import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
@@ -535,6 +536,17 @@ const routes = [
     component: <BroadcastPage />,
     private: true,
     roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Push Realtime",
+    key: "push-realtime",
+    icon: <Icon fontSize="small">hub</Icon>,
+    route: "/admin/notifications/push-realtime",
+    component: <PushRealtimePage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
   },
   {
     show: false,

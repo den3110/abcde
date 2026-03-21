@@ -34,6 +34,7 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
 import {
+  useForceLiveRecordingExportMutation,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useRetryLiveRecordingExportMutation,
@@ -42,6 +43,7 @@ import {
 dayjs.extend(relativeTime);
 
 const STATUS_META = {
+  pending_export_window: { color: "secondary", label: "Cho khung gio dem" },
   exporting: { color: "info", label: "Exporting" },
   ready: { color: "success", label: "Ready" },
   failed: { color: "error", label: "Failed" },
@@ -141,7 +143,8 @@ function MatchCell({ row }) {
 }
 
 function ExportLinks({ row }) {
-  const canPlay = row.status === "ready" && Boolean(row.playbackUrl);
+  const canPlay =
+    Boolean(row.playbackUrl) && (row.status === "ready" || row.temporaryPlaybackReady);
   const rawHref = row.rawStreamAvailable
     ? row.rawStreamUrl || row.driveRawUrl
     : row.driveRawUrl || null;
@@ -159,7 +162,7 @@ function ExportLinks({ row }) {
           startIcon={<PlayCircleOutlineIcon />}
           sx={{ minWidth: 0 }}
         >
-          Play
+          {row.status === "ready" ? "Play" : "Temp"}
         </Button>
       ) : null}
       {rawHref ? (
@@ -207,7 +210,12 @@ function canRetryExport(row) {
   );
 }
 
+function canForceExportNow(row) {
+  return row?.status === "pending_export_window";
+}
+
 const PIPELINE_STAGE_LABELS = {
+  delayed_until_window: "Dang cho khung gio dem",
   queued: "Đang chờ worker nhận job",
   queued_retry: "Đang đợi retry",
   awaiting_queue_sync: "Đang đồng bộ trạng thái queue",
@@ -222,6 +230,7 @@ const PIPELINE_STAGE_LABELS = {
 };
 
 const PIPELINE_STAGE_PERCENT = {
+  delayed_until_window: 10,
   queued: 5,
   queued_retry: 5,
   awaiting_queue_sync: 8,
@@ -428,6 +437,14 @@ function RecordingDetailDialog({ row, open, onClose }) {
               variant="outlined"
               label={`Finalized: ${formatDateTime(row.finalizedAt)}`}
             />
+            {row.scheduledExportAt ? (
+              <Chip
+                size="small"
+                variant="outlined"
+                color="secondary"
+                label={`Scheduled: ${formatDateTime(row.scheduledExportAt)}`}
+              />
+            ) : null}
             <Chip size="small" variant="outlined" label={`Ready: ${formatDateTime(row.readyAt)}`} />
             <Chip
               size="small"
@@ -563,9 +580,11 @@ export default function DriveExportMonitorPage() {
   const [snapshot, setSnapshot] = useState(null);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
+  const [forcingRecordingId, setForcingRecordingId] = useState(null);
 
   const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
   const [retryExport] = useRetryLiveRecordingExportMutation();
+  const [forceExport] = useForceLiveRecordingExportMutation();
   const {
     data: workerHealth,
     isError: workerHealthError,
@@ -613,14 +632,18 @@ export default function DriveExportMonitorPage() {
 
   const rows = useMemo(() => {
     const sourceRows = snapshot?.rows || [];
-    return sourceRows.filter((row) => ["exporting", "ready", "failed"].includes(row.status));
+    return sourceRows.filter((row) =>
+      ["pending_export_window", "exporting", "ready", "failed"].includes(row.status)
+    );
   }, [snapshot]);
 
   const summary = useMemo(() => {
+    const pendingWindow = rows.filter((row) => row.status === "pending_export_window");
     const exporting = rows.filter((row) => row.status === "exporting");
     const ready = rows.filter((row) => row.status === "ready");
     const failed = rows.filter((row) => row.status === "failed");
     return {
+      pendingWindow,
       exporting,
       ready,
       failed,
@@ -639,6 +662,8 @@ export default function DriveExportMonitorPage() {
         row.participantsLabel,
         row.competitionLabel,
         row.status,
+        row.exportPipeline?.label,
+        row.exportPipeline?.detail,
         row.error,
         row.driveFileId,
       ]
@@ -679,6 +704,18 @@ export default function DriveExportMonitorPage() {
     }
   };
 
+  const handleForceExportNow = async (recordingId) => {
+    try {
+      setForcingRecordingId(recordingId);
+      await forceExport(recordingId).unwrap();
+      refetch();
+      refetchWorkerHealth();
+    } catch (_) {
+    } finally {
+      setForcingRecordingId(null);
+    }
+  };
+
   const columns = useMemo(
     () => [
       {
@@ -694,6 +731,25 @@ export default function DriveExportMonitorPage() {
         minWidth: 280,
         sortable: false,
         renderCell: ({ row }) => <MatchCell row={row} />,
+      },
+      {
+        field: "pipeline",
+        headerName: "Export / Worker",
+        minWidth: 240,
+        sortable: false,
+        renderCell: ({ row }) => (
+          <Stack spacing={0.35} sx={{ py: 0.6 }}>
+            <Typography variant="body2" fontWeight={700}>
+              {row.exportPipeline?.label || row.statusMeta?.label || row.status}
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.8, whiteSpace: "normal" }}>
+              {row.exportPipeline?.detail ||
+                (row.scheduledExportAt
+                  ? `Scheduled ${formatDateTime(row.scheduledExportAt)}`
+                  : "-")}
+            </Typography>
+          </Stack>
+        ),
       },
       {
         field: "output",
@@ -734,7 +790,7 @@ export default function DriveExportMonitorPage() {
                 size="small"
                 color="warning"
                 variant="outlined"
-                disabled={Boolean(retryingRecordingId)}
+                disabled={Boolean(retryingRecordingId) || Boolean(forcingRecordingId)}
                 onClick={(event) => {
                   event.stopPropagation();
                   handleRetryExport(row.recordingId);
@@ -746,6 +802,25 @@ export default function DriveExportMonitorPage() {
                 }
               >
                 {retryingRecordingId === row.recordingId ? "Dang retry..." : "Retry export"}
+              </Button>
+            ) : null}
+            {canForceExportNow(row) ? (
+              <Button
+                size="small"
+                color="secondary"
+                variant="outlined"
+                disabled={Boolean(retryingRecordingId) || Boolean(forcingRecordingId)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleForceExportNow(row.recordingId);
+                }}
+                startIcon={
+                  forcingRecordingId === row.recordingId ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : null
+                }
+              >
+                {forcingRecordingId === row.recordingId ? "Dang xuat..." : "Export now"}
               </Button>
             ) : null}
           </Stack>
@@ -780,6 +855,7 @@ export default function DriveExportMonitorPage() {
             }}
           >
             {row.error ||
+              row.exportPipeline?.detail ||
               (row.status === "ready" && !row.driveRawUrl && !row.drivePreviewUrl
                 ? "Ready but missing Drive links"
                 : "-")}
@@ -787,7 +863,7 @@ export default function DriveExportMonitorPage() {
         ),
       },
     ],
-    [retryingRecordingId]
+    [forcingRecordingId, retryingRecordingId]
   );
 
   return (
@@ -843,7 +919,7 @@ export default function DriveExportMonitorPage() {
           {workerHealthError ? <Alert severity="error">Failed to load worker health.</Alert> : null}
 
           <Grid container spacing={2}>
-            <Grid item xs={12} md={2.4}>
+            <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Worker"
                 value={workerHealth?.status || "offline"}
@@ -859,7 +935,7 @@ export default function DriveExportMonitorPage() {
                 }
               />
             </Grid>
-            <Grid item xs={12} md={2.4}>
+            <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Current job"
                 value={
@@ -869,7 +945,15 @@ export default function DriveExportMonitorPage() {
                 color="info.main"
               />
             </Grid>
-            <Grid item xs={12} md={2.4}>
+            <Grid item xs={12} md={2}>
+              <SummaryCard
+                title="Night Queue"
+                value={summary.pendingWindow.length}
+                hint="Dang doi khung gio export dem"
+                color="secondary.main"
+              />
+            </Grid>
+            <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Exporting"
                 value={summary.exporting.length}
@@ -877,7 +961,7 @@ export default function DriveExportMonitorPage() {
                 color="info.main"
               />
             </Grid>
-            <Grid item xs={12} md={2.4}>
+            <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Ready"
                 value={summary.ready.length}
@@ -885,7 +969,7 @@ export default function DriveExportMonitorPage() {
                 color="success.main"
               />
             </Grid>
-            <Grid item xs={12} md={2.4}>
+            <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Failed"
                 value={summary.failed.length}
@@ -922,6 +1006,7 @@ export default function DriveExportMonitorPage() {
                     onChange={(e) => setStatusFilter(e.target.value)}
                     sx={{ width: { xs: "100%", md: 220 } }}
                   >
+                    <MenuItem value="pending_export_window">Night queue</MenuItem>
                     <MenuItem value="ALL">Tất cả trạng thái</MenuItem>
                     <MenuItem value="exporting">Đang xuất</MenuItem>
                     <MenuItem value="ready">Sẵn sàng</MenuItem>
