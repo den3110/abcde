@@ -65,6 +65,7 @@ import AdminSystemPage from "layouts/AdminSystemPage";
 import AuditLogsPage from "layouts/AuditLogsPage";
 import OTAAdminPage from "layouts/ota/OTAAdminPage";
 import AdminAvatarOptimizationPage from "layouts/AdminAvatarOptimizationPage";
+import CacheManagerPage from "layouts/CacheManagerPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -580,6 +581,18 @@ const routes = [
     show: true, // hiện trên sidebar
   },
 
+  {
+    type: "collapse",
+    name: "Cache Manager",
+    key: "admin-cache-manager",
+    icon: <Icon fontSize="small">inventory_2</Icon>,
+    route: "/admin/cache-manager",
+    component: <CacheManagerPage />,
+    private: true,
+    roles: ["superadmin", "superuser"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
   {
     type: "collapse",
     name: "YouTube Live + Token",

@@ -590,7 +590,7 @@ export default function DriveExportMonitorPage() {
     isError: workerHealthError,
     refetch: refetchWorkerHealth,
   } = useGetLiveRecordingWorkerHealthQuery(undefined, {
-    pollingInterval: 10000,
+    pollingInterval: 30000,
     refetchOnMountOrArgChange: true,
   });
 

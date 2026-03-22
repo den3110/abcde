@@ -717,7 +717,7 @@ export default function LiveRecordingMonitorPage() {
   const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
   const [forceLiveRecordingExport] = useForceLiveRecordingExportMutation();
   const { data: workerHealthPoll } = useGetLiveRecordingWorkerHealthQuery(undefined, {
-    pollingInterval: 10000,
+    pollingInterval: 30000,
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });

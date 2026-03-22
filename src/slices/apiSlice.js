@@ -67,6 +67,7 @@ export const apiSlice = createApi({
     "PushDispatch",
     "SystemSettings",
     "RecordingDriveStatus",
+    "AdminCache",
   ],
   endpoints: () => ({}),
 });
