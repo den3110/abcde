@@ -82,6 +82,12 @@ function formatDuration(seconds) {
   return `${secs}s`;
 }
 
+function formatPercent(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  return `${Math.max(0, Math.min(100, Math.round(numeric)))}%`;
+}
+
 function formatSegmentUploadStatus(status) {
   switch (status) {
     case "presigned":
@@ -199,6 +205,15 @@ function StorageOverviewCard({ storage }) {
   const configured = Boolean(storage?.configured);
   const measuredFromR2 = storage?.source === "r2_scan";
   const scanError = String(storage?.scanError || "").trim();
+  const targetBreakdown = Array.isArray(storage?.targetBreakdown)
+    ? [...storage.targetBreakdown].sort((a, b) =>
+        String(a?.label || a?.id || "").localeCompare(String(b?.label || b?.id || ""))
+      )
+    : [];
+  const configuredTargetCount = Number(
+    storage?.configuredTargetCount || targetBreakdown.length || 0
+  );
+  const measuredTargetCount = targetBreakdown.filter((target) => target?.measured !== false).length;
 
   return (
     <Card sx={{ borderRadius: 3 }}>
@@ -216,7 +231,7 @@ function StorageOverviewCard({ storage }) {
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.72 }}>
                 {measuredFromR2
-                  ? "Do truc tiep object recording con nam tren R2 (cache ngan)."
+                  ? "Do truc tiep bucket recording targets tren R2 (cache ngan)."
                   : "Dang fallback theo DB estimate vi chua quet duoc R2."}
               </Typography>
             </Stack>
@@ -272,13 +287,141 @@ function StorageOverviewCard({ storage }) {
 
           <Typography variant="caption" sx={{ opacity: 0.68 }}>
             Dang co {storage?.recordingsWithSourceOnR2 || 0} recording con giu du lieu nguon tren
-            R2.
+            R2. {storage?.scannedAt ? `Scan at ${formatDateTime(storage.scannedAt)}.` : ""}
           </Typography>
           {scanError ? (
             <Alert severity="warning" sx={{ py: 0 }}>
               Khong quet duoc R2 truc tiep: {scanError}
             </Alert>
           ) : null}
+
+          <Divider />
+
+          <Stack spacing={1}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={1}
+              justifyContent="space-between"
+              alignItems={{ xs: "flex-start", md: "center" }}
+            >
+              <Typography variant="subtitle1" fontWeight={800}>
+                Per-target usage
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                {measuredTargetCount}/{configuredTargetCount} target da co so lieu scan.
+              </Typography>
+            </Stack>
+
+            {targetBreakdown.length === 0 ? (
+              <Alert severity="info" sx={{ py: 0 }}>
+                Chua co target nao trong R2_RECORDINGS_TARGETS_JSON hoac fallback recording target.
+              </Alert>
+            ) : (
+              <Grid container spacing={2}>
+                {targetBreakdown.map((target) => {
+                  const targetUsedBytes =
+                    target?.usedBytes == null ? null : Number(target.usedBytes || 0);
+                  const targetRemainingBytes =
+                    target?.remainingBytes == null ? null : Number(target.remainingBytes || 0);
+                  const targetCapacityBytes =
+                    target?.capacityBytes == null ? null : Number(target.capacityBytes || 0);
+                  const targetPercentUsed =
+                    target?.percentUsed == null ? null : Number(target.percentUsed || 0);
+                  const targetMeasured = target?.measured !== false;
+
+                  return (
+                    <Grid item xs={12} md={6} xl={4} key={target?.id || target?.label}>
+                      <Card variant="outlined" sx={{ borderRadius: 3, height: "100%" }}>
+                        <CardContent>
+                          <Stack spacing={1.2}>
+                            <Stack
+                              direction="row"
+                              spacing={1}
+                              justifyContent="space-between"
+                              alignItems="center"
+                              flexWrap="wrap"
+                            >
+                              <Box>
+                                <Typography variant="subtitle1" fontWeight={800}>
+                                  {target?.label || target?.id || "Target"}
+                                </Typography>
+                                <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                                  {target?.id || "-"} - {target?.bucketName || "-"}
+                                </Typography>
+                              </Box>
+                              <Chip
+                                size="small"
+                                color={targetMeasured ? "success" : "warning"}
+                                variant="outlined"
+                                label={targetMeasured ? "R2 scan" : "Unscanned"}
+                              />
+                            </Stack>
+
+                            {targetCapacityBytes != null && targetMeasured ? (
+                              <LinearProgress
+                                variant="determinate"
+                                value={Math.max(0, Math.min(100, targetPercentUsed || 0))}
+                                sx={{ height: 8, borderRadius: 999 }}
+                              />
+                            ) : null}
+
+                            <Grid container spacing={1.5}>
+                              <Grid item xs={4}>
+                                <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                                  Used
+                                </Typography>
+                                <Typography variant="body1" fontWeight={800} color="warning.main">
+                                  {targetUsedBytes == null ? "-" : formatBytes(targetUsedBytes)}
+                                </Typography>
+                              </Grid>
+                              <Grid item xs={4}>
+                                <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                                  Free
+                                </Typography>
+                                <Typography variant="body1" fontWeight={800} color="success.main">
+                                  {targetRemainingBytes == null
+                                    ? "-"
+                                    : formatBytes(targetRemainingBytes)}
+                                </Typography>
+                              </Grid>
+                              <Grid item xs={4}>
+                                <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                                  Total
+                                </Typography>
+                                <Typography variant="body1" fontWeight={800}>
+                                  {targetCapacityBytes == null
+                                    ? "No cap"
+                                    : formatBytes(targetCapacityBytes)}
+                                </Typography>
+                              </Grid>
+                            </Grid>
+
+                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`Objects: ${target?.objectCount ?? "-"}`}
+                              />
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`Sources: ${target?.recordingsWithSourceOnR2 ?? "-"}`}
+                              />
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`Used: ${formatPercent(targetPercentUsed)}`}
+                              />
+                            </Stack>
+                          </Stack>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            )}
+          </Stack>
         </Stack>
       </CardContent>
     </Card>
