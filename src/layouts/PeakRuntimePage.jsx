@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { Navigate } from "react-router-dom";
+import PropTypes from "prop-types";
 import {
   Alert,
   Box,
@@ -102,6 +103,13 @@ function SummaryCard({ title, value, hint, color = "text.primary" }) {
   );
 }
 
+SummaryCard.propTypes = {
+  title: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  hint: PropTypes.string,
+  color: PropTypes.string,
+};
+
 export default function PeakRuntimePage() {
   const { userInfo } = useSelector((state) => state.auth || {});
   const hasLocalSession = Boolean(userInfo?.token);
@@ -116,13 +124,7 @@ export default function PeakRuntimePage() {
   const isAllowed = useMemo(() => isAdminUser(currentUser), [currentUser]);
 
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const {
-    data,
-    error,
-    isLoading,
-    isFetching,
-    refetch,
-  } = useGetPeakRuntimeQuery(undefined, {
+  const { data, error, isLoading, isFetching, refetch } = useGetPeakRuntimeQuery(undefined, {
     skip: !isAllowed,
     pollingInterval: autoRefresh ? 10000 : 0,
     refetchOnFocus: false,
@@ -163,14 +165,18 @@ export default function PeakRuntimePage() {
         field: "reqPerMin",
         headerName: "Req/min",
         width: 110,
-        renderCell: ({ value }) => <Typography variant="body2">{formatNumber(value, 2)}</Typography>,
+        renderCell: ({ value }) => (
+          <Typography variant="body2">{formatNumber(value, 2)}</Typography>
+        ),
       },
       {
         field: "reqPerSec",
         headerName: "Req/s",
         width: 110,
         sortable: false,
-        renderCell: ({ row }) => <Typography variant="body2">{formatReqPerSec(row.reqPerMin)}</Typography>,
+        renderCell: ({ row }) => (
+          <Typography variant="body2">{formatReqPerSec(row.reqPerMin)}</Typography>
+        ),
       },
       {
         field: "avgMs",
@@ -183,11 +189,7 @@ export default function PeakRuntimePage() {
         headerName: "P95",
         width: 120,
         renderCell: ({ value }) => (
-          <Chip
-            size="small"
-            color={severityColor(value, 700, 1000)}
-            label={formatMs(value)}
-          />
+          <Chip size="small" color={severityColor(value, 700, 1000)} label={formatMs(value)} />
         ),
       },
       {
@@ -212,14 +214,18 @@ export default function PeakRuntimePage() {
         field: "reqPerMin",
         headerName: "Req/min",
         width: 110,
-        renderCell: ({ value }) => <Typography variant="body2">{formatNumber(value, 2)}</Typography>,
+        renderCell: ({ value }) => (
+          <Typography variant="body2">{formatNumber(value, 2)}</Typography>
+        ),
       },
       {
         field: "reqPerSec",
         headerName: "Req/s",
         width: 110,
         sortable: false,
-        renderCell: ({ row }) => <Typography variant="body2">{formatReqPerSec(row.reqPerMin)}</Typography>,
+        renderCell: ({ row }) => (
+          <Typography variant="body2">{formatReqPerSec(row.reqPerMin)}</Typography>
+        ),
       },
       {
         field: "avgMs",
@@ -232,11 +238,7 @@ export default function PeakRuntimePage() {
         headerName: "P95",
         width: 120,
         renderCell: ({ value }) => (
-          <Chip
-            size="small"
-            color={severityColor(value, 700, 1000)}
-            label={formatMs(value)}
-          />
+          <Chip size="small" color={severityColor(value, 700, 1000)} label={formatMs(value)} />
         ),
       },
     ],
@@ -326,7 +328,9 @@ export default function PeakRuntimePage() {
                 hint={`Avg ${formatMs(totals.avgMs)} · 4xx ${formatNumber(
                   totals.errors4xx
                 )} · 5xx ${formatNumber(totals.errors5xx)}`}
-                color={severityColor(totals.p95Ms, 700, 1000) === "error" ? "error.main" : "text.primary"}
+                color={
+                  severityColor(totals.p95Ms, 700, 1000) === "error" ? "error.main" : "text.primary"
+                }
               />
             </Grid>
             <Grid item xs={12} md={3}>
@@ -336,16 +340,20 @@ export default function PeakRuntimePage() {
                 hint={`Heap ${formatMb(processInfo.heapUsedMb)} / ${formatMb(
                   processInfo.heapTotalMb
                 )}`}
-                color={severityColor(processInfo.rssMb, 700, 800) === "error" ? "error.main" : "warning.main"}
+                color={
+                  severityColor(processInfo.rssMb, 700, 800) === "error"
+                    ? "error.main"
+                    : "warning.main"
+                }
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
                 title="Recording Worker"
                 value={String(recordingWorker?.status || "unknown")}
-                hint={`Queue waiting ${formatNumber(recordingQueue?.counts?.waiting)} · active ${formatNumber(
-                  recordingQueue?.counts?.active
-                )}`}
+                hint={`Queue waiting ${formatNumber(
+                  recordingQueue?.counts?.waiting
+                )} · active ${formatNumber(recordingQueue?.counts?.active)}`}
                 color={recordingWorker?.alive ? "success.main" : "error.main"}
               />
             </Grid>
@@ -411,8 +419,8 @@ export default function PeakRuntimePage() {
                     severityColor(processInfo.rssMb, 700, 800) === "error"
                       ? "error"
                       : severityColor(processInfo.rssMb, 700, 800) === "warning"
-                        ? "warning"
-                        : "primary"
+                      ? "warning"
+                      : "primary"
                   }
                   sx={{ height: 8, borderRadius: 999 }}
                 />

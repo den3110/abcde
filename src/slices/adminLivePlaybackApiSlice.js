@@ -20,7 +20,5 @@ export const adminLivePlaybackApiSlice = apiSlice.injectEndpoints({
   }),
 });
 
-export const {
-  useGetAdminLivePlaybackConfigQuery,
-  useUpdateAdminLivePlaybackConfigMutation,
-} = adminLivePlaybackApiSlice;
+export const { useGetAdminLivePlaybackConfigQuery, useUpdateAdminLivePlaybackConfigMutation } =
+  adminLivePlaybackApiSlice;

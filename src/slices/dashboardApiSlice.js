@@ -27,8 +27,5 @@ export const dashboardApiSlice = apiSlice.injectEndpoints({
   }),
 });
 
-export const {
-  useGetDashboardMetricsQuery,
-  useGetDashboardSeriesQuery,
-  useGetPeakRuntimeQuery,
-} = dashboardApiSlice;
+export const { useGetDashboardMetricsQuery, useGetDashboardSeriesQuery, useGetPeakRuntimeQuery } =
+  dashboardApiSlice;

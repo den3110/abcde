@@ -1,4 +1,5 @@
 import * as React from "react";
+import PropTypes from "prop-types";
 import {
   Alert,
   Box,
@@ -45,8 +46,7 @@ function normalizeTargetsForForm(targets = []) {
 
 export default function AdminLivePlaybackPage() {
   const { data, isFetching, refetch } = useGetAdminLivePlaybackConfigQuery();
-  const [updateConfig, { isLoading: isSaving }] =
-    useUpdateAdminLivePlaybackConfigMutation();
+  const [updateConfig, { isLoading: isSaving }] = useUpdateAdminLivePlaybackConfigMutation();
 
   const [form, setForm] = React.useState({
     enabled: false,
@@ -145,9 +145,7 @@ export default function AdminLivePlaybackPage() {
                   <Typography variant="overline" color="text.secondary">
                     Multi-source
                   </Typography>
-                  <Typography variant="h4">
-                    {data?.summary?.enabled ? "ON" : "OFF"}
-                  </Typography>
+                  <Typography variant="h4">{data?.summary?.enabled ? "ON" : "OFF"}</Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -157,9 +155,7 @@ export default function AdminLivePlaybackPage() {
                   <Typography variant="overline" color="text.secondary">
                     Delay
                   </Typography>
-                  <Typography variant="h4">
-                    {data?.summary?.delaySeconds || 60}s
-                  </Typography>
+                  <Typography variant="h4">{data?.summary?.delaySeconds || 60}s</Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -169,9 +165,7 @@ export default function AdminLivePlaybackPage() {
                   <Typography variant="overline" color="text.secondary">
                     R2 Targets
                   </Typography>
-                  <Typography variant="h4">
-                    {data?.summary?.targetCount || 0}
-                  </Typography>
+                  <Typography variant="h4">{data?.summary?.targetCount || 0}</Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -232,7 +226,8 @@ export default function AdminLivePlaybackPage() {
                 helperText="Fallback chung nếu target chưa có publicBaseUrl riêng. Ví dụ: https://pickletour.vn/cdn"
               />
               <Alert severity="info">
-                Nếu bạn đang xoay nhiều R2 account free, nên set publicBaseUrl riêng theo từng target, ví dụ
+                Nếu bạn đang xoay nhiều R2 account free, nên set publicBaseUrl riêng theo từng
+                target, ví dụ
                 <strong> https://pickletour.vn/cdn/r2-01</strong>, <strong>.../r2-02</strong>.
               </Alert>
             </Stack>
@@ -247,10 +242,7 @@ export default function AdminLivePlaybackPage() {
                   publicBaseUrl: "",
                 };
                 return (
-                  <Box
-                    key={target.id}
-                    sx={{ border: "1px solid #eee", borderRadius: 2, p: 2 }}
-                  >
+                  <Box key={target.id} sx={{ border: "1px solid #eee", borderRadius: 2, p: 2 }}>
                     <Stack spacing={1.5}>
                       <Stack
                         direction={{ xs: "column", md: "row" }}
@@ -262,15 +254,14 @@ export default function AdminLivePlaybackPage() {
                             {target.label || target.id}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            `{target.id}` • bucket `{target.bucketName}` • {capacityLabel(target.capacityBytes)}
+                            `{target.id}` • bucket `{target.bucketName}` •{" "}
+                            {capacityLabel(target.capacityBytes)}
                           </Typography>
                         </Box>
                         <Stack direction="row" spacing={1} flexWrap="wrap">
                           <Chip
                             size="small"
-                            label={
-                              target.effectivePublicBaseUrl ? "CDN ready" : "No public base"
-                            }
+                            label={target.effectivePublicBaseUrl ? "CDN ready" : "No public base"}
                             color={target.effectivePublicBaseUrl ? "success" : "default"}
                           />
                         </Stack>
@@ -279,9 +270,7 @@ export default function AdminLivePlaybackPage() {
                       <TextField
                         label={`Override publicBaseUrl for ${target.id}`}
                         value={formTarget.publicBaseUrl}
-                        onChange={(event) =>
-                          onTargetChange(target.id, event.target.value)
-                        }
+                        onChange={(event) => onTargetChange(target.id, event.target.value)}
                         helperText="Để trống để dùng env publicBaseUrl của target hoặc global fallback."
                         fullWidth
                       />
@@ -291,9 +280,7 @@ export default function AdminLivePlaybackPage() {
                           <Typography variant="caption" color="text.secondary">
                             Env publicBaseUrl
                           </Typography>
-                          <Typography variant="body2">
-                            {target.envPublicBaseUrl || "—"}
-                          </Typography>
+                          <Typography variant="body2">{target.envPublicBaseUrl || "—"}</Typography>
                         </Grid>
                         <Grid item xs={12} md={4}>
                           <Typography variant="caption" color="text.secondary">
@@ -338,14 +325,14 @@ export default function AdminLivePlaybackPage() {
 
 function FormRow({ label, control }) {
   return (
-    <Stack
-      direction="row"
-      alignItems="center"
-      justifyContent="space-between"
-      spacing={2}
-    >
+    <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
       <Typography variant="body1">{label}</Typography>
       {control}
     </Stack>
   );
 }
+
+FormRow.propTypes = {
+  label: PropTypes.string.isRequired,
+  control: PropTypes.node.isRequired,
+};
