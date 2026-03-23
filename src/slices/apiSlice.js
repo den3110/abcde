@@ -68,6 +68,10 @@ export const apiSlice = createApi({
     "SystemSettings",
     "RecordingDriveStatus",
     "AdminCache",
+    "AdminLivePlayback",
+    "DashboardMetrics",
+    "DashboardSeries",
+    "DashboardPeakRuntime",
   ],
   endpoints: () => ({}),
 });

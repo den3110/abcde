@@ -8,16 +8,27 @@ export const dashboardApiSlice = apiSlice.injectEndpoints({
         url: `/admin/dashboard/metrics?tz=${encodeURIComponent(tz)}`,
         method: "GET",
       }),
-      providesTags: ["DASH_METRICS"],
+      providesTags: ["DashboardMetrics"],
     }),
     getDashboardSeries: builder.query({
       query: ({ tz = "Asia/Ho_Chi_Minh", days = 30 } = {}) => ({
         url: `/admin/dashboard/series?tz=${encodeURIComponent(tz)}&days=${days}`,
         method: "GET",
       }),
-      providesTags: ["DASH_SERIES"],
+      providesTags: ["DashboardSeries"],
+    }),
+    getPeakRuntime: builder.query({
+      query: () => ({
+        url: "/admin/dashboard/peak-runtime",
+        method: "GET",
+      }),
+      providesTags: ["DashboardPeakRuntime"],
     }),
   }),
 });
 
-export const { useGetDashboardMetricsQuery, useGetDashboardSeriesQuery } = dashboardApiSlice;
+export const {
+  useGetDashboardMetricsQuery,
+  useGetDashboardSeriesQuery,
+  useGetPeakRuntimeQuery,
+} = dashboardApiSlice;

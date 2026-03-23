@@ -66,6 +66,8 @@ import AuditLogsPage from "layouts/AuditLogsPage";
 import OTAAdminPage from "layouts/ota/OTAAdminPage";
 import AdminAvatarOptimizationPage from "layouts/AdminAvatarOptimizationPage";
 import CacheManagerPage from "layouts/CacheManagerPage";
+import AdminLivePlaybackPage from "layouts/AdminLivePlaybackPage";
+import PeakRuntimePage from "layouts/PeakRuntimePage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -583,6 +585,18 @@ const routes = [
 
   {
     type: "collapse",
+    name: "Live Playback CDN",
+    key: "admin-live-playback",
+    icon: <Icon fontSize="small">video_settings</Icon>,
+    route: "/admin/live-playback",
+    component: <AdminLivePlaybackPage />,
+    private: true,
+    roles: ["superadmin", "superuser"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
     name: "Cache Manager",
     key: "admin-cache-manager",
     icon: <Icon fontSize="small">inventory_2</Icon>,
@@ -600,6 +614,17 @@ const routes = [
     icon: <Icon fontSize="small">smart_display</Icon>,
     route: "/admin/youtube-live",
     component: <YouTubeLiveAdmin />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Peak Runtime",
+    key: "admin-peak-runtime",
+    icon: <Icon fontSize="small">speed</Icon>,
+    route: "/admin/peak-runtime",
+    component: <PeakRuntimePage />,
     private: true,
     roles: ["admin"],
     show: true,
