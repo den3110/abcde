@@ -29,6 +29,30 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       query: (id) => `/admin/tournaments/${id}/registrations`,
       providesTags: (r, e, id) => [{ type: "Registration", id }],
     }),
+    getRegistrationHistory: builder.query({
+      query: ({ regId, page = 1, limit = 20 }) =>
+        `/admin/tournaments/registrations/${regId}/history?page=${page}&limit=${limit}`,
+      providesTags: (r, e, { regId }) => [{ type: "RegistrationHistory", id: regId }],
+    }),
+    adminCreateRegistration: builder.mutation({
+      query: ({ tourId, body }) => ({
+        url: `/admin/tournaments/${tourId}/registrations`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (res, err, { tourId }) => [{ type: "Registration", id: tourId }],
+    }),
+    adminUpdateRegistration: builder.mutation({
+      query: ({ regId, body }) => ({
+        url: `/admin/tournaments/registrations/${regId}`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: (res) => [
+        { type: "Registration", id: res?.tournament?.toString() || "LIST" },
+        { type: "RegistrationHistory", id: res?._id || "LIST" },
+      ],
+    }),
 
     // 👉 New: register a pair of players
     createRegistration: builder.mutation({
@@ -50,6 +74,7 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: (res) => [
         // the list query provides tag with tournament-id
         { type: "Registration", id: res.tournament.toString() },
+        { type: "RegistrationHistory", id: res._id?.toString?.() || res._id || "LIST" },
       ],
     }),
 
@@ -100,7 +125,10 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         url: `/admin/tournaments/registrations/${regId}`,
         method: "DELETE",
       }),
-      invalidatesTags: (r) => [{ type: "Registration", id: r?.tournament?.toString() || "LIST" }],
+      invalidatesTags: (r, e, regId) => [
+        { type: "Registration", id: r?.tournament?.toString() || "LIST" },
+        { type: "RegistrationHistory", id: regId },
+      ],
     }),
     // Brackets
     listBrackets: builder.query({
@@ -706,6 +734,9 @@ export const {
   /* user */
   useGetTournamentQuery,
   useGetRegistrationsQuery,
+  useGetRegistrationHistoryQuery,
+  useAdminCreateRegistrationMutation,
+  useAdminUpdateRegistrationMutation,
   useCreateRegistrationMutation,
   useUpdatePaymentMutation,
   useCheckinRegistrationMutation, // note the hook name
