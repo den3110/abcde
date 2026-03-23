@@ -11,6 +11,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Fab,
   Grid,
   Paper,
   Snackbar,
@@ -18,6 +19,7 @@ import {
   Switch,
   TextField,
   Typography,
+  Zoom,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SaveIcon from "@mui/icons-material/Save";
@@ -132,6 +134,22 @@ export default function AdminLivePlaybackPage() {
     () => validateStorageTargetDraft(createDialog.target, form.storageTargets),
     [createDialog.target, form.storageTargets]
   );
+
+  const saveBtnRef = React.useRef(null);
+  const [showFab, setShowFab] = React.useState(false);
+
+  React.useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowFab(!entry.isIntersecting);
+      },
+      { threshold: 0 }
+    );
+    if (saveBtnRef.current) {
+      observer.observe(saveBtnRef.current);
+    }
+    return () => observer.disconnect();
+  }, []);
 
   React.useEffect(() => {
     if (!data?.config) return;
@@ -278,6 +296,7 @@ export default function AdminLivePlaybackPage() {
                   Refresh
                 </Button>
                 <Button
+                  ref={saveBtnRef}
                   variant="contained"
                   startIcon={<SaveIcon />}
                   onClick={handleSave}
@@ -727,6 +746,24 @@ export default function AdminLivePlaybackPage() {
           </Button>
         </DialogActions>
       </Dialog>
+      <Zoom in={showFab}>
+        <Fab
+          variant="extended"
+          color="info"
+          aria-label="save"
+          onClick={handleSave}
+          disabled={isSaving}
+          sx={{
+            position: "fixed",
+            bottom: 32,
+            right: 32,
+            zIndex: 9999,
+          }}
+        >
+          <SaveIcon sx={{ mr: 1 }} />
+          LƯU CẤU HÌNH
+        </Fab>
+      </Zoom>
     </DashboardLayout>
   );
 }
