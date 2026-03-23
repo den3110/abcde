@@ -17,6 +17,8 @@ import {
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SaveIcon from "@mui/icons-material/Save";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import {
@@ -37,11 +39,32 @@ function capacityLabel(bytes) {
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function normalizeTargetsForForm(targets = []) {
+function normalizeStorageTargetsForForm(targets = []) {
   return (Array.isArray(targets) ? targets : []).map((target) => ({
-    id: target.id,
-    publicBaseUrl: target.overridePublicBaseUrl || "",
+    id: target.id || "",
+    label: target.label || "",
+    enabled: target.enabled !== false,
+    endpoint: target.endpoint || "",
+    accessKeyId: target.accessKeyId || "",
+    secretAccessKey: target.secretAccessKey || "",
+    bucketName: target.bucketName || "",
+    capacityBytes:
+      target.capacityBytes == null || Number(target.capacityBytes || 0) <= 0
+        ? ""
+        : String(target.capacityBytes),
+    publicBaseUrl: target.configuredPublicBaseUrl || "",
   }));
+}
+
+function buildNextTargetId(targets = []) {
+  const existing = new Set((targets || []).map((target) => String(target.id || "")));
+  for (let index = 1; index <= 999; index += 1) {
+    const candidate = `r2-${String(index).padStart(2, "0")}`;
+    if (!existing.has(candidate)) {
+      return candidate;
+    }
+  }
+  return `r2-${Date.now()}`;
 }
 
 export default function AdminLivePlaybackPage() {
@@ -53,9 +76,13 @@ export default function AdminLivePlaybackPage() {
     delaySeconds: 60,
     manifestName: "live-manifest.json",
     globalPublicBaseUrl: "",
-    targets: [],
+    storageTargets: [],
   });
-  const [snack, setSnack] = React.useState({ open: false, message: "", severity: "success" });
+  const [snack, setSnack] = React.useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
 
   React.useEffect(() => {
     if (!data?.config) return;
@@ -64,16 +91,43 @@ export default function AdminLivePlaybackPage() {
       delaySeconds: Number(data.config.delaySeconds || 60),
       manifestName: data.config.manifestName || "live-manifest.json",
       globalPublicBaseUrl: data.config.globalPublicBaseUrl || "",
-      targets: normalizeTargetsForForm(data.targets),
+      storageTargets: normalizeStorageTargetsForForm(data.storageTargets),
     });
   }, [data]);
 
-  const onTargetChange = React.useCallback((targetId, value) => {
+  const onStorageTargetChange = React.useCallback((targetId, field, value) => {
     setForm((prev) => ({
       ...prev,
-      targets: prev.targets.map((target) =>
-        target.id === targetId ? { ...target, publicBaseUrl: value } : target
+      storageTargets: prev.storageTargets.map((target) =>
+        target.id === targetId ? { ...target, [field]: value } : target
       ),
+    }));
+  }, []);
+
+  const handleAddTarget = React.useCallback(() => {
+    setForm((prev) => ({
+      ...prev,
+      storageTargets: [
+        ...prev.storageTargets,
+        {
+          id: buildNextTargetId(prev.storageTargets),
+          label: "",
+          enabled: true,
+          endpoint: "",
+          accessKeyId: "",
+          secretAccessKey: "",
+          bucketName: "",
+          capacityBytes: "",
+          publicBaseUrl: "",
+        },
+      ],
+    }));
+  }, []);
+
+  const handleDeleteTarget = React.useCallback((targetId) => {
+    setForm((prev) => ({
+      ...prev,
+      storageTargets: prev.storageTargets.filter((target) => target.id !== targetId),
     }));
   }, []);
 
@@ -84,11 +138,22 @@ export default function AdminLivePlaybackPage() {
         delaySeconds: Number(form.delaySeconds || 60),
         manifestName: form.manifestName,
         globalPublicBaseUrl: form.globalPublicBaseUrl,
-        targets: form.targets,
+        storageTargets: form.storageTargets.map((target, index) => ({
+          id: String(target.id || "").trim() || `r2-${String(index + 1).padStart(2, "0")}`,
+          label: String(target.label || "").trim(),
+          enabled: Boolean(target.enabled),
+          endpoint: String(target.endpoint || "").trim(),
+          accessKeyId: String(target.accessKeyId || "").trim(),
+          secretAccessKey: String(target.secretAccessKey || "").trim(),
+          bucketName: String(target.bucketName || "").trim(),
+          capacityBytes:
+            Number(target.capacityBytes || 0) > 0 ? Number(target.capacityBytes) : null,
+          publicBaseUrl: String(target.publicBaseUrl || "").trim(),
+        })),
       }).unwrap();
       setSnack({
         open: true,
-        message: "Đã lưu cấu hình live playback CDN.",
+        message: "Đã lưu cấu hình live playback và R2 recording targets.",
         severity: "success",
       });
     } catch (error) {
@@ -114,7 +179,8 @@ export default function AdminLivePlaybackPage() {
               <Box>
                 <Typography variant="h4">Live Playback CDN</Typography>
                 <Typography variant="body2" color="text.secondary" mt={1}>
-                  Quản lý Server 2 đa nguồn cho public viewer. Chỉ dùng cho admin + super user.
+                  Quản lý Server 2 và danh sách recording storage targets thay cho
+                  `R2_RECORDINGS_TARGETS_JSON`. Chỉ dành cho admin + super user.
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1}>
@@ -163,9 +229,12 @@ export default function AdminLivePlaybackPage() {
               <Card>
                 <CardContent>
                   <Typography variant="overline" color="text.secondary">
-                    R2 Targets
+                    Configured Targets
                   </Typography>
                   <Typography variant="h4">{data?.summary?.targetCount || 0}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Source: {data?.summary?.storageTargetsSource || "env"}
+                  </Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -173,11 +242,9 @@ export default function AdminLivePlaybackPage() {
               <Card>
                 <CardContent>
                   <Typography variant="overline" color="text.secondary">
-                    Effective CDN Targets
+                    Runtime Targets
                   </Typography>
-                  <Typography variant="h4">
-                    {data?.summary?.targetWithEffectivePublicBaseCount || 0}
-                  </Typography>
+                  <Typography variant="h4">{data?.summary?.runtimeTargetCount || 0}</Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -225,25 +292,49 @@ export default function AdminLivePlaybackPage() {
                 }
                 helperText="Fallback chung nếu target chưa có publicBaseUrl riêng. Ví dụ: https://pickletour.vn/cdn"
               />
-              <Alert severity="info">
-                Nếu bạn đang xoay nhiều R2 account free, nên set publicBaseUrl riêng theo từng
-                target, ví dụ
-                <strong> https://pickletour.vn/cdn/r2-01</strong>, <strong>.../r2-02</strong>.
-              </Alert>
             </Stack>
           </Paper>
 
           <Paper sx={{ p: 3 }}>
             <Stack spacing={2}>
-              <Typography variant="h6">Per-Target Public CDN</Typography>
-              {(data?.targets || []).map((target) => {
-                const formTarget = form.targets.find((item) => item.id === target.id) || {
-                  id: target.id,
-                  publicBaseUrl: "",
-                };
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                justifyContent="space-between"
+                spacing={2}
+              >
+                <Box>
+                  <Typography variant="h6">Recording Storage Targets</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Quản lý trực tiếp danh sách target thay cho `R2_RECORDINGS_TARGETS_JSON`.
+                  </Typography>
+                </Box>
+                <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddTarget}>
+                  Thêm target
+                </Button>
+              </Stack>
+
+              <Alert severity="info">
+                Nếu lưu danh sách target tại đây, backend sẽ ưu tiên cấu hình DB thay cho env. Xóa
+                hết target rồi lưu sẽ quay về fallback từ env.
+              </Alert>
+
+              {(data?.storageTargets || []).length === 0 && form.storageTargets.length === 0 ? (
+                <Alert severity="warning">
+                  Chưa có target nào trong DB hoặc env. Hãy thêm target đầu tiên tại đây.
+                </Alert>
+              ) : null}
+
+              {form.storageTargets.map((target) => {
+                const runtimeTarget =
+                  (data?.storageTargets || []).find((item) => item.id === target.id) || null;
+                const effectivePublicBaseUrl =
+                  runtimeTarget?.effectivePublicBaseUrl ||
+                  target.publicBaseUrl ||
+                  form.globalPublicBaseUrl ||
+                  "";
                 return (
                   <Box key={target.id} sx={{ border: "1px solid #eee", borderRadius: 2, p: 2 }}>
-                    <Stack spacing={1.5}>
+                    <Stack spacing={2}>
                       <Stack
                         direction={{ xs: "column", md: "row" }}
                         justifyContent="space-between"
@@ -251,51 +342,162 @@ export default function AdminLivePlaybackPage() {
                       >
                         <Box>
                           <Typography variant="subtitle1" fontWeight={700}>
-                            {target.label || target.id}
+                            {target.label || target.id || "New target"}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            `{target.id}` • bucket `{target.bucketName}` •{" "}
+                            `{target.id || "no-id"}` • bucket `{target.bucketName || "—"}` •{" "}
                             {capacityLabel(target.capacityBytes)}
                           </Typography>
                         </Box>
                         <Stack direction="row" spacing={1} flexWrap="wrap">
                           <Chip
                             size="small"
-                            label={target.effectivePublicBaseUrl ? "CDN ready" : "No public base"}
-                            color={target.effectivePublicBaseUrl ? "success" : "default"}
+                            label={target.enabled ? "Enabled" : "Disabled"}
+                            color={target.enabled ? "success" : "default"}
                           />
+                          <Chip
+                            size="small"
+                            label={runtimeTarget?.runtimeUsable ? "Runtime usable" : "Draft"}
+                            color={runtimeTarget?.runtimeUsable ? "info" : "default"}
+                          />
+                          <Button
+                            color="error"
+                            variant="outlined"
+                            startIcon={<DeleteOutlineIcon />}
+                            onClick={() => handleDeleteTarget(target.id)}
+                          >
+                            Xóa
+                          </Button>
                         </Stack>
                       </Stack>
 
-                      <TextField
-                        label={`Override publicBaseUrl for ${target.id}`}
-                        value={formTarget.publicBaseUrl}
-                        onChange={(event) => onTargetChange(target.id, event.target.value)}
-                        helperText="Để trống để dùng env publicBaseUrl của target hoặc global fallback."
-                        fullWidth
-                      />
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} md={3}>
+                          <TextField
+                            label="ID"
+                            value={target.id}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "id", event.target.value)
+                            }
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                          <TextField
+                            label="Label"
+                            value={target.label}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "label", event.target.value)
+                            }
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                          <TextField
+                            label="Bucket name"
+                            value={target.bucketName}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "bucketName", event.target.value)
+                            }
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                          <TextField
+                            label="Capacity bytes"
+                            type="number"
+                            value={target.capacityBytes}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "capacityBytes", event.target.value)
+                            }
+                            helperText="Ví dụ: 10737418240"
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            label="Endpoint"
+                            value={target.endpoint}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "endpoint", event.target.value)
+                            }
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                          <TextField
+                            label="Access key ID"
+                            value={target.accessKeyId}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "accessKeyId", event.target.value)
+                            }
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                          <TextField
+                            label="Secret access key"
+                            type="password"
+                            value={target.secretAccessKey}
+                            onChange={(event) =>
+                              onStorageTargetChange(
+                                target.id,
+                                "secretAccessKey",
+                                event.target.value
+                              )
+                            }
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={9}>
+                          <TextField
+                            label="publicBaseUrl"
+                            value={target.publicBaseUrl}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "publicBaseUrl", event.target.value)
+                            }
+                            helperText="Ví dụ: https://pickletour.vn/cdn/r2-01"
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                          <FormRow
+                            label="Enabled"
+                            control={
+                              <Switch
+                                checked={Boolean(target.enabled)}
+                                onChange={(event) =>
+                                  onStorageTargetChange(target.id, "enabled", event.target.checked)
+                                }
+                              />
+                            }
+                          />
+                        </Grid>
+                      </Grid>
 
                       <Grid container spacing={2}>
                         <Grid item xs={12} md={4}>
                           <Typography variant="caption" color="text.secondary">
-                            Env publicBaseUrl
-                          </Typography>
-                          <Typography variant="body2">{target.envPublicBaseUrl || "—"}</Typography>
-                        </Grid>
-                        <Grid item xs={12} md={4}>
-                          <Typography variant="caption" color="text.secondary">
                             Effective publicBaseUrl
                           </Typography>
-                          <Typography variant="body2">
-                            {target.effectivePublicBaseUrl || "—"}
-                          </Typography>
+                          <Typography variant="body2">{effectivePublicBaseUrl || "—"}</Typography>
                         </Grid>
                         <Grid item xs={12} md={4}>
                           <Typography variant="caption" color="text.secondary">
                             Manifest preview
                           </Typography>
                           <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
-                            {target.manifestExampleUrl || "—"}
+                            {runtimeTarget?.manifestExampleUrl || "—"}
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={12} md={4}>
+                          <Typography variant="caption" color="text.secondary">
+                            Runtime status
+                          </Typography>
+                          <Typography variant="body2">
+                            {runtimeTarget?.runtimeUsable
+                              ? "Đang usable trong runtime"
+                              : "Chưa đủ field hoặc đang disabled"}
                           </Typography>
                         </Grid>
                       </Grid>

@@ -51,6 +51,10 @@ export function filterRoutesForNav(routes, user) {
     .filter((route) => route.type === "collapse")
     .filter((route) => route.show !== false)
     .filter((route) => (route.private ? !!user : true))
-    .filter((route) => (route.requireAdminAndSuperAdmin ? isStrictSuperAdminUser(user) : true))
+    .filter((route) =>
+      route.requireAdminAndSuperAdmin || route.requireAdminAndSuperUser
+        ? isStrictSuperAdminUser(user)
+        : true
+    )
     .filter((route) => hasAnyRole(user, route.roles));
 }
