@@ -606,12 +606,7 @@ export default function AdminLivePlaybackPage() {
           {snack.message}
         </Alert>
       </Snackbar>
-      <Dialog
-        open={createDialog.open}
-        onClose={handleCloseCreateDialog}
-        fullWidth
-        maxWidth="md"
-      >
+      <Dialog open={createDialog.open} onClose={handleCloseCreateDialog} fullWidth maxWidth="md">
         <DialogTitle>Thêm Recording Storage Target</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 0.5 }}>
@@ -623,11 +618,11 @@ export default function AdminLivePlaybackPage() {
                 <TextField
                   label="ID"
                   value={createDialog.target.id}
-                  onChange={(event) =>
-                    handleCreateTargetFieldChange("id", event.target.value)
-                  }
+                  onChange={(event) => handleCreateTargetFieldChange("id", event.target.value)}
                   error={Boolean(createDialog.target.id) && createTargetValidation.idTaken}
-                  helperText={createTargetValidation.idTaken ? "ID already exists" : "Example: r2-02"}
+                  helperText={
+                    createTargetValidation.idTaken ? "ID already exists" : "Example: r2-02"
+                  }
                   fullWidth
                 />
               </Grid>
@@ -635,9 +630,7 @@ export default function AdminLivePlaybackPage() {
                 <TextField
                   label="Label"
                   value={createDialog.target.label}
-                  onChange={(event) =>
-                    handleCreateTargetFieldChange("label", event.target.value)
-                  }
+                  onChange={(event) => handleCreateTargetFieldChange("label", event.target.value)}
                   fullWidth
                 />
               </Grid>
