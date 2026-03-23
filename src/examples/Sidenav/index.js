@@ -49,7 +49,7 @@ const canView = (route, user) => {
   if (!route.private) return route.show !== false;
   // private route -> must be logged in
   if (!user) return false;
-  if (route.requireAdminAndSuperAdmin) {
+  if (route.requireAdminAndSuperAdmin || route.requireAdminAndSuperUser) {
     return isStrictSuperAdminUser(user);
   }
   // if roles are defined -> user needs at least one matching role

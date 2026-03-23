@@ -16,6 +16,7 @@ export default function RequireAuth({
   roles,
   redirectTo = "/dashboard",
   requireAdminAndSuperAdmin = false,
+  requireAdminAndSuperUser = false,
   children,
 }) {
   const location = useLocation();
@@ -49,7 +50,10 @@ export default function RequireAuth({
   const allowed =
     wantedRoles.length === 0 ? true : wantedRoles.some((role) => userRoles.includes(role));
 
-  if (!allowed || (requireAdminAndSuperAdmin && !isStrictSuperAdminUser(user))) {
+  if (
+    !allowed ||
+    ((requireAdminAndSuperAdmin || requireAdminAndSuperUser) && !isStrictSuperAdminUser(user))
+  ) {
     return (
       <Navigate
         to={redirectTo}
@@ -66,5 +70,6 @@ RequireAuth.propTypes = {
   roles: PropTypes.arrayOf(PropTypes.string),
   redirectTo: PropTypes.string,
   requireAdminAndSuperAdmin: PropTypes.bool,
+  requireAdminAndSuperUser: PropTypes.bool,
   children: PropTypes.node.isRequired,
 };

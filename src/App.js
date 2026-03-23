@@ -133,6 +133,7 @@ export default function App() {
           <RequireAuth
             roles={route.roles}
             requireAdminAndSuperAdmin={route.requireAdminAndSuperAdmin}
+            requireAdminAndSuperUser={route.requireAdminAndSuperUser}
           >
             {route.component}
           </RequireAuth>

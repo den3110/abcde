@@ -7,6 +7,10 @@ import {
   Card,
   CardContent,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Grid,
   Paper,
   Snackbar,
@@ -67,6 +71,43 @@ function buildNextTargetId(targets = []) {
   return `r2-${Date.now()}`;
 }
 
+function createEmptyStorageTarget(targets = []) {
+  return {
+    id: buildNextTargetId(targets),
+    label: "",
+    enabled: true,
+    endpoint: "",
+    accessKeyId: "",
+    secretAccessKey: "",
+    bucketName: "",
+    capacityBytes: "",
+    publicBaseUrl: "",
+  };
+}
+
+function validateStorageTargetDraft(target, existingTargets = []) {
+  const trimmedId = String(target?.id || "").trim();
+  const trimmedEndpoint = String(target?.endpoint || "").trim();
+  const trimmedAccessKeyId = String(target?.accessKeyId || "").trim();
+  const trimmedSecretAccessKey = String(target?.secretAccessKey || "").trim();
+  const trimmedBucketName = String(target?.bucketName || "").trim();
+  const idTaken = existingTargets.some(
+    (existingTarget) => String(existingTarget?.id || "").trim() === trimmedId
+  );
+
+  return {
+    trimmedId,
+    idTaken,
+    canSubmit:
+      Boolean(trimmedId) &&
+      Boolean(trimmedEndpoint) &&
+      Boolean(trimmedAccessKeyId) &&
+      Boolean(trimmedSecretAccessKey) &&
+      Boolean(trimmedBucketName) &&
+      !idTaken,
+  };
+}
+
 export default function AdminLivePlaybackPage() {
   const { data, isFetching, refetch } = useGetAdminLivePlaybackConfigQuery();
   const [updateConfig, { isLoading: isSaving }] = useUpdateAdminLivePlaybackConfigMutation();
@@ -83,6 +124,14 @@ export default function AdminLivePlaybackPage() {
     message: "",
     severity: "success",
   });
+  const [createDialog, setCreateDialog] = React.useState({
+    open: false,
+    target: createEmptyStorageTarget(),
+  });
+  const createTargetValidation = React.useMemo(
+    () => validateStorageTargetDraft(createDialog.target, form.storageTargets),
+    [createDialog.target, form.storageTargets]
+  );
 
   React.useEffect(() => {
     if (!data?.config) return;
@@ -105,24 +154,60 @@ export default function AdminLivePlaybackPage() {
   }, []);
 
   const handleAddTarget = React.useCallback(() => {
+    setCreateDialog({
+      open: true,
+      target: createEmptyStorageTarget(form.storageTargets),
+    });
+  }, [form.storageTargets]);
+
+  const handleCloseCreateDialog = React.useCallback(() => {
+    setCreateDialog((prev) => ({
+      ...prev,
+      open: false,
+    }));
+  }, []);
+
+  const handleCreateTargetFieldChange = React.useCallback((field, value) => {
+    setCreateDialog((prev) => ({
+      ...prev,
+      target: {
+        ...prev.target,
+        [field]: value,
+      },
+    }));
+  }, []);
+
+  const handleConfirmCreateTarget = React.useCallback(() => {
+    if (!createTargetValidation.canSubmit) {
+      setSnack({
+        open: true,
+        message: "Dien du ID, endpoint, access key, secret key, bucket va khong trung ID.",
+        severity: "error",
+      });
+      return;
+    }
+
     setForm((prev) => ({
       ...prev,
       storageTargets: [
         ...prev.storageTargets,
         {
-          id: buildNextTargetId(prev.storageTargets),
-          label: "",
-          enabled: true,
-          endpoint: "",
-          accessKeyId: "",
-          secretAccessKey: "",
-          bucketName: "",
-          capacityBytes: "",
-          publicBaseUrl: "",
+          ...createDialog.target,
+          id: createTargetValidation.trimmedId,
+          endpoint: String(createDialog.target.endpoint || "").trim(),
+          accessKeyId: String(createDialog.target.accessKeyId || "").trim(),
+          secretAccessKey: String(createDialog.target.secretAccessKey || "").trim(),
+          bucketName: String(createDialog.target.bucketName || "").trim(),
+          label: String(createDialog.target.label || "").trim(),
+          publicBaseUrl: String(createDialog.target.publicBaseUrl || "").trim(),
         },
       ],
     }));
-  }, []);
+    setCreateDialog({
+      open: false,
+      target: createEmptyStorageTarget(form.storageTargets),
+    });
+  }, [createDialog.target, createTargetValidation, form.storageTargets]);
 
   const handleDeleteTarget = React.useCallback((targetId) => {
     setForm((prev) => ({
@@ -308,7 +393,7 @@ export default function AdminLivePlaybackPage() {
                     Quản lý trực tiếp danh sách target thay cho `R2_RECORDINGS_TARGETS_JSON`.
                   </Typography>
                 </Box>
-                <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddTarget}>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddTarget}>
                   Thêm target
                 </Button>
               </Stack>
@@ -521,6 +606,134 @@ export default function AdminLivePlaybackPage() {
           {snack.message}
         </Alert>
       </Snackbar>
+      <Dialog
+        open={createDialog.open}
+        onClose={handleCloseCreateDialog}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Thêm Recording Storage Target</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            <Alert severity="info">
+              Target mới sẽ chỉ có hiệu lực sau khi bạn bấm `Lưu cấu hình` ở trang này.
+            </Alert>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={3}>
+                <TextField
+                  label="ID"
+                  value={createDialog.target.id}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("id", event.target.value)
+                  }
+                  error={Boolean(createDialog.target.id) && createTargetValidation.idTaken}
+                  helperText={createTargetValidation.idTaken ? "ID already exists" : "Example: r2-02"}
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <TextField
+                  label="Label"
+                  value={createDialog.target.label}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("label", event.target.value)
+                  }
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <TextField
+                  label="Bucket name"
+                  value={createDialog.target.bucketName}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("bucketName", event.target.value)
+                  }
+                  helperText="Required"
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <TextField
+                  label="Capacity bytes"
+                  type="number"
+                  value={createDialog.target.capacityBytes}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("capacityBytes", event.target.value)
+                  }
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Endpoint"
+                  value={createDialog.target.endpoint}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("endpoint", event.target.value)
+                  }
+                  helperText="Example: https://xxx.r2.cloudflarestorage.com"
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <TextField
+                  label="Access key ID"
+                  value={createDialog.target.accessKeyId}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("accessKeyId", event.target.value)
+                  }
+                  helperText="Required"
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <TextField
+                  label="Secret access key"
+                  type="password"
+                  value={createDialog.target.secretAccessKey}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("secretAccessKey", event.target.value)
+                  }
+                  helperText="Required"
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={9}>
+                <TextField
+                  label="publicBaseUrl"
+                  value={createDialog.target.publicBaseUrl}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("publicBaseUrl", event.target.value)
+                  }
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <FormRow
+                  label="Enabled"
+                  control={
+                    <Switch
+                      checked={Boolean(createDialog.target.enabled)}
+                      onChange={(event) =>
+                        handleCreateTargetFieldChange("enabled", event.target.checked)
+                      }
+                    />
+                  }
+                />
+              </Grid>
+            </Grid>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseCreateDialog}>Huỷ</Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmCreateTarget}
+            disabled={!createTargetValidation.canSubmit}
+          >
+            Thêm target
+          </Button>
+        </DialogActions>
+      </Dialog>
     </DashboardLayout>
   );
 }

@@ -516,7 +516,7 @@ const routes = [
     component: <AdminLivePlaybackPage />,
     private: true,
     roles: ["superadmin", "superuser"],
-    requireAdminAndSuperAdmin: true,
+    requireAdminAndSuperUser: true,
     show: true,
   },
   {
