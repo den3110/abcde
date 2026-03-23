@@ -132,8 +132,16 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
         );
       }
 
-      // Title/Divider: hiển thị bình thường (không gắn role)
+      // Title/Divider: chỉ hiện nếu có ít nhất 1 collapse item phía sau visible
       if (type === "title") {
+        const idx = routes.indexOf(cfg);
+        const hasVisibleChild = routes
+          .slice(idx + 1)
+          .some(
+            (next) => next.type === "collapse" && next.show !== false && canView(next, userInfo)
+          );
+        if (!hasVisibleChild) return null;
+
         return (
           <MDTypography
             key={key}
@@ -153,6 +161,27 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
       }
 
       if (type === "divider") {
+        // Ẩn divider nếu không có item visible nào phía sau
+        const idx = routes.indexOf(cfg);
+        const hasVisibleAfter = routes
+          .slice(idx + 1)
+          .some(
+            (next) =>
+              (next.type === "collapse" && next.show !== false && canView(next, userInfo)) ||
+              next.type === "title"
+          );
+        // Nếu phía sau là title mà title bị ẩn thì divider cũng ẩn
+        const nextTitle = routes.slice(idx + 1).find((n) => n.type === "title");
+        if (nextTitle) {
+          const titleIdx = routes.indexOf(nextTitle);
+          const titleHasChild = routes
+            .slice(titleIdx + 1)
+            .some(
+              (next) => next.type === "collapse" && next.show !== false && canView(next, userInfo)
+            );
+          if (!titleHasChild) return null;
+        }
+
         return (
           <Divider
             key={key}
