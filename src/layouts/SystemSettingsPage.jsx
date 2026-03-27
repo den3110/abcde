@@ -391,6 +391,32 @@ export default function SystemSettingsPage() {
     }
   };
 
+  const handleOpenRecordingDriveAuthAutoFolder = async () => {
+    try {
+      await persistSettings(form, { showSuccessToast: false });
+      const result = await getRecordingDriveOAuthInit().unwrap();
+      if (!result?.authUrl) {
+        throw new Error("Khong tao duoc duong dan ket noi Google Drive");
+      }
+      const popup = window.open(
+        result.authUrl,
+        "recording-drive-auth",
+        "popup=yes,width=720,height=800"
+      );
+      recordingDrivePopupRef.current = popup || null;
+      if (!popup) {
+        toast.error("Trinh duyet da chan popup. Hay cho phep popup roi thu lai.");
+      }
+    } catch (error) {
+      toast.error(
+        error?.data?.message ||
+          error?.message ||
+          "Khong mo duoc ket noi Google Drive"
+      );
+    }
+  };
+  void handleOpenRecordingDriveAuth;
+
   const handleDisconnectRecordingDrive = async () => {
     try {
       await disconnectRecordingDrive().unwrap();
@@ -722,8 +748,15 @@ export default function SystemSettingsPage() {
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
                 label="Folder ID"
-                value={form.recordingDrive?.folderId ?? ""}
+                value={recordingDriveStatus?.folderId || form.recordingDrive?.folderId || ""}
                 onChange={onChange("recordingDrive.folderId")}
+                helperText={
+                  form.recordingDrive?.mode === "oauthUser"
+                    ? "OAuth mode dung drive.file: app tu quan ly folder rieng trong My Drive."
+                    : ""
+                }
+                disabled={form.recordingDrive?.mode === "oauthUser"}
+                InputProps={{ readOnly: form.recordingDrive?.mode === "oauthUser" }}
                 placeholder="Folder đích tạo bản ghi"
                 fullWidth
               />
@@ -759,7 +792,7 @@ export default function SystemSettingsPage() {
             <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
               <Button
                 variant="contained"
-                onClick={handleOpenRecordingDriveAuth}
+                onClick={handleOpenRecordingDriveAuthAutoFolder}
                 disabled={form.recordingDrive?.mode !== "oauthUser" || isRecordingDriveConnecting}
               >
                 {isRecordingDriveConnecting ? "Đang mở kết nối..." : "Kết nối Google Drive"}

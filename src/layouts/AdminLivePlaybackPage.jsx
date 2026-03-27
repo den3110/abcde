@@ -82,6 +82,7 @@ function normalizeStorageTargetsForForm(targets = []) {
   return (Array.isArray(targets) ? targets : []).map((target) => ({
     id: target.id || "",
     label: target.label || "",
+    accountName: target.accountName || "",
     enabled: target.enabled !== false,
     endpoint: target.endpoint || "",
     accessKeyId: target.accessKeyId || "",
@@ -110,6 +111,7 @@ function createEmptyStorageTarget(targets = []) {
   return {
     id: buildNextTargetId(targets),
     label: "",
+    accountName: "",
     enabled: true,
     endpoint: "",
     accessKeyId: "",
@@ -261,6 +263,7 @@ export default function AdminLivePlaybackPage() {
           secretAccessKey: String(createDialog.target.secretAccessKey || "").trim(),
           bucketName: String(createDialog.target.bucketName || "").trim(),
           label: String(createDialog.target.label || "").trim(),
+          accountName: String(createDialog.target.accountName || "").trim(),
           publicBaseUrl: String(createDialog.target.publicBaseUrl || "").trim(),
         },
       ],
@@ -292,6 +295,7 @@ export default function AdminLivePlaybackPage() {
         storageTargets: form.storageTargets.map((target, index) => ({
           id: String(target.id || "").trim() || `r2-${String(index + 1).padStart(2, "0")}`,
           label: String(target.label || "").trim(),
+          accountName: String(target.accountName || "").trim(),
           enabled: Boolean(target.enabled),
           endpoint: String(target.endpoint || "").trim(),
           accessKeyId: String(target.accessKeyId || "").trim(),
@@ -523,6 +527,11 @@ export default function AdminLivePlaybackPage() {
                           <Typography variant="subtitle1" fontWeight={700}>
                             {target.label || target.id || "New target"}
                           </Typography>
+                          {target.accountName ? (
+                            <Typography variant="body2" color="text.secondary">
+                              Account: {target.accountName}
+                            </Typography>
+                          ) : null}
                           <Typography variant="body2" color="text.secondary">
                             `{target.id || "no-id"}` • bucket `{target.bucketName || "—"}` •{" "}
                             {capacityLabel(target.capacityBytes)}
@@ -569,6 +578,17 @@ export default function AdminLivePlaybackPage() {
                             onChange={(event) =>
                               onStorageTargetChange(target.id, "label", event.target.value)
                             }
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                          <TextField
+                            label="Account name"
+                            value={target.accountName}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "accountName", event.target.value)
+                            }
+                            helperText="Vi du: CF free 01"
                             fullWidth
                           />
                         </Grid>
@@ -793,6 +813,17 @@ export default function AdminLivePlaybackPage() {
                   label="Label"
                   value={createDialog.target.label}
                   onChange={(event) => handleCreateTargetFieldChange("label", event.target.value)}
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <TextField
+                  label="Account name"
+                  value={createDialog.target.accountName}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("accountName", event.target.value)
+                  }
+                  helperText="Optional"
                   fullWidth
                 />
               </Grid>
