@@ -123,7 +123,7 @@ function resolveMonitorImageUrl(url) {
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;
   if (url.startsWith("/")) {
-    const base = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "";
+    const base = process.env.REACT_APP_API_URL || process.env.REACT_APP_API_URL || "";
     return `${base.replace(/\/api\/?$/, "")}${url}`;
   }
   return url;
