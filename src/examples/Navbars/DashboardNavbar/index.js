@@ -91,6 +91,12 @@ const ACTION_SELECTOR = [
   "[role='button']:not([aria-disabled='true'])",
   "a[href]",
 ].join(",");
+const FIELD_SELECTOR = [
+  "input:not([type='hidden']):not([disabled])",
+  "textarea:not([disabled])",
+  "select:not([disabled])",
+  "[role='combobox']",
+].join(",");
 const RECENT_COMMANDS_KEY = "admin-command-palette-recent-v1";
 const MAX_RECENT_COMMANDS = 8;
 const EXCLUDED_ACTION_LABEL = /\b(xoa|delete|remove|huy|destroy|drop)\b/i;
@@ -106,6 +112,10 @@ const COMMAND_GROUP_META = {
   "Thao tác trong trang": {
     icon: "bolt",
     color: "warning",
+  },
+  "Trường dữ liệu": {
+    icon: "rule",
+    color: "error",
   },
   "Lệnh nhanh": {
     icon: "terminal",
@@ -134,6 +144,12 @@ const normalizeSearchText = (value = "") =>
     .toLowerCase();
 
 const compactText = (value = "") => String(value || "").replace(/\s+/g, " ").trim();
+const stripRouteAriaPrefix = (value = "") =>
+  compactText(value)
+    .replace(/^Đi tới\s+/i, "")
+    .replace(/^Mở\s+/i, "")
+    .replace(/\s+trong tab mới$/i, "");
+const getPathKeywords = (pathname = "/") => pathname.split("/").filter(Boolean).join(" ");
 
 const getPathLabelFallback = (pathname = "/") =>
   pathname
@@ -215,6 +231,79 @@ const scrollElementIntoView = (element) => {
   element.scrollIntoView({ behavior: "smooth", block: "center" });
 };
 
+const getAnchorCommandLabel = (anchor) => {
+  if (!(anchor instanceof HTMLElement)) return "";
+
+  const textElement = anchor.querySelector(
+    ".MuiListItemText-root .MuiTypography-root, .MuiListItemText-root"
+  );
+  const textLabel = compactText(textElement?.textContent);
+  if (textLabel) return textLabel;
+
+  const ariaLabel = stripRouteAriaPrefix(anchor.getAttribute("aria-label"));
+  if (ariaLabel) return ariaLabel;
+
+  const clone = anchor.cloneNode(true);
+  clone
+    .querySelectorAll(
+      ".MuiListItemIcon-root, .material-icons, .material-icons-round, .material-icons-outlined, svg"
+    )
+    .forEach((node) => node.remove());
+
+  return compactText(clone.textContent);
+};
+
+const getAnchorSectionLabel = (anchor) => {
+  if (!(anchor instanceof HTMLElement)) return "";
+
+  let sibling = anchor.previousElementSibling;
+  let depth = 0;
+
+  while (sibling && depth < 8) {
+    const text = compactText(sibling.textContent);
+    if (text && !sibling.querySelector("a[href]")) return text;
+    sibling = sibling.previousElementSibling;
+    depth += 1;
+  }
+
+  return "";
+};
+
+const getFieldLabel = (element, root) => {
+  if (!(element instanceof HTMLElement)) return "";
+
+  const id = element.getAttribute("id");
+  const safeId = id && typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id;
+  const explicitLabel =
+    safeId && root instanceof HTMLElement
+      ? root.querySelector(`label[for="${safeId}"], .MuiFormLabel-root[for="${safeId}"]`)
+      : null;
+
+  const container =
+    element.closest(
+      ".MuiFormControl-root, .MuiGrid-item, .MuiStack-root, .MuiBox-root, .MuiTableCell-root, .MuiPaper-root"
+    ) || element.parentElement;
+  const containerLabel = container?.querySelector(
+    "label, .MuiFormLabel-root, legend, .MuiInputLabel-root"
+  );
+  const inputChild =
+    element.matches("input, textarea, select")
+      ? element
+      : element.querySelector("input, textarea, select");
+
+  return compactText(
+    explicitLabel?.textContent ||
+      containerLabel?.textContent ||
+      element.getAttribute("aria-label") ||
+      inputChild?.getAttribute("aria-label") ||
+      inputChild?.getAttribute("placeholder") ||
+      element.getAttribute("placeholder") ||
+      inputChild?.getAttribute("name") ||
+      element.getAttribute("name") ||
+      ""
+  );
+};
+
 const getCommandGroupMeta = (group = "") =>
   COMMAND_GROUP_META[group] || {
     icon: "search",
@@ -231,6 +320,7 @@ function DashboardNavbar({ absolute, light, isMini }) {
   const [routeCommands, setRouteCommands] = useState([]);
   const [sectionCommands, setSectionCommands] = useState([]);
   const [pageActionCommands, setPageActionCommands] = useState([]);
+  const [fieldCommands, setFieldCommands] = useState([]);
   const [recentCommands, setRecentCommands] = useState(() => readRecentCommands());
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
 
@@ -279,7 +369,9 @@ function DashboardNavbar({ absolute, light, isMini }) {
     return Array.from(document.querySelectorAll(SIDENAV_COMMAND_SELECTOR))
       .map((anchor, index) => {
         const rawHref = anchor.getAttribute("href");
-        const label = compactText(anchor.textContent);
+        const label = getAnchorCommandLabel(anchor);
+        const sectionLabel = getAnchorSectionLabel(anchor);
+        const ariaLabel = stripRouteAriaPrefix(anchor.getAttribute("aria-label"));
 
         if (!rawHref || !label) return null;
 
@@ -295,8 +387,8 @@ function DashboardNavbar({ absolute, light, isMini }) {
           type: "route",
           group: "Trang",
           label,
-          sublabel: path,
-          keywords: `${label} ${path}`,
+          sublabel: sectionLabel ? `${sectionLabel} · ${path}` : path,
+          keywords: `${label} ${ariaLabel} ${sectionLabel} ${path} ${getPathKeywords(path)}`,
           defaultRank: path === location.pathname ? 25 : 40 + index,
           execute: () => {
             navigate(path);
@@ -331,6 +423,61 @@ function DashboardNavbar({ absolute, light, isMini }) {
           sublabel: "Cuộn tới mục này",
           keywords: `${label} section field label`,
           defaultRank: 140 + index,
+          execute: () => {
+            scrollElementIntoView(element);
+            focusAssociatedField(element);
+          },
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 80);
+  }, []);
+
+  const collectFieldCommands = useCallback(() => {
+    const root = document.querySelector(DASHBOARD_CONTENT_SELECTOR);
+    if (!(root instanceof HTMLElement)) return [];
+
+    const seen = new Set();
+
+    return Array.from(root.querySelectorAll(FIELD_SELECTOR))
+      .filter((element) => {
+        if (!(element instanceof HTMLElement)) return false;
+        if (!isElementVisible(element)) return false;
+        if (element.closest("[role='dialog']")) return false;
+        return true;
+      })
+      .map((element, index) => {
+        const label = getFieldLabel(element, root);
+        if (!label || label.length < 2) return null;
+
+        const key = `${element.tagName.toLowerCase()}-${normalizeSearchText(label)}`;
+        if (seen.has(key)) return null;
+        seen.add(key);
+
+        const inputChild =
+          element.matches("input, textarea, select")
+            ? element
+            : element.querySelector("input, textarea, select");
+        const placeholder = compactText(
+          inputChild?.getAttribute("placeholder") || element.getAttribute("placeholder") || ""
+        );
+        const helper = compactText(
+          element
+            .closest(
+              ".MuiFormControl-root, .MuiGrid-item, .MuiStack-root, .MuiBox-root, .MuiPaper-root"
+            )
+            ?.querySelector(".MuiFormHelperText-root")
+            ?.textContent
+        );
+
+        return {
+          id: `field-${index}-${key}`,
+          type: "field",
+          group: "Trường dữ liệu",
+          label,
+          sublabel: compactText(helper || placeholder || "Cuộn tới và focus trường này"),
+          keywords: `${label} ${placeholder} ${helper} input field form bo loc filter search`,
+          defaultRank: 180 + index,
           execute: () => {
             scrollElementIntoView(element);
             focusAssociatedField(element);
@@ -395,8 +542,9 @@ function DashboardNavbar({ absolute, light, isMini }) {
   const refreshCommandSources = useCallback(() => {
     setRouteCommands(collectRouteCommands());
     setSectionCommands(collectSectionCommands());
+    setFieldCommands(collectFieldCommands());
     setPageActionCommands(collectPageActionCommands());
-  }, [collectPageActionCommands, collectRouteCommands, collectSectionCommands]);
+  }, [collectFieldCommands, collectPageActionCommands, collectRouteCommands, collectSectionCommands]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -589,6 +737,7 @@ function DashboardNavbar({ absolute, light, isMini }) {
       ...recentRouteCommands,
       ...routeCommands,
       ...sectionCommands,
+      ...fieldCommands,
       ...pageActionCommands,
       ...utilityCommands,
     ]
@@ -602,6 +751,7 @@ function DashboardNavbar({ absolute, light, isMini }) {
       .slice(0, 24);
   }, [
     deferredCommandQuery,
+    fieldCommands,
     pageActionCommands,
     recentRouteCommands,
     routeCommands,
@@ -1002,6 +1152,7 @@ function DashboardNavbar({ absolute, light, isMini }) {
           >
             <Chip size="small" variant="outlined" label="Trang" />
             <Chip size="small" variant="outlined" label="Mục trong trang" />
+            <Chip size="small" variant="outlined" label="Trường dữ liệu" />
             <Chip size="small" variant="outlined" label="Thao tác" />
             <Chip size="small" variant="outlined" label="Lệnh nhanh" />
             <Chip size="small" variant="outlined" label="↑ ↓ để di chuyển" />
@@ -1046,8 +1197,8 @@ function DashboardNavbar({ absolute, light, isMini }) {
                   Không tìm thấy kết quả phù hợp
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Thử theo tên trang, tên field, nút trên trang, hoặc lệnh nhanh như reload,
-                  back, copy URL, đăng xuất.
+                  Thử theo tên trang, tên field, placeholder, nút trên trang, hoặc lệnh nhanh
+                  như reload, back, copy URL, đăng xuất.
                 </Typography>
               </MDBox>
             ) : (
