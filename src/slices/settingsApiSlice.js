@@ -22,6 +22,9 @@ export const settingsApiSlice = apiSlice.injectEndpoints({
     recordingDriveOAuthInit: builder.query({
       query: () => ({ url: "/admin/recording-drive/oauth/init" }),
     }),
+    recordingDrivePickerSession: builder.query({
+      query: () => ({ url: "/admin/recording-drive/picker/session" }),
+    }),
     disconnectRecordingDrive: builder.mutation({
       query: () => ({
         url: "/admin/recording-drive/disconnect",
@@ -37,5 +40,6 @@ export const {
   useUpdateSystemSettingsMutation,
   useGetRecordingDriveStatusQuery,
   useLazyRecordingDriveOAuthInitQuery,
+  useLazyRecordingDrivePickerSessionQuery,
   useDisconnectRecordingDriveMutation,
 } = settingsApiSlice;

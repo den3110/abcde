@@ -23,6 +23,7 @@ import {
   useGetRecordingDriveStatusQuery,
   useGetSystemSettingsQuery,
   useLazyRecordingDriveOAuthInitQuery,
+  useLazyRecordingDrivePickerSessionQuery,
   useUpdateSystemSettingsMutation,
 } from "slices/settingsApiSlice";
 import { toast } from "react-toastify";
@@ -161,6 +162,119 @@ const buildAiGatewaySpeechUrl = (value = "") => {
   return baseUrl ? `${baseUrl}/audio/speech` : "";
 };
 
+let googlePickerLoaderPromise = null;
+
+const loadGooglePickerSdk = () => {
+  if (window.google?.picker) {
+    return Promise.resolve(window.google.picker);
+  }
+  if (googlePickerLoaderPromise) {
+    return googlePickerLoaderPromise;
+  }
+
+  googlePickerLoaderPromise = new Promise((resolve, reject) => {
+    const finishLoad = () => {
+      if (!window.gapi?.load) {
+        reject(new Error("Google Picker SDK chua san sang."));
+        return;
+      }
+      window.gapi.load("picker", {
+        callback: () => {
+          if (window.google?.picker) {
+            resolve(window.google.picker);
+            return;
+          }
+          reject(new Error("Google Picker SDK khong kha dung."));
+        },
+        onerror: () => reject(new Error("Khong tai duoc Google Picker SDK.")),
+        timeout: 10000,
+        ontimeout: () => reject(new Error("Google Picker SDK load timeout.")),
+      });
+    };
+
+    const existing = document.getElementById("google-picker-sdk");
+    if (existing) {
+      if (window.gapi?.load) {
+        finishLoad();
+        return;
+      }
+      existing.addEventListener("load", finishLoad, { once: true });
+      existing.addEventListener(
+        "error",
+        () => reject(new Error("Khong tai duoc Google Picker SDK.")),
+        { once: true }
+      );
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = "google-picker-sdk";
+    script.src = "https://apis.google.com/js/api.js";
+    script.async = true;
+    script.defer = true;
+    script.onload = finishLoad;
+    script.onerror = () =>
+      reject(new Error("Khong tai duoc Google Picker SDK."));
+    document.body.appendChild(script);
+  }).catch((error) => {
+    googlePickerLoaderPromise = null;
+    throw error;
+  });
+
+  return googlePickerLoaderPromise;
+};
+
+const openRecordingDriveFolderPicker = ({
+  accessToken,
+  developerKey,
+  appId,
+}) =>
+  new Promise((resolve, reject) => {
+    const pickerApi = window.google?.picker;
+    if (!pickerApi) {
+      reject(new Error("Google Picker SDK chua san sang."));
+      return;
+    }
+
+    const view = new pickerApi.DocsView(pickerApi.ViewId.FOLDERS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setMimeTypes("application/vnd.google-apps.folder");
+
+    let builder = new pickerApi.PickerBuilder()
+      .setTitle("Chon folder Recording Drive")
+      .setOAuthToken(accessToken)
+      .setDeveloperKey(developerKey)
+      .addView(view)
+      .enableFeature(pickerApi.Feature.SUPPORT_DRIVES)
+      .setCallback((data) => {
+        if (data.action === pickerApi.Action.PICKED) {
+          const picked = data.docs?.[0] || {};
+          const folderId = String(picked.id || "").trim();
+          if (!folderId) {
+            reject(new Error("Google Picker khong tra folder id."));
+            return;
+          }
+          resolve({
+            id: folderId,
+            name: String(picked.name || "").trim(),
+          });
+          return;
+        }
+        if (data.action === pickerApi.Action.CANCEL) {
+          const error = new Error("Da huy chon folder.");
+          error.cancelled = true;
+          reject(error);
+        }
+      });
+
+    if (appId) {
+      builder = builder.setAppId(appId);
+    }
+
+    builder.build().setVisible(true);
+  });
+
 export default function SystemSettingsPage() {
   const { data, isLoading, isError, refetch } = useGetSystemSettingsQuery();
   const {
@@ -175,6 +289,8 @@ export default function SystemSettingsPage() {
   } = useGetRecordingDriveStatusQuery();
   const [getRecordingDriveOAuthInit, { isFetching: isRecordingDriveConnecting }] =
     useLazyRecordingDriveOAuthInitQuery();
+  const [getRecordingDrivePickerSession, { isFetching: isRecordingDrivePickingFolder }] =
+    useLazyRecordingDrivePickerSessionQuery();
   const [disconnectRecordingDrive, { isLoading: isRecordingDriveDisconnecting }] =
     useDisconnectRecordingDriveMutation();
   const [updateSettings, { isLoading: isSaving }] = useUpdateSystemSettingsMutation();
@@ -416,6 +532,36 @@ export default function SystemSettingsPage() {
     }
   };
   void handleOpenRecordingDriveAuth;
+
+  const handlePickRecordingDriveFolder = async () => {
+    try {
+      const pickerSession = await getRecordingDrivePickerSession().unwrap();
+      await loadGooglePickerSdk();
+      const pickedFolder = await openRecordingDriveFolderPicker(pickerSession);
+
+      const nextForm = structuredClone(form);
+      nextForm.recordingDrive = {
+        ...(nextForm.recordingDrive || {}),
+        enabled: true,
+        mode: "oauthUser",
+        folderId: pickedFolder.id,
+      };
+
+      await persistSettings(nextForm, { showSuccessToast: false });
+      toast.success(
+        pickedFolder.name
+          ? `Da chon folder: ${pickedFolder.name}`
+          : "Da chon folder Google Drive."
+      );
+    } catch (error) {
+      if (error?.cancelled) return;
+      toast.error(
+        error?.data?.message ||
+          error?.message ||
+          "Khong mo duoc Google Picker."
+      );
+    }
+  };
 
   const handleDisconnectRecordingDrive = async () => {
     try {
@@ -752,7 +898,9 @@ export default function SystemSettingsPage() {
                 onChange={onChange("recordingDrive.folderId")}
                 helperText={
                   form.recordingDrive?.mode === "oauthUser"
-                    ? "OAuth mode dung drive.file: app tu quan ly folder rieng trong My Drive."
+                    ? recordingDriveStatus?.folderName
+                      ? `Folder da chon: ${recordingDriveStatus.folderName}`
+                      : "OAuth mode dung drive.file: hay chon dung folder cu bang Google Picker."
                     : ""
                 }
                 disabled={form.recordingDrive?.mode === "oauthUser"}
@@ -796,6 +944,19 @@ export default function SystemSettingsPage() {
                 disabled={form.recordingDrive?.mode !== "oauthUser" || isRecordingDriveConnecting}
               >
                 {isRecordingDriveConnecting ? "Đang mở kết nối..." : "Kết nối Google Drive"}
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={handlePickRecordingDriveFolder}
+                disabled={
+                  form.recordingDrive?.mode !== "oauthUser" ||
+                  !recordingDriveStatus?.connected ||
+                  isRecordingDrivePickingFolder
+                }
+              >
+                {isRecordingDrivePickingFolder
+                  ? "Dang mo Google Picker..."
+                  : "Chon folder Google Drive"}
               </Button>
               <Button
                 variant="outlined"
