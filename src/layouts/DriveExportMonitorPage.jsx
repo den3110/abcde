@@ -53,6 +53,12 @@ const STATUS_META = {
   failed: { color: "error", label: "Failed" },
 };
 
+const PIPELINE_STATUS_META = {
+  awaiting_queue_sync: { color: "info", label: "Đang đồng bộ" },
+  stale_no_job: { color: "warning", label: "Export treo — mất job" },
+  worker_offline: { color: "warning", label: "Worker offline" },
+};
+
 function formatRelative(ts) {
   if (!ts) return "-";
   return dayjs(ts).fromNow();
@@ -106,11 +112,12 @@ function SummaryCard({ title, value, hint, color = "text.primary" }) {
   );
 }
 
-function StatusChip({ status }) {
-  const meta = STATUS_META[status] || {
-    color: "default",
-    label: status || "Unknown",
-  };
+function StatusChip({ status, pipelineStage }) {
+  const meta = PIPELINE_STATUS_META[pipelineStage] ||
+    STATUS_META[status] || {
+      color: "default",
+      label: status || "Unknown",
+    };
   return <Chip size="small" color={meta.color} label={meta.label} />;
 }
 
@@ -849,7 +856,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
       <DialogContent dividers>
         <Stack spacing={2.5}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1} flexWrap="wrap">
-            <StatusChip status={row.status} />
+            <StatusChip status={row.status} pipelineStage={row.exportPipeline?.stage} />
             <Chip size="small" variant="outlined" label={`Mode: ${row.modeLabel || "-"}`} />
             <Chip
               size="small"
@@ -882,6 +889,16 @@ function RecordingDetailDialog({ row, open, onClose }) {
           {missingDriveLinks ? (
             <Alert severity="warning">
               Bản ghi đã sẵn sàng trong DB nhưng chưa có đầy đủ link Drive/Phát.
+            </Alert>
+          ) : null}
+
+          {["awaiting_queue_sync", "stale_no_job", "worker_offline"].includes(
+            row?.exportPipeline?.stage
+          ) && row?.exportPipeline?.detail ? (
+            <Alert
+              severity={row.exportPipeline.stage === "awaiting_queue_sync" ? "info" : "warning"}
+            >
+              {row.exportPipeline.detail}
             </Alert>
           ) : null}
 
@@ -1199,7 +1216,9 @@ export default function DriveExportMonitorPage() {
         field: "status",
         headerName: "Trạng thái",
         minWidth: 130,
-        renderCell: ({ row }) => <StatusChip status={row.status} />,
+        renderCell: ({ row }) => (
+          <StatusChip status={row.status} pipelineStage={row.exportPipeline?.stage} />
+        ),
       },
       {
         field: "match",
@@ -1212,21 +1231,49 @@ export default function DriveExportMonitorPage() {
       {
         field: "pipeline",
         headerName: "Export / Worker",
-        minWidth: 240,
+        minWidth: 280,
         sortable: false,
-        renderCell: ({ row }) => (
-          <Stack spacing={0.35} sx={{ py: 0.6 }}>
-            <Typography variant="body2" fontWeight={700}>
-              {row.exportPipeline?.label || row.statusMeta?.label || row.status}
-            </Typography>
-            <Typography variant="caption" sx={{ opacity: 0.8, whiteSpace: "normal" }}>
-              {row.exportPipeline?.detail ||
-                (row.scheduledExportAt
-                  ? `Scheduled ${formatDateTime(row.scheduledExportAt)}`
-                  : "-")}
-            </Typography>
-          </Stack>
-        ),
+        renderCell: ({ row }) => {
+          const stage = row.exportPipeline?.stage || "";
+          const isStale = ["stale_no_job", "worker_offline"].includes(stage);
+          const wasAutoRequeued = row.exportPipeline?.forceReason === "stale_reconciliation";
+          const stageLabel =
+            PIPELINE_STAGE_LABELS[stage] ||
+            row.exportPipeline?.label ||
+            row.statusMeta?.label ||
+            row.status;
+          return (
+            <Stack spacing={0.35} sx={{ py: 0.6 }}>
+              <Typography
+                variant="body2"
+                fontWeight={700}
+                color={isStale ? "warning.main" : "text.primary"}
+              >
+                {stageLabel}
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.8, whiteSpace: "normal" }}>
+                {row.exportPipeline?.detail ||
+                  (row.scheduledExportAt
+                    ? `Scheduled ${formatDateTime(row.scheduledExportAt)}`
+                    : "-")}
+              </Typography>
+              {wasAutoRequeued ? (
+                <Chip
+                  size="small"
+                  color="info"
+                  variant="outlined"
+                  label="Tự động requeue"
+                  sx={{ width: "fit-content" }}
+                />
+              ) : null}
+              {isStale ? (
+                <Typography variant="caption" color="warning.main" sx={{ fontWeight: 600 }}>
+                  ⚠ Job BullMQ bị mất — cần retry
+                </Typography>
+              ) : null}
+            </Stack>
+          );
+        },
       },
       {
         field: "output",
