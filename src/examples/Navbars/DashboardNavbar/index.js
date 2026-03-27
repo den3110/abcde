@@ -94,6 +94,28 @@ const ACTION_SELECTOR = [
 const RECENT_COMMANDS_KEY = "admin-command-palette-recent-v1";
 const MAX_RECENT_COMMANDS = 8;
 const EXCLUDED_ACTION_LABEL = /\b(xoa|delete|remove|huy|destroy|drop)\b/i;
+const COMMAND_GROUP_META = {
+  Trang: {
+    icon: "dashboard_customize",
+    color: "primary",
+  },
+  "Mục trong trang": {
+    icon: "segment",
+    color: "secondary",
+  },
+  "Thao tác trong trang": {
+    icon: "bolt",
+    color: "warning",
+  },
+  "Lệnh nhanh": {
+    icon: "terminal",
+    color: "info",
+  },
+  "Gần đây": {
+    icon: "history",
+    color: "success",
+  },
+};
 
 function clearAllCookies() {
   document.cookie.split(";").forEach((cookie) => {
@@ -192,6 +214,12 @@ const scrollElementIntoView = (element) => {
   if (!(element instanceof HTMLElement)) return;
   element.scrollIntoView({ behavior: "smooth", block: "center" });
 };
+
+const getCommandGroupMeta = (group = "") =>
+  COMMAND_GROUP_META[group] || {
+    icon: "search",
+    color: "default",
+  };
 
 function DashboardNavbar({ absolute, light, isMini }) {
   const [navbarType, setNavbarType] = useState();
@@ -687,33 +715,76 @@ function DashboardNavbar({ absolute, light, isMini }) {
             <MDBox sx={(theme) => navbarRow(theme, { isMini })}>
               <MDBox pr={1}>
                 <MDInput
-                  placeholder="Ctrl+K de mo bang lenh..."
+                  placeholder="Tìm nhanh mọi thứ..."
                   onClick={handleOpenCommandPalette}
                   inputProps={{ readOnly: true }}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
-                        <Icon fontSize="small">search</Icon>
+                        <Icon
+                          fontSize="small"
+                          sx={{
+                            color: "primary.main",
+                          }}
+                        >
+                          search
+                        </Icon>
                       </InputAdornment>
                     ),
                     endAdornment: (
-                      <InputAdornment position="end">
+                      <InputAdornment position="end" sx={{ gap: 0.5 }}>
                         <Chip
-                          label="Ctrl K"
+                          label="Ctrl"
                           size="small"
                           variant="outlined"
-                          sx={{ borderRadius: 1.5, fontWeight: 700 }}
+                          sx={{
+                            height: 24,
+                            borderRadius: 1.5,
+                            fontWeight: 700,
+                            bgcolor: "rgba(255,255,255,0.82)",
+                          }}
+                        />
+                        <Chip
+                          label="K"
+                          size="small"
+                          variant="outlined"
+                          sx={{
+                            height: 24,
+                            borderRadius: 1.5,
+                            fontWeight: 700,
+                            bgcolor: "rgba(255,255,255,0.82)",
+                          }}
                         />
                       </InputAdornment>
                     ),
                   }}
                   sx={{
-                    minWidth: { xs: 190, md: 290 },
+                    minWidth: { xs: 220, md: 340 },
                     "& .MuiOutlinedInput-root": {
                       cursor: "pointer",
+                      borderRadius: 999,
+                      background:
+                        "linear-gradient(135deg, rgba(255,255,255,0.94) 0%, rgba(247,250,255,0.98) 100%)",
+                      boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+                      transition: "transform 0.18s ease, box-shadow 0.18s ease",
+                      "& fieldset": {
+                        borderColor: "rgba(59, 130, 246, 0.18)",
+                      },
+                      "&:hover": {
+                        transform: "translateY(-1px)",
+                        boxShadow: "0 14px 34px rgba(37, 99, 235, 0.14)",
+                        "& fieldset": {
+                          borderColor: "rgba(59, 130, 246, 0.3)",
+                        },
+                      },
                     },
                     "& input": {
                       cursor: "pointer",
+                      fontWeight: 600,
+                    },
+                    "& input::placeholder": {
+                      color: "text.primary",
+                      opacity: 0.82,
                     },
                   }}
                 />
@@ -768,15 +839,80 @@ function DashboardNavbar({ absolute, light, isMini }) {
         onClose={handleCloseCommandPalette}
         maxWidth="md"
         fullWidth
+        sx={{
+          "& .MuiBackdrop-root": {
+            backdropFilter: "blur(8px)",
+            backgroundColor: "rgba(15, 23, 42, 0.28)",
+          },
+        }}
         PaperProps={{
           sx: {
-            borderRadius: 3,
+            borderRadius: 4,
             overflow: "hidden",
+            border: "1px solid rgba(148, 163, 184, 0.2)",
+            boxShadow: "0 30px 80px rgba(15, 23, 42, 0.28)",
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)",
           },
         }}
       >
         <DialogContent sx={{ p: 0 }}>
-          <MDBox p={2}>
+          <MDBox
+            px={2.5}
+            pt={2.5}
+            pb={2}
+            sx={{
+              background:
+                "linear-gradient(180deg, rgba(239,246,255,0.9) 0%, rgba(255,255,255,0.92) 100%)",
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: { xs: "flex-start", sm: "center" },
+                gap: 1.5,
+                flexWrap: "wrap",
+                mb: 1.75,
+              }}
+            >
+              <Box>
+                <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.1 }}>
+                  Command Palette
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Tìm trang, nhảy tới field, chạy nút trên màn hình hoặc gọi lệnh nhanh.
+                </Typography>
+              </Box>
+              <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}>
+                <Chip
+                  size="small"
+                  icon={<Icon sx={{ fontSize: "0.95rem !important" }}>keyboard_command_key</Icon>}
+                  label="Ctrl K"
+                  sx={{
+                    bgcolor: "rgba(37, 99, 235, 0.1)",
+                    color: "primary.main",
+                    fontWeight: 700,
+                  }}
+                />
+                <Chip
+                  size="small"
+                  label="↑ ↓ Di chuyển"
+                  sx={{
+                    bgcolor: "rgba(15, 23, 42, 0.06)",
+                    fontWeight: 600,
+                  }}
+                />
+                <Chip
+                  size="small"
+                  label="Enter Chạy"
+                  sx={{
+                    bgcolor: "rgba(15, 23, 42, 0.06)",
+                    fontWeight: 600,
+                  }}
+                />
+              </Box>
+            </Box>
             <MDInput
               autoFocus
               fullWidth
@@ -822,9 +958,32 @@ function DashboardNavbar({ absolute, light, isMini }) {
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Icon fontSize="small">search</Icon>
+                    <Icon fontSize="small" sx={{ color: "primary.main" }}>
+                      search
+                    </Icon>
                   </InputAdornment>
                 ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                      {commandResults.length} kết quả
+                    </Typography>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 3,
+                  bgcolor: "rgba(255,255,255,0.92)",
+                  boxShadow: "0 12px 34px rgba(37, 99, 235, 0.08)",
+                  "& fieldset": {
+                    borderColor: "rgba(59, 130, 246, 0.18)",
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: "primary.main",
+                    borderWidth: 1,
+                  },
+                },
               }}
             />
           </MDBox>
@@ -834,76 +993,161 @@ function DashboardNavbar({ absolute, light, isMini }) {
           <Box
             sx={{
               px: 2.5,
-              py: 1,
+              py: 1.25,
               display: "flex",
               flexWrap: "wrap",
               gap: 1,
-              bgcolor: "background.default",
+              bgcolor: "rgba(248, 250, 252, 0.95)",
             }}
           >
             <Chip size="small" variant="outlined" label="Trang" />
-            <Chip size="small" variant="outlined" label="Muc trong trang" />
-            <Chip size="small" variant="outlined" label="Thao tac" />
-            <Chip size="small" variant="outlined" label="Lenh nhanh" />
-            <Chip size="small" variant="outlined" label="Mui ten de di chuyen" />
-            <Chip size="small" variant="outlined" label="Enter de chay" />
+            <Chip size="small" variant="outlined" label="Mục trong trang" />
+            <Chip size="small" variant="outlined" label="Thao tác" />
+            <Chip size="small" variant="outlined" label="Lệnh nhanh" />
+            <Chip size="small" variant="outlined" label="↑ ↓ để di chuyển" />
+            <Chip size="small" variant="outlined" label="Enter để chạy" />
           </Box>
 
           <Divider />
 
-          <List sx={{ py: 0, maxHeight: 460, overflowY: "auto" }}>
+          <List
+            sx={{
+              py: 1,
+              px: 1,
+              maxHeight: 460,
+              overflowY: "auto",
+              bgcolor: "rgba(255,255,255,0.88)",
+            }}
+          >
             {commandResults.length === 0 ? (
-              <MDBox px={2.5} py={3}>
-                <Typography variant="body2" fontWeight={700}>
-                  Khong tim thay ket qua phu hop
+              <MDBox
+                px={2.5}
+                py={4}
+                sx={{
+                  textAlign: "center",
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    mx: "auto",
+                    mb: 1.5,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    bgcolor: "rgba(37, 99, 235, 0.1)",
+                    color: "primary.main",
+                  }}
+                >
+                  <Icon>search_off</Icon>
+                </Box>
+                <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+                  Không tìm thấy kết quả phù hợp
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Thu theo ten trang, ten field, nut tren trang, hoac lenh nhanh nhu reload, back,
-                  copy url, dang xuat.
+                  Thử theo tên trang, tên field, nút trên trang, hoặc lệnh nhanh như reload,
+                  back, copy URL, đăng xuất.
                 </Typography>
               </MDBox>
             ) : (
-              commandResults.map((command, index) => (
-                <ListItemButton
-                  key={command.id}
-                  onClick={() => handleSelectCommand(command)}
-                  selected={index === activeCommandIndex}
-                  sx={{ px: 2.5, py: 1.25, alignItems: "flex-start" }}
-                >
-                  <ListItemText
-                    primary={
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 1,
-                        }}
-                      >
-                        <Typography variant="body2" fontWeight={700}>
-                          {command.label}
-                        </Typography>
-                        <Chip
-                          label={command.group}
-                          size="small"
-                          variant={command.group === "Lệnh nhanh" ? "filled" : "outlined"}
-                          color={command.group === "Lệnh nhanh" ? "info" : "default"}
-                        />
-                      </Box>
-                    }
-                    secondary={
-                      <Box sx={{ mt: 0.35 }}>
-                        <Typography variant="caption" sx={{ display: "block", lineHeight: 1.5 }}>
-                          {command.sublabel}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                  {"path" in command && command.path === location.pathname ? (
-                    <Chip label="Hien tai" size="small" color="success" variant="outlined" />
-                  ) : null}
-                </ListItemButton>
-              ))
+              commandResults.map((command, index) => {
+                const groupMeta = getCommandGroupMeta(command.group);
+
+                return (
+                  <ListItemButton
+                    key={command.id}
+                    onClick={() => handleSelectCommand(command)}
+                    selected={index === activeCommandIndex}
+                    sx={(theme) => ({
+                      px: 1.5,
+                      py: 1.35,
+                      alignItems: "flex-start",
+                      gap: 1.5,
+                      borderRadius: 2.5,
+                      mb: 0.5,
+                      border: "1px solid transparent",
+                      transition: "all 0.16s ease",
+                      "&:hover": {
+                        bgcolor: "rgba(59, 130, 246, 0.08)",
+                        borderColor: "rgba(59, 130, 246, 0.18)",
+                      },
+                      "&.Mui-selected": {
+                        bgcolor: "rgba(37, 99, 235, 0.1)",
+                        borderColor: "rgba(37, 99, 235, 0.22)",
+                        boxShadow: "0 10px 28px rgba(37, 99, 235, 0.12)",
+                      },
+                      "&.Mui-selected:hover": {
+                        bgcolor: "rgba(37, 99, 235, 0.14)",
+                      },
+                      [theme.breakpoints.down("sm")]: {
+                        px: 1.25,
+                      },
+                    })}
+                  >
+                    <Box
+                      sx={{
+                        width: 36,
+                        height: 36,
+                        mt: 0.2,
+                        borderRadius: 2,
+                        display: "grid",
+                        placeItems: "center",
+                        bgcolor: `${groupMeta.color}.main`,
+                        color: "#fff",
+                        flexShrink: 0,
+                        boxShadow: "0 10px 18px rgba(15, 23, 42, 0.12)",
+                      }}
+                    >
+                      <Icon sx={{ fontSize: "1.05rem !important" }}>{groupMeta.icon}</Icon>
+                    </Box>
+                    <ListItemText
+                      primary={
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 1,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <Typography variant="body2" fontWeight={700}>
+                            {command.label}
+                          </Typography>
+                          <Chip
+                            label={command.group}
+                            size="small"
+                            color={groupMeta.color}
+                            variant={command.group === "Lệnh nhanh" ? "filled" : "outlined"}
+                            sx={{ fontWeight: 700 }}
+                          />
+                        </Box>
+                      }
+                      secondary={
+                        <Box sx={{ mt: 0.35 }}>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block", lineHeight: 1.6 }}
+                          >
+                            {command.sublabel}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                    {"path" in command && command.path === location.pathname ? (
+                      <Chip
+                        label="Hiện tại"
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        sx={{ fontWeight: 700 }}
+                      />
+                    ) : null}
+                  </ListItemButton>
+                );
+              })
             )}
           </List>
         </DialogContent>
