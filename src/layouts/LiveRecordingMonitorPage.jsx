@@ -146,7 +146,7 @@ function canForceRowToExport(row) {
 function StatusChip({ status }) {
   const meta = STATUS_META[status] || {
     color: "default",
-    label: status || "Unknown",
+    label: status || "Không rõ",
   };
   return <Chip size="small" color={meta.color} label={meta.label} />;
 }
@@ -231,8 +231,8 @@ function StorageOverviewCard({ storage }) {
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.72 }}>
                 {measuredFromR2
-                  ? "Do truc tiep bucket recording targets tren R2 (cache ngan)."
-                  : "Dang fallback theo DB estimate vi chua quet duoc R2."}
+                  ? "Đo trực tiếp bucket recording targets trên R2 (cache ngắn)."
+                  : "Đang fallback theo ước lượng DB vì chưa quét được R2."}
               </Typography>
             </Stack>
 
@@ -256,7 +256,7 @@ function StorageOverviewCard({ storage }) {
             <Grid item xs={12} md={4}>
               <Stack spacing={0.35}>
                 <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                  Da dung
+                  Đã dùng
                 </Typography>
                 <Typography variant="h5" fontWeight={800} color="warning.main">
                   {formatBytes(usedBytes)}
@@ -276,7 +276,7 @@ function StorageOverviewCard({ storage }) {
             <Grid item xs={12} md={4}>
               <Stack spacing={0.35}>
                 <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                  Tong
+                  Tổng
                 </Typography>
                 <Typography variant="h5" fontWeight={800}>
                   {totalBytes == null ? "Chưa cấu hình" : formatBytes(totalBytes)}
@@ -286,12 +286,12 @@ function StorageOverviewCard({ storage }) {
           </Grid>
 
           <Typography variant="caption" sx={{ opacity: 0.68 }}>
-            Dang co {storage?.recordingsWithSourceOnR2 || 0} recording con giu du lieu nguon tren
-            R2. {storage?.scannedAt ? `Scan at ${formatDateTime(storage.scannedAt)}.` : ""}
+            Đang có {storage?.recordingsWithSourceOnR2 || 0} recording còn giữ dữ liệu nguồn trên
+            R2. {storage?.scannedAt ? `Quét lúc ${formatDateTime(storage.scannedAt)}.` : ""}
           </Typography>
           {scanError ? (
             <Alert severity="warning" sx={{ py: 0 }}>
-              Khong quet duoc R2 truc tiep: {scanError}
+              Không quét trực tiếp được R2: {scanError}
             </Alert>
           ) : null}
 
@@ -305,16 +305,16 @@ function StorageOverviewCard({ storage }) {
               alignItems={{ xs: "flex-start", md: "center" }}
             >
               <Typography variant="subtitle1" fontWeight={800}>
-                Per-target usage
+                Chi tiết theo từng target
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                {measuredTargetCount}/{configuredTargetCount} target da co so lieu scan.
+                {measuredTargetCount}/{configuredTargetCount} target đã có số liệu quét.
               </Typography>
             </Stack>
 
             {targetBreakdown.length === 0 ? (
               <Alert severity="info" sx={{ py: 0 }}>
-                Chua co target nao trong R2_RECORDINGS_TARGETS_JSON hoac fallback recording target.
+                Chưa có target nào trong `R2_RECORDINGS_TARGETS_JSON` hoặc fallback recording target.
               </Alert>
             ) : (
               <Grid container spacing={2}>
@@ -353,7 +353,7 @@ function StorageOverviewCard({ storage }) {
                                 size="small"
                                 color={targetMeasured ? "success" : "warning"}
                                 variant="outlined"
-                                label={targetMeasured ? "R2 scan" : "Unscanned"}
+                                label={targetMeasured ? "Đã quét R2" : "Chưa quét"}
                               />
                             </Stack>
 
@@ -368,7 +368,7 @@ function StorageOverviewCard({ storage }) {
                             <Grid container spacing={1.5}>
                               <Grid item xs={4}>
                                 <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                                  Used
+                                  Đã dùng
                                 </Typography>
                                 <Typography variant="body1" fontWeight={800} color="warning.main">
                                   {targetUsedBytes == null ? "-" : formatBytes(targetUsedBytes)}
@@ -376,7 +376,7 @@ function StorageOverviewCard({ storage }) {
                               </Grid>
                               <Grid item xs={4}>
                                 <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                                  Free
+                                  Còn trống
                                 </Typography>
                                 <Typography variant="body1" fontWeight={800} color="success.main">
                                   {targetRemainingBytes == null
@@ -386,11 +386,11 @@ function StorageOverviewCard({ storage }) {
                               </Grid>
                               <Grid item xs={4}>
                                 <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                                  Total
+                                  Tổng
                                 </Typography>
                                 <Typography variant="body1" fontWeight={800}>
                                   {targetCapacityBytes == null
-                                    ? "No cap"
+                                    ? "Chưa giới hạn"
                                     : formatBytes(targetCapacityBytes)}
                                 </Typography>
                               </Grid>
@@ -400,17 +400,17 @@ function StorageOverviewCard({ storage }) {
                               <Chip
                                 size="small"
                                 variant="outlined"
-                                label={`Objects: ${target?.objectCount ?? "-"}`}
+                                label={`Object: ${target?.objectCount ?? "-"}`}
                               />
                               <Chip
                                 size="small"
                                 variant="outlined"
-                                label={`Sources: ${target?.recordingsWithSourceOnR2 ?? "-"}`}
+                                label={`Nguồn: ${target?.recordingsWithSourceOnR2 ?? "-"}`}
                               />
                               <Chip
                                 size="small"
                                 variant="outlined"
-                                label={`Used: ${formatPercent(targetPercentUsed)}`}
+                                label={`Đã dùng: ${formatPercent(targetPercentUsed)}`}
                               />
                             </Stack>
                           </Stack>
@@ -525,7 +525,7 @@ function ActionsCell({ row, onForceExport, forceExportingId }) {
           }}
           sx={{ minWidth: 0 }}
         >
-          {forcingThisRow ? "Dang chuyen..." : "Chuyen exporting"}
+          {forcingThisRow ? "Đang chuyển..." : "Chuyển sang export"}
         </Button>
       ) : null}
       {canPlay ? (
@@ -540,7 +540,7 @@ function ActionsCell({ row, onForceExport, forceExportingId }) {
           startIcon={<PlayCircleOutlineIcon />}
           sx={{ minWidth: 0 }}
         >
-          Play
+          Phát
         </Button>
       ) : null}
       {rawHref ? (
@@ -555,7 +555,7 @@ function ActionsCell({ row, onForceExport, forceExportingId }) {
           startIcon={<CloudDownloadIcon />}
           sx={{ minWidth: 0 }}
         >
-          Raw
+          Tệp gốc
         </Button>
       ) : null}
       {row.drivePreviewUrl ? (
@@ -570,7 +570,7 @@ function ActionsCell({ row, onForceExport, forceExportingId }) {
           startIcon={<OpenInNewIcon />}
           sx={{ minWidth: 0 }}
         >
-          Preview
+          Xem trước
         </Button>
       ) : null}
     </Stack>
@@ -591,7 +591,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
       <DialogTitle sx={{ pb: 1.5 }}>
         <Stack spacing={0.75}>
           <Typography variant="h5" fontWeight={800}>
-            Chi tiet recording
+            Chi tiết bản ghi
           </Typography>
           <Typography variant="body2" sx={{ opacity: 0.78 }}>
             {row?.participantsLabel || "Chưa rõ trận đấu"}
@@ -660,7 +660,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
                 rel="noopener noreferrer"
                 startIcon={<PlayCircleOutlineIcon />}
               >
-                Play
+                Phát
               </Button>
             ) : null}
             {rawHref ? (
@@ -674,7 +674,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
                 rel="noopener noreferrer"
                 startIcon={<CloudDownloadIcon />}
               >
-                Raw
+                Tệp gốc
               </Button>
             ) : null}
             {row?.rawStatusUrl ? (
@@ -688,7 +688,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
                 rel="noopener noreferrer"
                 startIcon={<SearchIcon />}
               >
-                Raw status
+                Trạng thái raw
               </Button>
             ) : null}
             {row?.drivePreviewUrl ? (
@@ -702,7 +702,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
                 rel="noopener noreferrer"
                 startIcon={<OpenInNewIcon />}
               >
-                Preview
+                Xem trước
               </Button>
             ) : null}
           </Stack>
@@ -719,7 +719,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
           ) : (
             <Stack spacing={1.25}>
               <Typography variant="h6" fontWeight={700}>
-                Danh sach segment
+                Danh sách segment
               </Typography>
               {segments.map((segment) => {
                 const percent =
@@ -791,7 +791,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
 
                           <Grid item xs={12} md={4}>
                             <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                              Bat dau upload
+                              Bắt đầu upload
                             </Typography>
                             <Typography variant="body2" fontWeight={600}>
                               {formatDateTime(segment.startedAt)}
@@ -800,7 +800,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
 
                           <Grid item xs={12} md={4}>
                             <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                              Part gan nhat
+                              Part gần nhất
                             </Typography>
                             <Typography variant="body2" fontWeight={600}>
                               {formatDateTime(segment.lastPartUploadedAt)}
@@ -809,7 +809,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
 
                           <Grid item xs={12} md={6}>
                             <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                              Uploaded at
+                              Thời điểm upload
                             </Typography>
                             <Typography variant="body2" fontWeight={600}>
                               {formatDateTime(segment.uploadedAt)}
@@ -818,7 +818,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
 
                           <Grid item xs={12} md={6}>
                             <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                              Object key
+                              Khóa object
                             </Typography>
                             <Typography
                               variant="body2"
@@ -978,7 +978,9 @@ export default function LiveRecordingMonitorPage() {
         await refetch();
       } catch (error) {
         setActionError(
-          error?.data?.message || error?.error || "Khong the chuyen recording sang exporting."
+          error?.data?.message ||
+            error?.error ||
+            "Không thể chuyển recording sang trạng thái exporting."
         );
       } finally {
         setForceExportingId(null);
@@ -1037,7 +1039,7 @@ export default function LiveRecordingMonitorPage() {
               {formatBytes(row.sizeBytes)}
             </Typography>
             <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              Segments: {row.segmentSummary?.totalSegments || 0}
+              Segment: {row.segmentSummary?.totalSegments || 0}
             </Typography>
             <Typography variant="caption" sx={{ opacity: 0.7 }}>
               R2: {formatBytes(row.r2SourceBytes)}
@@ -1079,7 +1081,7 @@ export default function LiveRecordingMonitorPage() {
       },
       {
         field: "actions",
-        headerName: "Links / Actions",
+        headerName: "Liên kết / Thao tác",
         minWidth: 380,
         sortable: false,
         filterable: false,
@@ -1108,13 +1110,13 @@ export default function LiveRecordingMonitorPage() {
           >
             <Box>
               <Typography variant="h4" fontWeight={800}>
-                Recording Monitor
+                Giám sát bản ghi
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.75 }}>
-                Realtime tracking for recording v2 upload, export, and playback pipeline
+                Theo dõi realtime cho pipeline upload, export và phát lại của recording v2
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                Bam vao tung dong de xem chi tiet segment va link output.
+                Bấm vào từng dòng để xem chi tiết segment và link output.
               </Typography>
             </Box>
 
@@ -1124,7 +1126,7 @@ export default function LiveRecordingMonitorPage() {
                 label={
                   socketOn
                     ? "Socket realtime OK"
-                    : `Socket disconnected - HTTP poll ${Math.round(
+                    : `Socket mất kết nối - HTTP poll ${Math.round(
                         monitorPollingInterval / 1000
                       )}s`
                 }
@@ -1132,7 +1134,7 @@ export default function LiveRecordingMonitorPage() {
               <Chip
                 color={meta.lastPublishMode === "reconcile" ? "warning" : "info"}
                 label={
-                  meta.lastPublishMode === "reconcile" ? "Fallback reconcile" : "Live realtime"
+                  meta.lastPublishMode === "reconcile" ? "Đồng bộ fallback" : "Realtime trực tiếp"
                 }
               />
               <Button
@@ -1141,61 +1143,61 @@ export default function LiveRecordingMonitorPage() {
                 onClick={() => refetch()}
                 disabled={isFetching}
               >
-                Refresh
+                Làm mới
               </Button>
             </Stack>
           </Stack>
 
           <Alert severity="info">
-            Last event: <strong>{meta.lastEventReason || "bootstrap"}</strong> -{" "}
-            {formatRelative(meta.lastEventAt)} - last publish {formatRelative(meta.lastPublishAt)}
+            Sự kiện gần nhất: <strong>{meta.lastEventReason || "bootstrap"}</strong> -{" "}
+            {formatRelative(meta.lastEventAt)} - publish cuối {formatRelative(meta.lastPublishAt)}
           </Alert>
 
           {isError ? (
-            <Alert severity="error">Failed to load recording monitor snapshot.</Alert>
+            <Alert severity="error">Không tải được dữ liệu monitor bản ghi.</Alert>
           ) : null}
 
           {actionError ? <Alert severity="error">{actionError}</Alert> : null}
 
           {workerHealth && !workerHealth.alive && exportingRows.length > 0 ? (
             <Alert severity="warning">
-              Worker export khong con heartbeat nhung van con {exportingRows.length} recording dang
-              exporting.
+              Worker export không còn heartbeat nhưng vẫn còn {exportingRows.length} recording đang
+              xuất.
             </Alert>
           ) : null}
 
           <Grid container spacing={2}>
             <Grid item xs={12} md={3}>
               <SummaryCard
-                title="Active pipeline"
+                title="Pipeline hoạt động"
                 value={summary.active || 0}
-                hint={`${summary.recording || 0} recording - ${
+                hint={`${summary.recording || 0} đang ghi - ${
                   summary.uploading || 0
-                } uploading - ${summary.exporting || 0} exporting`}
+                } đang tải - ${summary.exporting || 0} đang xuất`}
                 color="warning.main"
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
-                title="Ready"
+                title="Sẵn sàng"
                 value={summary.ready || 0}
-                hint={`${formatBytes(summary.totalSizeBytes || 0)} total output`}
+                hint={`${formatBytes(summary.totalSizeBytes || 0)} tổng đầu ra`}
                 color="success.main"
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
-                title="Failed"
+                title="Thất bại"
                 value={summary.failed || 0}
-                hint={`${summary.pendingSegments || 0} pending segments`}
+                hint={`${summary.pendingSegments || 0} segment đang chờ`}
                 color="error.main"
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
-                title="Segments"
+                title="Phân đoạn"
                 value={`${summary.uploadedSegments || 0}/${summary.totalSegments || 0}`}
-                hint={`${formatDuration(summary.totalDurationSeconds || 0)} recorded in DB`}
+                hint={`${formatDuration(summary.totalDurationSeconds || 0)} đã ghi trong DB`}
               />
             </Grid>
           </Grid>
@@ -1214,7 +1216,7 @@ export default function LiveRecordingMonitorPage() {
                     fullWidth
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search recording, match, tournament, error..."
+                    placeholder="Tìm bản ghi, trận đấu, giải đấu, lỗi..."
                     InputProps={{
                       startAdornment: <SearchIcon sx={{ mr: 1, opacity: 0.5 }} />,
                     }}
@@ -1283,12 +1285,12 @@ export default function LiveRecordingMonitorPage() {
                     onChange={(event) => setStatusFilter(event.target.value)}
                     sx={{ minWidth: 180 }}
                   >
-                    <MenuItem value="ALL">All statuses</MenuItem>
-                    <MenuItem value="recording">Recording</MenuItem>
-                    <MenuItem value="uploading">Uploading</MenuItem>
-                    <MenuItem value="exporting">Exporting</MenuItem>
-                    <MenuItem value="ready">Ready</MenuItem>
-                    <MenuItem value="failed">Failed</MenuItem>
+                    <MenuItem value="ALL">Tất cả trạng thái</MenuItem>
+                    <MenuItem value="recording">Đang ghi</MenuItem>
+                    <MenuItem value="uploading">Đang tải lên</MenuItem>
+                    <MenuItem value="exporting">Đang xuất</MenuItem>
+                    <MenuItem value="ready">Sẵn sàng</MenuItem>
+                    <MenuItem value="failed">Thất bại</MenuItem>
                   </TextField>
                 </Stack>
 

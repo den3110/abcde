@@ -47,10 +47,10 @@ import {
 dayjs.extend(relativeTime);
 
 const STATUS_META = {
-  pending_export_window: { color: "secondary", label: "Cho khung gio dem" },
-  exporting: { color: "info", label: "Exporting" },
-  ready: { color: "success", label: "Ready" },
-  failed: { color: "error", label: "Failed" },
+  pending_export_window: { color: "secondary", label: "Chờ khung giờ đêm" },
+  exporting: { color: "info", label: "Đang xuất" },
+  ready: { color: "success", label: "Sẵn sàng" },
+  failed: { color: "error", label: "Thất bại" },
 };
 
 const PIPELINE_STATUS_META = {
@@ -116,7 +116,7 @@ function StatusChip({ status, pipelineStage }) {
   const meta = PIPELINE_STATUS_META[pipelineStage] ||
     STATUS_META[status] || {
       color: "default",
-      label: status || "Unknown",
+      label: status || "Không rõ",
     };
   return <Chip size="small" color={meta.color} label={meta.label} />;
 }
@@ -311,10 +311,10 @@ function MatchCell({ row }) {
   return (
     <Stack spacing={0.45} sx={{ py: 0.6 }}>
       <Typography variant="body2" fontWeight={700} sx={{ whiteSpace: "normal" }}>
-        {row.participantsLabel || "Unknown match"}
+        {row.participantsLabel || "Chưa rõ trận đấu"}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.8 }}>
-        Match: {row.matchCode || row.matchId || "-"}
+        Trận: {row.matchCode || row.matchId || "-"}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.7, whiteSpace: "normal" }}>
         {row.competitionLabel || "-"}
@@ -343,7 +343,7 @@ function ExportLinks({ row }) {
           startIcon={<PlayCircleOutlineIcon />}
           sx={{ minWidth: 0 }}
         >
-          {row.status === "ready" ? "Play" : "Temp"}
+          {row.status === "ready" ? "Phát" : "Tạm"}
         </Button>
       ) : null}
       {rawHref ? (
@@ -358,7 +358,7 @@ function ExportLinks({ row }) {
           startIcon={<CloudDownloadIcon />}
           sx={{ minWidth: 0 }}
         >
-          Raw
+          Tệp gốc
         </Button>
       ) : null}
       {row.drivePreviewUrl ? (
@@ -373,7 +373,7 @@ function ExportLinks({ row }) {
           startIcon={<OpenInNewIcon />}
           sx={{ minWidth: 0 }}
         >
-          Preview
+          Xem trước
         </Button>
       ) : null}
     </Stack>
@@ -396,10 +396,10 @@ function canForceExportNow(row) {
 }
 
 const PIPELINE_STAGE_LABELS = {
-  delayed_until_window: "Dang cho khung gio dem",
+  delayed_until_window: "Đang chờ khung giờ đêm",
   queued: "Đang chờ worker nhận job",
-  queued_retry: "Đang đợi retry",
-  awaiting_queue_sync: "Đang đồng bộ trạng thái queue",
+  queued_retry: "Đang chờ thử lại",
+  awaiting_queue_sync: "Đang đồng bộ trạng thái hàng đợi",
   downloading: "Tải segment từ R2",
   merging: "Đang ghép video",
   uploading_drive: "Đang upload lên Drive",
@@ -483,7 +483,7 @@ function WorkerHealthPanel({ health, currentExportRow }) {
             </Grid>
             <Grid item xs={12} md={4}>
               <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                Current recording
+                Bản ghi hiện tại
               </Typography>
               <Typography variant="body2" fontWeight={700}>
                 {worker?.currentRecordingId || "idle"}
@@ -491,7 +491,7 @@ function WorkerHealthPanel({ health, currentExportRow }) {
             </Grid>
             <Grid item xs={12} md={4}>
               <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                Current job started
+                Job hiện tại bắt đầu
               </Typography>
               <Typography variant="body2" fontWeight={700}>
                 {formatDateTime(worker?.currentJobStartedAt)}
@@ -499,7 +499,7 @@ function WorkerHealthPanel({ health, currentExportRow }) {
             </Grid>
             <Grid item xs={12} md={4}>
               <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                Last completed
+                Hoàn tất gần nhất
               </Typography>
               <Typography variant="body2" fontWeight={700}>
                 {formatDateTime(worker?.lastCompletedAt)}
@@ -605,7 +605,8 @@ function AiCommentaryPanel({ monitor, currentRow }) {
                 AI bình luận video trận
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                Queue riêng cho BLV AI sau khi recording đã lên Drive. Công tắc global nằm ở Cài đặt
+                Hàng đợi riêng cho BLV AI sau khi recording đã lên Drive. Công tắc global nằm ở Cài
+                đặt
                 hệ thống.
               </Typography>
             </Box>
@@ -656,7 +657,7 @@ function AiCommentaryPanel({ monitor, currentRow }) {
             </Grid>
             <Grid item xs={12} md={2}>
               <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                Queued
+                Đang chờ
               </Typography>
               <Typography variant="body2" fontWeight={700}>
                 {monitor?.summary?.queued ?? 0}
@@ -664,7 +665,7 @@ function AiCommentaryPanel({ monitor, currentRow }) {
             </Grid>
             <Grid item xs={12} md={1.5}>
               <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                Running
+                Đang chạy
               </Typography>
               <Typography variant="body2" fontWeight={700}>
                 {monitor?.summary?.running ?? 0}
@@ -672,7 +673,7 @@ function AiCommentaryPanel({ monitor, currentRow }) {
             </Grid>
             <Grid item xs={12} md={1.5}>
               <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                Failed
+                Thất bại
               </Typography>
               <Typography variant="body2" fontWeight={700}>
                 {monitor?.summary?.failed ?? 0}
@@ -733,13 +734,15 @@ function AiCommentaryPanel({ monitor, currentRow }) {
               </Stack>
             </>
           ) : (
-            <Alert severity="info">Chưa có job AI commentary đang chạy hoặc chờ trong queue.</Alert>
+            <Alert severity="info">
+              Chưa có job AI commentary đang chạy hoặc chờ trong hàng đợi.
+            </Alert>
           )}
 
           {activeRowCommentary?.ready && activeRowCommentary?.dubbedPlaybackUrl ? (
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
               <Typography variant="body2" sx={{ opacity: 0.7 }}>
-                Recording hiện tại của worker đã có bản BLV AI:
+                Bản ghi hiện tại của worker đã có bản BLV AI:
               </Typography>
               <Button
                 size="small"
@@ -759,7 +762,7 @@ function AiCommentaryPanel({ monitor, currentRow }) {
               <Divider />
               <Stack spacing={1}>
                 <Typography variant="subtitle2" fontWeight={700}>
-                  Recent jobs
+                  Job gần đây
                 </Typography>
                 {monitor.recentJobs.slice(0, 4).map((job) => (
                   <Card key={job.id} variant="outlined" sx={{ borderRadius: 2.5 }}>
@@ -845,7 +848,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
             Chi tiết export lên Drive
           </Typography>
           <Typography variant="body2" sx={{ opacity: 0.78 }}>
-            {row.participantsLabel || "Unknown match"}
+            {row.participantsLabel || "Chưa rõ trận đấu"}
           </Typography>
           <Typography variant="caption" sx={{ opacity: 0.65 }}>
             {row.competitionLabel || "-"}
@@ -861,26 +864,30 @@ function RecordingDetailDialog({ row, open, onClose }) {
             <Chip
               size="small"
               variant="outlined"
-              label={`Created: ${formatDateTime(row.createdAt)}`}
+              label={`Tạo lúc: ${formatDateTime(row.createdAt)}`}
             />
             <Chip
               size="small"
               variant="outlined"
-              label={`Finalized: ${formatDateTime(row.finalizedAt)}`}
+              label={`Hoàn tất: ${formatDateTime(row.finalizedAt)}`}
             />
             {row.scheduledExportAt ? (
               <Chip
                 size="small"
                 variant="outlined"
                 color="secondary"
-                label={`Scheduled: ${formatDateTime(row.scheduledExportAt)}`}
+                label={`Lên lịch: ${formatDateTime(row.scheduledExportAt)}`}
               />
             ) : null}
-            <Chip size="small" variant="outlined" label={`Ready: ${formatDateTime(row.readyAt)}`} />
             <Chip
               size="small"
               variant="outlined"
-              label={`Output: ${formatDuration(row.durationSeconds)} / ${formatBytes(
+              label={`Sẵn sàng: ${formatDateTime(row.readyAt)}`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`Đầu ra: ${formatDuration(row.durationSeconds)} / ${formatBytes(
                 row.sizeBytes
               )}`}
             />
@@ -915,7 +922,7 @@ function RecordingDetailDialog({ row, open, onClose }) {
                 rel="noopener noreferrer"
                 startIcon={<SearchIcon />}
               >
-                Raw status
+                Trạng thái raw
               </Button>
             ) : null}
           </Stack>
@@ -925,14 +932,14 @@ function RecordingDetailDialog({ row, open, onClose }) {
           <Divider />
 
           <Typography variant="h6" fontWeight={700}>
-            Segment summary
+            Tổng quan segment
           </Typography>
           <Grid container spacing={1.5}>
             <Grid item xs={12} md={3}>
               <SummaryCard
                 title="Segments"
                 value={row.segmentSummary?.totalSegments || 0}
-                hint={`${row.segmentSummary?.uploadedSegments || 0} uploaded`}
+                hint={`${row.segmentSummary?.uploadedSegments || 0} đã upload`}
               />
             </Grid>
             <Grid item xs={12} md={3}>
@@ -944,16 +951,16 @@ function RecordingDetailDialog({ row, open, onClose }) {
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
-                title="Output size"
+                title="Kích thước đầu ra"
                 value={formatBytes(row.sizeBytes)}
                 hint="Kích thước file cuối"
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
-                title="Export attempts"
+                title="Số lần export"
                 value={row.exportAttempts || 0}
-                hint={`Updated ${formatRelative(row.updatedAt)}`}
+                hint={`Cập nhật ${formatRelative(row.updatedAt)}`}
               />
             </Grid>
           </Grid>
@@ -1191,18 +1198,20 @@ export default function DriveExportMonitorPage() {
       if (forceRerender) {
         setRerenderingCommentaryId(recordingId);
         await rerenderAiCommentary(recordingId).unwrap();
-        toast.success("Đã đưa job render lại BLV AI vào queue.");
+        toast.success("Đã đưa job render lại BLV AI vào hàng đợi.");
       } else {
         setQueueingCommentaryId(recordingId);
         await queueAiCommentary(recordingId).unwrap();
-        toast.success("Đã đưa job BLV AI vào queue.");
+        toast.success("Đã đưa job BLV AI vào hàng đợi.");
       }
       refreshAll();
     } catch (error) {
       toast.error(
         error?.data?.message ||
           error?.error ||
-          (forceRerender ? "Không thể render lại BLV AI." : "Không thể đưa job BLV AI vào queue.")
+          (forceRerender
+            ? "Không thể render lại BLV AI."
+            : "Không thể đưa job BLV AI vào hàng đợi.")
       );
     } finally {
       setQueueingCommentaryId(null);
@@ -1254,7 +1263,7 @@ export default function DriveExportMonitorPage() {
               <Typography variant="caption" sx={{ opacity: 0.8, whiteSpace: "normal" }}>
                 {row.exportPipeline?.detail ||
                   (row.scheduledExportAt
-                    ? `Scheduled ${formatDateTime(row.scheduledExportAt)}`
+                    ? `Lên lịch ${formatDateTime(row.scheduledExportAt)}`
                     : "-")}
               </Typography>
               {wasAutoRequeued ? (
@@ -1262,13 +1271,13 @@ export default function DriveExportMonitorPage() {
                   size="small"
                   color="info"
                   variant="outlined"
-                  label="Tự động requeue"
+                  label="Tự động xếp lại hàng đợi"
                   sx={{ width: "fit-content" }}
                 />
               ) : null}
               {isStale ? (
                 <Typography variant="caption" color="warning.main" sx={{ fontWeight: 600 }}>
-                  ⚠ Job BullMQ bị mất — cần retry
+                  ⚠ Job BullMQ bị mất, cần thử lại
                 </Typography>
               ) : null}
             </Stack>
@@ -1289,7 +1298,7 @@ export default function DriveExportMonitorPage() {
               {formatBytes(row.sizeBytes)}
             </Typography>
             <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              Segments: {row.segmentSummary?.totalSegments || 0}
+              Segment: {row.segmentSummary?.totalSegments || 0}
             </Typography>
           </Stack>
         ),
@@ -1325,7 +1334,7 @@ export default function DriveExportMonitorPage() {
                   ) : null
                 }
               >
-                {retryingRecordingId === row.recordingId ? "Dang retry..." : "Retry export"}
+                {retryingRecordingId === row.recordingId ? "Đang thử lại..." : "Thử lại export"}
               </Button>
             ) : null}
             {canForceExportNow(row) ? (
@@ -1344,7 +1353,7 @@ export default function DriveExportMonitorPage() {
                   ) : null
                 }
               >
-                {forcingRecordingId === row.recordingId ? "Dang xuat..." : "Export now"}
+                {forcingRecordingId === row.recordingId ? "Đang xuất..." : "Xuất ngay"}
               </Button>
             ) : null}
           </Stack>
@@ -1405,7 +1414,7 @@ export default function DriveExportMonitorPage() {
                     queueingThisRow ? <CircularProgress size={14} color="inherit" /> : null
                   }
                 >
-                  {queueingThisRow ? "Đang queue..." : "Lồng tiếng AI"}
+                  {queueingThisRow ? "Đang xếp hàng..." : "Lồng tiếng AI"}
                 </Button>
                 <Button
                   size="small"
@@ -1432,7 +1441,7 @@ export default function DriveExportMonitorPage() {
                   : commentary.error || commentary.renderedAt
                   ? commentary.error || `Xong ${formatRelative(commentary.renderedAt)}`
                   : commentaryAutoEnabled
-                  ? "Auto sẽ tự queue khi video lên Drive."
+                  ? "Auto sẽ tự đưa vào hàng đợi khi video lên Drive."
                   : "Auto đang tắt, có thể chạy tay."}
               </Typography>
             </Stack>
@@ -1470,7 +1479,7 @@ export default function DriveExportMonitorPage() {
             {row.error ||
               row.exportPipeline?.detail ||
               (row.status === "ready" && !row.driveRawUrl && !row.drivePreviewUrl
-                ? "Ready but missing Drive links"
+                ? "Đã sẵn sàng nhưng thiếu link Drive"
                 : "-")}
           </Typography>
         ),
@@ -1510,7 +1519,7 @@ export default function DriveExportMonitorPage() {
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
               <Chip
                 color={socketOn ? "success" : "default"}
-                label={socketOn ? "Socket realtime OK" : "Socket disconnected"}
+                label={socketOn ? "Socket realtime OK" : "Socket mất kết nối"}
               />
               <WorkerStatusChip health={workerHealth} />
               <Button
@@ -1519,23 +1528,23 @@ export default function DriveExportMonitorPage() {
                 onClick={refreshAll}
                 disabled={isFetching || isCommentaryMonitorFetching}
               >
-                Refresh
+                Làm mới
               </Button>
             </Stack>
           </Stack>
 
           {workerAlertVisible ? (
             <Alert severity="warning">
-              Worker export khong con heartbeat nhung van con recording dang exporting.
+              Worker export không còn heartbeat nhưng vẫn còn recording đang xuất.
             </Alert>
           ) : null}
 
           {isError ? (
-            <Alert severity="error">Failed to load recording export snapshot.</Alert>
+            <Alert severity="error">Không tải được dữ liệu export bản ghi.</Alert>
           ) : null}
-          {workerHealthError ? <Alert severity="error">Failed to load worker health.</Alert> : null}
+          {workerHealthError ? <Alert severity="error">Không tải được trạng thái worker.</Alert> : null}
           {commentaryMonitorError ? (
-            <Alert severity="error">Failed to load AI commentary monitor.</Alert>
+            <Alert severity="error">Không tải được monitor AI commentary.</Alert>
           ) : null}
 
           <Grid container spacing={2}>
@@ -1557,7 +1566,7 @@ export default function DriveExportMonitorPage() {
             </Grid>
             <Grid item xs={12} md={2}>
               <SummaryCard
-                title="Current job"
+                title="Job hiện tại"
                 value={
                   currentExportRow?.matchCode || workerHealth?.worker?.currentRecordingId || "idle"
                 }
@@ -1567,15 +1576,15 @@ export default function DriveExportMonitorPage() {
             </Grid>
             <Grid item xs={12} md={2}>
               <SummaryCard
-                title="Night Queue"
+                title="Hàng đợi đêm"
                 value={summary.pendingWindow.length}
-                hint="Dang doi khung gio export dem"
+                hint="Đang đợi khung giờ export đêm"
                 color="secondary.main"
               />
             </Grid>
             <Grid item xs={12} md={2}>
               <SummaryCard
-                title="Exporting"
+                title="Đang xuất"
                 value={summary.exporting.length}
                 hint="Đang ghép và đẩy lên Drive"
                 color="info.main"
@@ -1583,7 +1592,7 @@ export default function DriveExportMonitorPage() {
             </Grid>
             <Grid item xs={12} md={2}>
               <SummaryCard
-                title="Ready"
+                title="Sẵn sàng"
                 value={summary.ready.length}
                 hint="Đã có file trên Drive"
                 color="success.main"
@@ -1591,7 +1600,7 @@ export default function DriveExportMonitorPage() {
             </Grid>
             <Grid item xs={12} md={2}>
               <SummaryCard
-                title="Failed"
+                title="Thất bại"
                 value={summary.failed.length}
                 hint="Cần kiểm tra lỗi export"
                 color="error.main"
@@ -1627,7 +1636,7 @@ export default function DriveExportMonitorPage() {
                     onChange={(e) => setStatusFilter(e.target.value)}
                     sx={{ width: { xs: "100%", md: 220 } }}
                   >
-                    <MenuItem value="pending_export_window">Night queue</MenuItem>
+                    <MenuItem value="pending_export_window">Hàng đợi đêm</MenuItem>
                     <MenuItem value="ALL">Tất cả trạng thái</MenuItem>
                     <MenuItem value="exporting">Đang xuất</MenuItem>
                     <MenuItem value="ready">Sẵn sàng</MenuItem>

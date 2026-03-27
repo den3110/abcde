@@ -176,7 +176,7 @@ const loadGooglePickerSdk = () => {
   googlePickerLoaderPromise = new Promise((resolve, reject) => {
     const finishLoad = () => {
       if (!window.gapi?.load) {
-        reject(new Error("Google Picker SDK chua san sang."));
+        reject(new Error("Google Picker SDK chưa sẵn sàng."));
         return;
       }
       window.gapi.load("picker", {
@@ -185,11 +185,11 @@ const loadGooglePickerSdk = () => {
             resolve(window.google.picker);
             return;
           }
-          reject(new Error("Google Picker SDK khong kha dung."));
+          reject(new Error("Google Picker SDK không khả dụng."));
         },
-        onerror: () => reject(new Error("Khong tai duoc Google Picker SDK.")),
+        onerror: () => reject(new Error("Không tải được Google Picker SDK.")),
         timeout: 10000,
-        ontimeout: () => reject(new Error("Google Picker SDK load timeout.")),
+        ontimeout: () => reject(new Error("Google Picker SDK tải quá thời gian.")),
       });
     };
 
@@ -202,7 +202,7 @@ const loadGooglePickerSdk = () => {
       existing.addEventListener("load", finishLoad, { once: true });
       existing.addEventListener(
         "error",
-        () => reject(new Error("Khong tai duoc Google Picker SDK.")),
+        () => reject(new Error("Không tải được Google Picker SDK.")),
         { once: true }
       );
       return;
@@ -215,7 +215,7 @@ const loadGooglePickerSdk = () => {
     script.defer = true;
     script.onload = finishLoad;
     script.onerror = () =>
-      reject(new Error("Khong tai duoc Google Picker SDK."));
+      reject(new Error("Không tải được Google Picker SDK."));
     document.body.appendChild(script);
   }).catch((error) => {
     googlePickerLoaderPromise = null;
@@ -233,7 +233,7 @@ const openRecordingDriveFolderPicker = ({
   new Promise((resolve, reject) => {
     const pickerApi = window.google?.picker;
     if (!pickerApi) {
-      reject(new Error("Google Picker SDK chua san sang."));
+      reject(new Error("Google Picker SDK chưa sẵn sàng."));
       return;
     }
 
@@ -243,7 +243,7 @@ const openRecordingDriveFolderPicker = ({
       .setMimeTypes("application/vnd.google-apps.folder");
 
     let builder = new pickerApi.PickerBuilder()
-      .setTitle("Chon folder Recording Drive")
+      .setTitle("Chọn thư mục Recording Drive")
       .setOAuthToken(accessToken)
       .setDeveloperKey(developerKey)
       .addView(view)
@@ -253,7 +253,7 @@ const openRecordingDriveFolderPicker = ({
           const picked = data.docs?.[0] || {};
           const folderId = String(picked.id || "").trim();
           if (!folderId) {
-            reject(new Error("Google Picker khong tra folder id."));
+            reject(new Error("Google Picker không trả về folder id."));
             return;
           }
           resolve({
@@ -263,7 +263,7 @@ const openRecordingDriveFolderPicker = ({
           return;
         }
         if (data.action === pickerApi.Action.CANCEL) {
-          const error = new Error("Da huy chon folder.");
+          const error = new Error("Đã hủy chọn thư mục.");
           error.cancelled = true;
           reject(error);
         }
@@ -518,7 +518,7 @@ export default function SystemSettingsPage() {
       await persistSettings(form, { showSuccessToast: false });
       const result = await getRecordingDriveOAuthInit().unwrap();
       if (!result?.authUrl) {
-        throw new Error("Khong tao duoc duong dan ket noi Google Drive");
+        throw new Error("Không tạo được đường dẫn kết nối Google Drive");
       }
       const popup = window.open(
         result.authUrl,
@@ -527,13 +527,13 @@ export default function SystemSettingsPage() {
       );
       recordingDrivePopupRef.current = popup || null;
       if (!popup) {
-        toast.error("Trinh duyet da chan popup. Hay cho phep popup roi thu lai.");
+        toast.error("Trình duyệt đã chặn popup. Hãy cho phép popup rồi thử lại.");
       }
     } catch (error) {
       toast.error(
         error?.data?.message ||
           error?.message ||
-          "Khong mo duoc ket noi Google Drive"
+          "Không mở được kết nối Google Drive"
       );
     }
   };
@@ -555,15 +555,15 @@ export default function SystemSettingsPage() {
       await persistSettings(nextForm, { showSuccessToast: false });
       toast.success(
         pickedFolder.name
-          ? `Da chon folder: ${pickedFolder.name}`
-          : "Da chon folder Google Drive."
+          ? `Đã chọn thư mục: ${pickedFolder.name}`
+          : "Đã chọn thư mục Google Drive."
       );
     } catch (error) {
       if (error?.cancelled) return;
       toast.error(
         error?.data?.message ||
           error?.message ||
-          "Khong mo duoc Google Picker."
+          "Không mở được Google Picker."
       );
     }
   };
@@ -659,7 +659,7 @@ export default function SystemSettingsPage() {
 
             <Alert severity={commentaryGateway?.overallStatus === "online" ? "success" : "info"}>
               {isCommentaryMonitorFetching
-                ? "Dang tai gateway/model list..."
+                ? "Đang tải gateway/danh sách model..."
                 : `Script: ${commentaryScriptGateway?.message || "-"} | TTS: ${
                     commentaryTtsGateway?.message || "-"
                   }`}
@@ -671,7 +671,7 @@ export default function SystemSettingsPage() {
                 value={form.liveRecording?.aiCommentary?.scriptBaseUrl ?? ""}
                 onChange={onChange("liveRecording.aiCommentary.scriptBaseUrl")}
                 placeholder="http://localhost:8080/v1"
-                helperText="Save URL nay roi model list se duoc load tu /models."
+                helperText="Lưu URL này rồi danh sách model sẽ được tải từ `/models`."
                 fullWidth
               />
               <TextField
@@ -697,7 +697,7 @@ export default function SystemSettingsPage() {
                 helperText={`Effective: ${commentaryScriptGateway?.effectiveModel || "-"}`}
                 fullWidth
               >
-                <MenuItem value="">Auto (model dau tien tu /models)</MenuItem>
+                <MenuItem value="">Tự động (model đầu tiên từ `/models`)</MenuItem>
                 {commentaryScriptModels.map((modelId) => (
                   <MenuItem key={modelId} value={modelId}>
                     {modelId}
@@ -709,7 +709,7 @@ export default function SystemSettingsPage() {
                 value={form.liveRecording?.aiCommentary?.ttsBaseUrl ?? ""}
                 onChange={onChange("liveRecording.aiCommentary.ttsBaseUrl")}
                 placeholder="http://localhost:5000/api/ai-tts/v1"
-                helperText="Neu dung adapter free local, tro vao /api/ai-tts/v1. He thong tu suy ra /audio/speech va /models."
+                helperText="Nếu dùng adapter free local, trỏ vào `/api/ai-tts/v1`. Hệ thống sẽ tự suy ra `/audio/speech` và `/models`."
                 fullWidth
               />
               <TextField
@@ -735,7 +735,7 @@ export default function SystemSettingsPage() {
                 helperText={`Effective: ${commentaryTtsGateway?.effectiveModel || "-"}`}
                 fullWidth
               >
-                <MenuItem value="">Auto (model dau tien tu /models)</MenuItem>
+                <MenuItem value="">Tự động (model đầu tiên từ `/models`)</MenuItem>
                 {commentaryTtsModels.map((modelId) => (
                   <MenuItem key={modelId} value={modelId}>
                     {modelId}
@@ -893,9 +893,9 @@ export default function SystemSettingsPage() {
             {form.recordingDrive?.mode === "oauthUser" ? (
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Box>
-                  <Typography>DÃ¹ng phiÃªn báº£n má»›i (drive.file + Google Picker)</Typography>
+                  <Typography>Dùng phiên bản mới (`drive.file` + Google Picker)</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Táº¯t Ä‘i Ä‘á»ƒ quay vá» flow cÅ©: full Drive OAuth + nháº­p Folder ID tay.
+                    Tắt đi để quay về flow cũ: full Drive OAuth và nhập Folder ID thủ công.
                   </Typography>
                 </Box>
                 <Switch
@@ -920,9 +920,9 @@ export default function SystemSettingsPage() {
                   form.recordingDrive?.mode === "oauthUser"
                     ? isModernRecordingDriveFlow
                       ? recordingDriveStatus?.folderName
-                        ? `Folder da chon: ${recordingDriveStatus.folderName}`
-                        : "OAuth mode dung drive.file: hay chon dung folder cu bang Google Picker."
-                      : "Flow cu: nhap dung Folder ID cu roi ket noi lai de lay refresh token scope cu."
+                        ? `Thư mục đã chọn: ${recordingDriveStatus.folderName}`
+                        : "OAuth mode dùng `drive.file`: hãy chọn đúng thư mục cũ bằng Google Picker."
+                      : "Flow cũ: nhập đúng Folder ID cũ rồi kết nối lại để lấy refresh token với scope cũ."
                     : ""
                 }
                 disabled={form.recordingDrive?.mode === "oauthUser" && isModernRecordingDriveFlow}
@@ -986,8 +986,8 @@ export default function SystemSettingsPage() {
                   }
                 >
                   {isRecordingDrivePickingFolder
-                    ? "Dang mo Google Picker..."
-                    : "Chon folder Google Drive"}
+                    ? "Đang mở Google Picker..."
+                    : "Chọn thư mục Google Drive"}
                 </Button>
               ) : null}
               <Button
@@ -1080,7 +1080,7 @@ export default function SystemSettingsPage() {
               <Box>
                 <Typography fontWeight={700}>Bật AI lồng tiếng BLV</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Khi tắt, backend sẽ không auto queue và màn monitor cũng khóa thao tác render tay.
+                  Khi tắt, backend sẽ không tự đưa job vào hàng đợi và màn monitor cũng khóa thao tác render tay.
                 </Typography>
               </Box>
               <Switch
@@ -1093,7 +1093,7 @@ export default function SystemSettingsPage() {
               <Box>
                 <Typography fontWeight={700}>Tự động chạy sau khi video lên Drive</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Chỉ queue khi recording đã ready, trận đã kết thúc và global BLV AI đang bật.
+                  Chỉ đưa vào hàng đợi khi recording đã sẵn sàng, trận đã kết thúc và global BLV AI đang bật.
                 </Typography>
               </Box>
               <Switch
