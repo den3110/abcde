@@ -69,6 +69,7 @@ import AdminAvatarOptimizationPage from "layouts/AdminAvatarOptimizationPage";
 import CacheManagerPage from "layouts/CacheManagerPage";
 import AdminLivePlaybackPage from "layouts/AdminLivePlaybackPage";
 import PeakRuntimePage from "layouts/PeakRuntimePage";
+import CourtFreeManagerPage from "layouts/CourtFreeManagerPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -526,6 +527,18 @@ const routes = [
     icon: <Icon fontSize="small">video_settings</Icon>,
     route: "/admin/live-playback",
     component: <AdminLivePlaybackPage />,
+    private: true,
+    roles: ["superadmin", "superuser"],
+    requireAdminAndSuperUser: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Quản lý sân rảnh",
+    key: "admin-court-free-manager",
+    icon: <Icon fontSize="small">sports_tennis</Icon>,
+    route: "/admin/court-free-manager",
+    component: <CourtFreeManagerPage />,
     private: true,
     roles: ["superadmin", "superuser"],
     requireAdminAndSuperUser: true,
