@@ -158,12 +158,41 @@ const getMatchCode = (mt, brType) => {
   return joinDash(v, t);
 };
 
+const isThirdPlaceMatch = (mt) => {
+  if (!mt) return false;
+  if (mt.isThirdPlace === true || mt?.meta?.thirdPlace === true) return true;
+  const stageLabel = String(mt?.meta?.stageLabel || mt?.roundName || "").toLowerCase();
+  return stageLabel.includes("hạng 3") || stageLabel.includes("3/4");
+};
+
+const getMatchHeading = (mt, brType) => {
+  const code = getMatchCode(mt, brType);
+  if (!isThirdPlaceMatch(mt)) return code;
+  const stageLabel = String(mt?.meta?.stageLabel || "Tranh hạng 3/4").trim();
+  return code ? `${stageLabel} (${code})` : stageLabel;
+};
+
 const getPrevCode = (prev) => {
   if (!prev) return "";
   if (prev.code) return String(prev.code).replace(/\s+/g, "-");
   const v = prev.vLabel || `V${Number(prev.round || 1)}`;
   const t = prev.tLabel || `T${Number(prev.order ?? 0) + 1}`;
   return joinDash(v, t);
+};
+
+const seedRefCode = (seed) => {
+  if (!seed) return "?";
+  const rawLabel = String(seed?.label || "")
+    .trim()
+    .replace(/^[WL]-/i, "")
+    .replace(/\s+/g, "-");
+  if (rawLabel) return rawLabel;
+  const round = Number(seed?.ref?.round);
+  const order = Number(seed?.ref?.order);
+  if (Number.isFinite(round) && Number.isFinite(order)) {
+    return `V${round}-T${order + 1}`;
+  }
+  return "?";
 };
 
 // ------ Responsive styles cho Accordion/list ------
@@ -657,20 +686,114 @@ export default function AdminBracketsPage() {
     return map;
   }, [brackets, matches]);
 
+  const matchLookup = useMemo(() => {
+    const byId = new Map();
+    const byBracketRoundOrder = new Map();
+    const byStageRoundOrder = new Map();
+
+    (matches || []).forEach((mt) => {
+      const matchId = idOf(mt?._id);
+      const bracketId = idOf(mt?.bracket?._id || mt?.bracket);
+      const stageNum = Number(mt?.bracket?.stage);
+      const roundNum = Number(mt?.round);
+      const orderNum = Number(mt?.order);
+
+      if (matchId) byId.set(matchId, mt);
+
+      if (bracketId && Number.isFinite(roundNum) && Number.isFinite(orderNum)) {
+        byBracketRoundOrder.set(`${bracketId}:${roundNum}:${orderNum}`, mt);
+      }
+
+      if (Number.isFinite(stageNum) && Number.isFinite(roundNum) && Number.isFinite(orderNum)) {
+        byStageRoundOrder.set(`${stageNum}:${roundNum}:${orderNum}`, mt);
+      }
+    });
+
+    return { byId, byBracketRoundOrder, byStageRoundOrder };
+  }, [matches]);
+
+  const findSourceMatchFromSeed = (mt, seed) => {
+    if (!seed) return null;
+
+    const matchId = idOf(seed?.ref?.matchId);
+    if (matchId && matchLookup.byId.has(matchId)) {
+      return matchLookup.byId.get(matchId);
+    }
+
+    const roundNum = Number(seed?.ref?.round);
+    const orderNum = Number(seed?.ref?.order);
+    if (!Number.isFinite(roundNum) || !Number.isFinite(orderNum)) return null;
+
+    const stageNum = Number(seed?.ref?.stageIndex ?? seed?.ref?.stage);
+    if (Number.isFinite(stageNum)) {
+      const stageHit = matchLookup.byStageRoundOrder.get(`${stageNum}:${roundNum}:${orderNum}`);
+      if (stageHit) return stageHit;
+    }
+
+    const bracketId = idOf(mt?.bracket?._id || mt?.bracket);
+    if (bracketId) {
+      return matchLookup.byBracketRoundOrder.get(`${bracketId}:${roundNum}:${orderNum}`) || null;
+    }
+
+    return null;
+  };
+
+  const seedSideLabel = (mt, side) => {
+    const seed = side === "A" ? mt?.seedA : mt?.seedB;
+    if (!seed?.type) return "—";
+
+    if (seed.type === "bye") return "BYE";
+
+    const sourceMatch = findSourceMatchFromSeed(mt, seed);
+    const sourceCode = getPrevCode(sourceMatch) || seedRefCode(seed);
+
+    if (
+      (seed.type === "stageMatchWinner" || seed.type === "matchWinner") &&
+      sourceMatch?.status === "finished" &&
+      sourceMatch?.winner
+    ) {
+      const reg = sourceMatch.winner === "A" ? sourceMatch.pairA : sourceMatch.pairB;
+      if (reg) return `${regName(reg, evType, displayMode)} (thắng ${sourceCode})`;
+    }
+
+    if (
+      (seed.type === "stageMatchLoser" || seed.type === "matchLoser") &&
+      sourceMatch?.status === "finished" &&
+      sourceMatch?.winner
+    ) {
+      const reg = sourceMatch.winner === "A" ? sourceMatch.pairB : sourceMatch.pairA;
+      if (reg) return `${regName(reg, evType, displayMode)} (thua ${sourceCode})`;
+    }
+
+    if (seed.type === "stageMatchWinner" || seed.type === "matchWinner") {
+      return `Thắng trận ${sourceCode} (TBD)`;
+    }
+
+    if (seed.type === "stageMatchLoser" || seed.type === "matchLoser") {
+      return `Thua trận ${sourceCode} (TBD)`;
+    }
+
+    return seed.label || "—";
+  };
+
   const getSideLabel = (mt, side) => {
     const pair = side === "A" ? mt?.pairA : mt?.pairB;
     if (pair) return regName(pair, evType, displayMode);
+
     const prevRef = side === "A" ? mt?.previousA : mt?.previousB;
-    if (!prevRef) return "—";
-    // Có thể là object (được populate) hoặc chỉ là id → tìm trong matches
-    const prevObj = prevRef && typeof prevRef === "object" ? prevRef : null;
-    const prevFromList = prevObj || matches?.find((m) => idOf(m?._id) === idOf(prevRef));
-    const code = getPrevCode(prevFromList) || "?";
-    if (prevFromList?.status === "finished" && prevFromList?.winner) {
-      const reg = prevFromList.winner === "A" ? prevFromList.pairA : prevFromList.pairB;
-      return `${regName(reg, evType, displayMode)} (thắng ${code})`;
+    if (prevRef) {
+      // Có thể là object (được populate) hoặc chỉ là id → tìm trong matches
+      const prevObj = prevRef && typeof prevRef === "object" ? prevRef : null;
+      const prevFromList = matchLookup.byId.get(idOf(prevRef)) || prevObj;
+      const code = getPrevCode(prevFromList) || "?";
+      if (prevFromList?.status === "finished" && prevFromList?.winner) {
+        const reg = prevFromList.winner === "A" ? prevFromList.pairA : prevFromList.pairB;
+        return `${regName(reg, evType, displayMode)} (thắng ${code})`;
+      }
+      return `Thắng trận ${code} (TBD)`;
     }
-    return `Thắng trận ${code} (TBD)`;
+
+    return seedSideLabel(mt, side);
   };
 
   /* =====================
@@ -1953,7 +2076,7 @@ export default function AdminBracketsPage() {
                                               </Box>
 
                                               <Typography>
-                                                <strong>{getMatchCode(mt, "group")}</strong>:
+                                                <strong>{getMatchHeading(mt, "group")}</strong>:
                                                 <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
                                                 <strong>{getSideLabel(mt, "B")}</strong>
                                               </Typography>
@@ -2105,7 +2228,7 @@ export default function AdminBracketsPage() {
                                     </Box>
 
                                     <Typography>
-                                      <strong>{getMatchCode(mt, br.type)}</strong>:
+                                      <strong>{getMatchHeading(mt, br.type)}</strong>:
                                       <strong>{getSideLabel(mt, "A")}</strong> vs{" "}
                                       <strong>{getSideLabel(mt, "B")}</strong>
                                     </Typography>

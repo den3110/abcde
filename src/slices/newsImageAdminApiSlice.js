@@ -5,13 +5,14 @@ export const newsImageAdminApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     // GET /api/admin/seo-news/image-stats
     getNewsImageStats: builder.query({
-      query: ({ page = 1, limit = 30, imageFilter, origin, keyword } = {}) => {
+      query: ({ page = 1, limit = 30, imageFilter, origin, keyword, refreshHealth } = {}) => {
         const params = new URLSearchParams();
         params.set("page", page);
         params.set("limit", limit);
         if (imageFilter) params.set("imageFilter", imageFilter);
         if (origin) params.set("origin", origin);
         if (keyword) params.set("keyword", keyword);
+        if (refreshHealth) params.set("refreshHealth", "true");
         return { url: `/admin/seo-news/image-stats?${params.toString()}` };
       },
       providesTags: ["NewsImageStats"],
@@ -44,6 +45,14 @@ export const newsImageAdminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["NewsImageStats"],
     }),
+    updateSeoNewsImageSettings: builder.mutation({
+      query: (body) => ({
+        url: "/admin/seo-news/settings",
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["NewsImageStats"],
+    }),
   }),
 });
 
@@ -52,4 +61,5 @@ export const {
   useBackfillNewsImagesMutation,
   useCleanupGatewayImagesMutation,
   useQueueNewsImageRegenerationJobMutation,
+  useUpdateSeoNewsImageSettingsMutation,
 } = newsImageAdminApiSlice;

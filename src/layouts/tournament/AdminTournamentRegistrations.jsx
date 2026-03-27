@@ -137,6 +137,7 @@ export default function AdminTournamentRegistrations() {
   const eventType = normType(tournament?.eventType);
   const isSingles = eventType === "single";
   const displayMode = getTournamentNameDisplayMode(tournament);
+  const isFreeTournament = tournament?.isFreeRegistration === true;
 
   const [snack, setSnack] = useState({ open: false, type: "success", msg: "" });
   const showSnack = (type, msg) => setSnack({ open: true, type, msg });
@@ -246,7 +247,12 @@ export default function AdminTournamentRegistrations() {
     setEditingReg(null);
     setPlayer1Keyword("");
     setPlayer2Keyword("");
-    setForm({ player1: null, player2: null, message: "", paymentStatus: "Unpaid" });
+    setForm({
+      player1: null,
+      player2: null,
+      message: "",
+      paymentStatus: isFreeTournament ? "Paid" : "Unpaid",
+    });
   };
 
   const openCreateEditor = () => {
@@ -254,7 +260,12 @@ export default function AdminTournamentRegistrations() {
     setEditingReg(null);
     setPlayer1Keyword("");
     setPlayer2Keyword("");
-    setForm({ player1: null, player2: null, message: "", paymentStatus: "Unpaid" });
+    setForm({
+      player1: null,
+      player2: null,
+      message: "",
+      paymentStatus: isFreeTournament ? "Paid" : "Unpaid",
+    });
     setEditorOpen(true);
   };
 
@@ -281,7 +292,7 @@ export default function AdminTournamentRegistrations() {
           })
         : null,
       message: reg?.message || "",
-      paymentStatus: reg?.payment?.status || "Unpaid",
+      paymentStatus: isFreeTournament ? "Paid" : reg?.payment?.status || "Unpaid",
     });
     setEditorOpen(true);
   };
@@ -325,7 +336,7 @@ export default function AdminTournamentRegistrations() {
       player1Id: form.player1.id,
       player2Id: isSingles ? null : form.player2?.id || null,
       message: form.message || "",
-      paymentStatus: form.paymentStatus || "Unpaid",
+      paymentStatus: isFreeTournament ? "Paid" : form.paymentStatus || "Unpaid",
     };
 
     try {
@@ -344,6 +355,7 @@ export default function AdminTournamentRegistrations() {
   };
 
   const handleTogglePayment = async (reg) => {
+    if (isFreeTournament) return;
     const nextStatus = reg.payment?.status === "Paid" ? "Unpaid" : "Paid";
     try {
       await updatePayment({ regId: reg._id, status: nextStatus }).unwrap();
@@ -370,6 +382,7 @@ export default function AdminTournamentRegistrations() {
   };
 
   const bulkUpdateStatus = async (status) => {
+    if (isFreeTournament) return;
     const ids = Array.from(selectedIds);
     if (!ids.length) return;
     try {
@@ -450,11 +463,17 @@ export default function AdminTournamentRegistrations() {
     if (!isSingles) base.push({ Header: "Vận động viên 2", accessor: "player2" });
     base.push(
       { Header: "Ngày đăng ký", accessor: "createdAt" },
-      { Header: "Thanh toán", accessor: "payment", align: "center" },
       { Header: "Thao tác", accessor: "actions", align: "center" }
     );
+    if (!isFreeTournament) {
+      base.splice(base.length - 1, 0, {
+        Header: "Thanh toán",
+        accessor: "payment",
+        align: "center",
+      });
+    }
     return base;
-  }, [isSingles, someOnPage, allOnPage, pageIds]);
+  }, [isSingles, someOnPage, allOnPage, isFreeTournament]);
 
   const rows = useMemo(
     () =>
@@ -479,20 +498,24 @@ export default function AdminTournamentRegistrations() {
             </MDTypography>
           </Stack>
         ),
-        payment: (
-          <Stack spacing={0.5} alignItems="center">
-            <Chip
-              size="small"
-              color={reg.payment?.status === "Paid" ? "success" : "default"}
-              label={reg.payment?.status === "Paid" ? "Đã thanh toán" : "Chưa thanh toán"}
-            />
-            {reg.payment?.paidAt ? (
-              <MDTypography variant="caption" color="text">
-                {new Date(reg.payment.paidAt).toLocaleString()}
-              </MDTypography>
-            ) : null}
-          </Stack>
-        ),
+        ...(isFreeTournament
+          ? {}
+          : {
+              payment: (
+                <Stack spacing={0.5} alignItems="center">
+                  <Chip
+                    size="small"
+                    color={reg.payment?.status === "Paid" ? "success" : "default"}
+                    label={reg.payment?.status === "Paid" ? "Đã thanh toán" : "Chưa thanh toán"}
+                  />
+                  {reg.payment?.paidAt ? (
+                    <MDTypography variant="caption" color="text">
+                      {new Date(reg.payment.paidAt).toLocaleString()}
+                    </MDTypography>
+                  ) : null}
+                </Stack>
+              ),
+            }),
         actions: (
           <Stack direction="row" spacing={0.5} justifyContent="center">
             <Tooltip title="Sửa đăng ký">
@@ -505,18 +528,22 @@ export default function AdminTournamentRegistrations() {
                 <HistoryIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip
-              title={
-                reg.payment?.status === "Paid" ? "Đánh dấu chưa thanh toán" : "Xác nhận thanh toán"
-              }
-            >
-              <IconButton
-                color={reg.payment?.status === "Paid" ? "error" : "success"}
-                onClick={() => handleTogglePayment(reg)}
+            {!isFreeTournament ? (
+              <Tooltip
+                title={
+                  reg.payment?.status === "Paid"
+                    ? "Đánh dấu chưa thanh toán"
+                    : "Xác nhận thanh toán"
+                }
               >
-                {reg.payment?.status === "Paid" ? <MoneyOff /> : <Paid />}
-              </IconButton>
-            </Tooltip>
+                <IconButton
+                  color={reg.payment?.status === "Paid" ? "error" : "success"}
+                  onClick={() => handleTogglePayment(reg)}
+                >
+                  {reg.payment?.status === "Paid" ? <MoneyOff /> : <Paid />}
+                </IconButton>
+              </Tooltip>
+            ) : null}
             <Tooltip title="Xóa đăng ký">
               <IconButton color="error" onClick={() => setConfirmDelete(reg)}>
                 <DeleteIcon />
@@ -525,7 +552,7 @@ export default function AdminTournamentRegistrations() {
           </Stack>
         ),
       })),
-    [paged, page, isSingles, selectedIds]
+    [paged, page, isSingles, selectedIds, isFreeTournament]
   );
 
   const renderManagerTable = () => (
@@ -610,8 +637,16 @@ export default function AdminTournamentRegistrations() {
             </Stack>
             <Chip
               size="small"
-              color={reg.payment?.status === "Paid" ? "success" : "default"}
-              label={reg.payment?.status === "Paid" ? "Đã thanh toán" : "Chưa thanh toán"}
+              color={
+                isFreeTournament ? "info" : reg.payment?.status === "Paid" ? "success" : "default"
+              }
+              label={
+                isFreeTournament
+                  ? "Miễn phí"
+                  : reg.payment?.status === "Paid"
+                  ? "Đã thanh toán"
+                  : "Chưa thanh toán"
+              }
             />
           </Stack>
           <Stack spacing={1.5}>
@@ -625,7 +660,7 @@ export default function AdminTournamentRegistrations() {
             <MDTypography variant="caption" color="text">
               Ngày đăng ký: {new Date(reg.createdAt).toLocaleString()}
             </MDTypography>
-            {reg.payment?.paidAt ? (
+            {!isFreeTournament && reg.payment?.paidAt ? (
               <MDTypography variant="caption" color="text">
                 Thanh toán lúc: {new Date(reg.payment.paidAt).toLocaleString()}
               </MDTypography>
@@ -638,14 +673,16 @@ export default function AdminTournamentRegistrations() {
             <Button size="small" variant="outlined" onClick={() => openHistory(reg)}>
               Lịch sử
             </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              color={reg.payment?.status === "Paid" ? "warning" : "success"}
-              onClick={() => handleTogglePayment(reg)}
-            >
-              {reg.payment?.status === "Paid" ? "Đặt chưa thanh toán" : "Xác nhận thanh toán"}
-            </Button>
+            {!isFreeTournament ? (
+              <Button
+                size="small"
+                variant="outlined"
+                color={reg.payment?.status === "Paid" ? "warning" : "success"}
+                onClick={() => handleTogglePayment(reg)}
+              >
+                {reg.payment?.status === "Paid" ? "Đặt chưa thanh toán" : "Xác nhận thanh toán"}
+              </Button>
+            ) : null}
             <Button
               size="small"
               color="error"
@@ -689,24 +726,28 @@ export default function AdminTournamentRegistrations() {
             Đã chọn <b>{selectedIds.size}</b> đăng ký
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap">
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<Paid />}
-              disabled={bulkWorking}
-              onClick={() => bulkUpdateStatus("Paid")}
-            >
-              Tất cả thanh toán
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<MoneyOff />}
-              disabled={bulkWorking}
-              onClick={() => bulkUpdateStatus("Unpaid")}
-            >
-              Tất cả chưa thanh toán
-            </Button>
+            {!isFreeTournament ? (
+              <>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<Paid />}
+                  disabled={bulkWorking}
+                  onClick={() => bulkUpdateStatus("Paid")}
+                >
+                  Tất cả thanh toán
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<MoneyOff />}
+                  disabled={bulkWorking}
+                  onClick={() => bulkUpdateStatus("Unpaid")}
+                >
+                  Tất cả chưa thanh toán
+                </Button>
+              </>
+            ) : null}
             <Button
               size="small"
               color="error"
@@ -883,16 +924,22 @@ export default function AdminTournamentRegistrations() {
               multiline
               minRows={3}
             />
-            <TextField
-              select
-              label="Thanh toán"
-              SelectProps={{ native: true }}
-              value={form.paymentStatus}
-              onChange={(e) => setForm((prev) => ({ ...prev, paymentStatus: e.target.value }))}
-            >
-              <option value="Unpaid">Chưa thanh toán</option>
-              <option value="Paid">Đã thanh toán</option>
-            </TextField>
+            {isFreeTournament ? (
+              <Alert severity="info">
+                Giải này miễn phí, đăng ký mới sẽ tự ở trạng thái đã thanh toán.
+              </Alert>
+            ) : (
+              <TextField
+                select
+                label="Thanh toán"
+                SelectProps={{ native: true }}
+                value={form.paymentStatus}
+                onChange={(e) => setForm((prev) => ({ ...prev, paymentStatus: e.target.value }))}
+              >
+                <option value="Unpaid">Chưa thanh toán</option>
+                <option value="Paid">Đã thanh toán</option>
+              </TextField>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>

@@ -72,6 +72,9 @@ export const apiSlice = createApi({
     "DashboardMetrics",
     "DashboardSeries",
     "DashboardPeakRuntime",
+    "CourtCluster",
+    "CourtStation",
+    "CourtClusterRuntime",
   ],
   endpoints: () => ({}),
 });

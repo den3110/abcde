@@ -5,6 +5,9 @@ import {
   Stack,
   Paper,
   Typography,
+  Stepper,
+  Step,
+  StepLabel,
   Tabs,
   Tab,
   TextField,
@@ -30,7 +33,6 @@ import { toast } from "react-toastify";
 import { Add as AddIcon, Remove as RemoveIcon } from "@mui/icons-material";
 import {
   useGetTournamentQuery,
-  usePlanTournamentMutation,
   useCommitTournamentPlanMutation,
   useGetTournamentBracketsQuery,
   useSuggestTournamentPlanMutation,
@@ -41,6 +43,16 @@ import {
 import PropTypes from "prop-types";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+import BlueprintOverviewStep from "./BlueprintOverviewStep";
+import BlueprintDesignerStep from "./BlueprintDesignerStep";
+import BlueprintPublishStep from "./BlueprintPublishStep";
+import StageStatusCard from "./StageStatusCard";
+import useBlueprintDraft from "./useBlueprintDraft";
+import useBlueprintImpact from "./useBlueprintImpact";
+import {
+  getTournamentNameDisplayMode,
+  getTournamentTeamName,
+} from "utils/tournamentName";
 
 /* ===== Helpers ===== */
 const ceilPow2 = (n) => (n <= 1 ? 1 : 1 << Math.ceil(Math.log2(n)));
@@ -69,6 +81,15 @@ const roundTitleByPairs = (pairs) => {
   if (pairs === 4) return "Tứ kết";
   if (pairs === 8) return "Vòng 1/8";
   return `Vòng (${pairs} trận)`;
+};
+
+const formatGroupRankLabel = ({ stage, groupCode, rank, wildcardOrder }) => {
+  const st = stage ?? "?";
+  const group = groupCode ? String(groupCode) : "";
+  const place = rank ?? "?";
+  const wildcard = Math.max(1, Number(wildcardOrder || 1));
+  if (group) return `V${st}-B${group}-#${place}`;
+  return `V${st}-Top ${wildcard} hạng ${place}`;
 };
 
 /* ===== PO rematch helpers for ladder (ước lượng theo losers-cascade) ===== */
@@ -119,7 +140,8 @@ const seedLabel = (seed) => {
       const st = seed.ref?.stage ?? "?";
       const g = seed.ref?.groupCode;
       const r = seed.ref?.rank ?? "?";
-      return g ? `V${st}-B${g}-#${r}` : `V${st}-#${r}`;
+      const wildcardOrder = Number(seed.ref?.wildcardOrder || 0);
+      return formatGroupRankLabel({ stage: st, groupCode: g, rank: r, wildcardOrder });
     }
     case "stageMatchWinner": {
       const r = seed.ref?.round ?? "?";
@@ -693,6 +715,7 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
   const [grStageIdx, setGrStageIdx] = useState(groupStages[0]?.idx ?? 0);
   const [grGroup, setGrGroup] = useState("ANY");
   const [grRank, setGrRank] = useState(1);
+  const [grWildcardOrder, setGrWildcardOrder] = useState(1);
 
   // stage match state
   const [mStageIdx, setMStageIdx] = useState(poKoStages[0]?.idx ?? 0);
@@ -714,6 +737,12 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
     sSel?.type === "po"
       ? Math.max(1, Number(sSel?.config?.maxRounds || 1))
       : Math.max(1, Math.round(Math.log2(nextPow2(sSel?.config?.drawSize || 2))));
+  const groupOptions = stages[grStageIdx]?.config?.groups || [];
+  const wildcardMax = Math.max(1, groupOptions.length || 1);
+
+  useEffect(() => {
+    setGrWildcardOrder((prev) => Math.min(Math.max(1, Number(prev || 1)), wildcardMax));
+  }, [wildcardMax]);
 
   const canPick = () => {
     if (mode === "groupRank" && !groupStages.length) return false;
@@ -730,10 +759,21 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
     if (mode === "groupRank") {
       const st = (grStageIdx ?? 0) + 1;
       const groupName = grGroup === "ANY" ? "" : String(grGroup);
-      const label = groupName ? `V${st}-B${groupName}-#${grRank}` : `V${st}-#${grRank}`;
+      const wildcardOrder = groupName ? null : Math.max(1, Number(grWildcardOrder || 1));
+      const label = formatGroupRankLabel({
+        stage: st,
+        groupCode: groupName,
+        rank: grRank,
+        wildcardOrder,
+      });
       return onPick({
         type: "groupRank",
-        ref: { stage: st, groupCode: groupName, rank: grRank },
+        ref: {
+          stage: st,
+          groupCode: groupName,
+          rank: grRank,
+          ...(wildcardOrder ? { wildcardOrder } : {}),
+        },
         label,
       });
     }
@@ -791,7 +831,7 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
                 </Select>
                 <Select size="small" value={grGroup} onChange={(e) => setGrGroup(e.target.value)}>
                   <MenuItem value="ANY">(Không chỉ định bảng)</MenuItem>
-                  {(stages[grStageIdx]?.config?.groups || []).map((g) => (
+                  {groupOptions.map((g) => (
                     <MenuItem key={g} value={g}>{`B${g}`}</MenuItem>
                   ))}
                 </Select>
@@ -803,7 +843,29 @@ function SeedPickerDialog({ open, onClose, onPick, stages, currentStageIndex }) 
                   onChange={(e) => setGrRank(parseInt(e.target.value || "1", 10))}
                   sx={{ width: 120 }}
                 />
+                {grGroup === "ANY" ? (
+                  <TextField
+                    select
+                    size="small"
+                    label="Suất chọn"
+                    value={grWildcardOrder}
+                    onChange={(e) => setGrWildcardOrder(Number(e.target.value))}
+                    sx={{ minWidth: 220 }}
+                    helperText={`Top ${grWildcardOrder} đội hạng ${grRank}`}
+                  >
+                    {Array.from({ length: wildcardMax }, (_, index) => index + 1).map((order) => (
+                      <MenuItem key={order} value={order}>
+                        {`Top ${order} đội hạng ${grRank}`}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                ) : null}
               </Stack>
+              <Typography variant="caption" color="text.secondary">
+                {grGroup === "ANY"
+                  ? `Sẽ lấy Top ${grWildcardOrder} đội hạng ${grRank} toàn vòng bảng đã chọn. Thứ tự hiện tại đi theo BXH wildcard: số trận thắng, rồi hiệu số, rồi điểm ghi được.`
+                  : `Sẽ lấy đội hạng ${grRank} của bảng B${grGroup}.`}
+              </Typography>
             </Stack>
           )}
 
@@ -913,7 +975,8 @@ export default function TournamentBlueprintPage() {
   } = useGetTournamentPlanQuery(tournamentId);
 
   // Cập nhật plan (PUT /plan)
-  const [updateTournamentPlan] = useUpdateTournamentPlanMutation();
+  const [updateTournamentPlan, { isLoading: savingDraft }] = useUpdateTournamentPlanMutation();
+  const [activeStep, setActiveStep] = useState(0);
   const [tab, setTab] = useState("manual");
 
   // ===== Auto (OpenAI) =====
@@ -930,7 +993,6 @@ export default function TournamentBlueprintPage() {
   const [groupTopN, setGroupTopN] = useState(1);
   const [manualRemainder, setManualRemainder] = useState(false);
   const [groupExtras, setGroupExtras] = useState([]); // mảng extra cho từng bảng (0..groupCount-1)
-  const [aiResult, setAiResult] = useState(null);
 
   // Lấy danh sách đội đăng ký của giải & đếm đội đã thanh toán
   const {
@@ -958,7 +1020,6 @@ export default function TournamentBlueprintPage() {
     return list.filter(isPaid).length;
   }, [registrations]);
 
-  const [planTournament] = usePlanTournamentMutation();
   const [commitTournamentPlan, { isLoading: committing }] = useCommitTournamentPlanMutation();
   const [aiPlan, setAiPlan] = useState(null);
 
@@ -1183,6 +1244,40 @@ export default function TournamentBlueprintPage() {
     if (!includeGroup || !groupSizes.length) return Math.max(0, Number(groupSize) || 0);
     return Math.max(0, Math.min(...groupSizes.map((v) => Number(v) || 0)));
   }, [includeGroup, groupSizes, groupSize]);
+
+  const { planPayload, stageRuntimeMap, stageCards } = useBlueprintDraft({
+    includeGroup,
+    includePO,
+    groupCount,
+    groupSize,
+    groupTotal,
+    groupTopN,
+    manualRemainder,
+    groupSizes,
+    minGroupSize,
+    groupRules,
+    poPlan,
+    poRules,
+    poRoundRules,
+    koPlan,
+    koRules,
+    koSemiOverride,
+    koSemiRules,
+    koFinalOverride,
+    koFinalRules,
+    koThirdPlace,
+    normalizeRulesForState,
+    normalizeSeedsPO,
+    normalizeSeedsKO,
+    defaultRules: DEFAULT_RULES,
+    defaultPoRules: DEFAULT_PO_RULES,
+    existingBrackets,
+  });
+  const { impact, impactError, loadingImpact, refreshImpact, setImpact } = useBlueprintImpact({
+    tournamentId,
+    planPayload,
+    enabled: activeStep === 2,
+  });
 
   // computed stages (UI preview only)
   const stages = useMemo(() => {
@@ -1421,6 +1516,18 @@ export default function TournamentBlueprintPage() {
   };
 
   const commitAIPlan = async () => {
+    if (!aiPlan?.ko && !aiPlan?.groups && !aiPlan?.po) {
+      toast.info("Chưa có đề xuất để xem tác động.");
+      return;
+    }
+    setTab("manual");
+    setActiveStep(2);
+    try {
+      await refreshImpact(planPayload);
+    } catch {
+      // error surfaced by publish step
+    }
+    return;
     try {
       if (!aiPlan?.ko && !aiPlan?.groups && !aiPlan?.po) {
         toast.info("Chưa có đề xuất để tạo.");
@@ -2347,7 +2454,131 @@ export default function TournamentBlueprintPage() {
     }
   }, [loadingBrackets, existingBrackets]);
 
+  const stageCardMap = useMemo(
+    () => Object.fromEntries(stageCards.map((stage) => [stage.key, stage])),
+    [stageCards]
+  );
+  const tournamentNameDisplayMode = useMemo(
+    () => getTournamentNameDisplayMode(tournament),
+    [tournament]
+  );
+  const publishedGroupPreview = useMemo(() => {
+    const publishedGroupStage = (existingBrackets || []).find((stage) => stage.type === "group");
+    const groups = Array.isArray(publishedGroupStage?.groups) ? publishedGroupStage.groups : [];
+
+    return groups.map((group, index) => {
+      const registrations = Array.isArray(group?.regIds) ? group.regIds : [];
+      const names = registrations
+        .map((registration) =>
+          getTournamentTeamName(
+            registration,
+            tournament?.eventType,
+            tournamentNameDisplayMode,
+            { fallback: "—" }
+          )
+        )
+        .filter(Boolean);
+      const expectedSize = Number(group?.expectedSize || 0);
+      return {
+        key: String(group?._id || group?.name || index + 1),
+        code: String(group?.name || index + 1),
+        size: Math.max(expectedSize, names.length, registrations.length, 0),
+        names,
+      };
+    });
+  }, [existingBrackets, tournament?.eventType, tournamentNameDisplayMode]);
+  const groupRuntime = stageRuntimeMap.groups;
+  const poRuntime = stageRuntimeMap.po;
+  const koRuntime = stageRuntimeMap.ko;
+  const hasLockedStages = stageCards.some((stage) => stage.runtime?.locked);
+  const openBracketAdmin = () => navigate(`/admin/tournaments/${tournamentId}/brackets`);
+  const wizardSteps = ["Tổng quan", "Thiết kế", "Kiểm tra tác động"];
+
+  const saveDraft = async (nextPayload = planPayload, options = {}) => {
+    const { silent = false } = options;
+    try {
+      await updateTournamentPlan({
+        tournamentId,
+        body: nextPayload,
+      }).unwrap();
+      if (!silent) {
+        toast.success("Đã lưu bản nháp blueprint.");
+      }
+      return true;
+    } catch (e) {
+      toast.error(e?.data?.message || e?.error || "Lưu bản nháp thất bại.");
+      throw e;
+    }
+  };
+
+  const goToImpactStep = async () => {
+    setActiveStep(2);
+    try {
+      await refreshImpact(planPayload);
+    } catch {
+      // error surfaced by publish step
+    }
+  };
+
+  const replaceAllPlan = async () => {
+    try {
+      await saveDraft(planPayload, { silent: true });
+      const result = await commitTournamentPlan({
+        tournamentId,
+        body: {
+          ...planPayload,
+          mode: "replace_all",
+        },
+      }).unwrap();
+
+      setImpact(result);
+      if (result?.syncWarning) {
+        toast.info(result.syncWarning);
+      }
+      toast.success("Đã thay toàn bộ blueprint.");
+      navigate(`/admin/tournaments/${tournamentId}/brackets`);
+    } catch (e) {
+      if (e?.data?.code === "BLUEPRINT_STAGE_LOCKED") {
+        toast.warning(e?.data?.message || "Không thể thay toàn bộ vì đang có stage đã khóa.");
+        setActiveStep(2);
+        refreshImpact(planPayload).catch(() => {});
+        return;
+      }
+      toast.error(e?.data?.message || e?.error || "Thay blueprint thất bại.");
+    }
+  };
+
   const commitPlan = async () => {
+    try {
+      await updateTournamentPlan({
+        tournamentId,
+        body: planPayload,
+      }).unwrap();
+
+      const result = await commitTournamentPlan({
+        tournamentId,
+        body: {
+          ...planPayload,
+          mode: "safe_apply",
+        },
+      }).unwrap();
+
+      setImpact(result);
+      if (result?.syncWarning) {
+        toast.info(result.syncWarning);
+      }
+      toast.success("Đã áp dụng blueprint cho các stage chưa mở.");
+      navigate(`/admin/tournaments/${tournamentId}/brackets`);
+    } catch (e) {
+      if (e?.data?.code === "BLUEPRINT_STAGE_LOCKED") {
+        toast.warning(e?.data?.message || "Blueprint đang chạm vào stage đã khóa.");
+        setActiveStep(2);
+        refreshImpact(planPayload).catch(() => {});
+        return;
+      }
+      toast.error(e?.data?.message || e?.error || "Áp dụng blueprint thất bại.");
+    }
+    return;
     try {
       const hasGroup = includeGroup && groupCount > 0;
       const total = Math.max(0, Number(groupTotal) || 0);
@@ -2414,15 +2645,6 @@ export default function TournamentBlueprintPage() {
     }
   };
 
-  function poMatchesForRoundLocal(n, r) {
-    const N = Math.max(0, Number(n) || 0);
-    const R = Math.max(1, Number(r) || 1);
-    if (R === 1) return Math.max(1, Math.ceil(N / 2));
-    let losersPool = Math.floor(N / 2);
-    for (let k = 2; k < R; k++) losersPool = Math.floor(losersPool / 2);
-    return Math.max(1, Math.ceil(losersPool / 2));
-  }
-
   if (isLoading || loadingBrackets || loadingPlan) {
     return <Box p={4}>Loading…</Box>;
   }
@@ -2430,6 +2652,693 @@ export default function TournamentBlueprintPage() {
     return <Box p={4}>Lỗi tải dữ liệu.</Box>;
   }
   const hasExisting = Array.isArray(existingBrackets) && existingBrackets.length > 0;
+  const renderLockedStageCard = (stageKey, title, config) => (
+    <StageStatusCard
+      title={title}
+      stageKey={stageKey}
+      runtime={stageCardMap[stageKey]?.runtime}
+      config={config || stageCardMap[stageKey]?.config}
+      onOpenBracket={openBracketAdmin}
+    />
+  );
+
+  const autoContent = (
+    <Stack spacing={2}>
+      {hasExisting ? (
+        <Alert severity="info" variant="outlined">
+          Giải này đã có blueprint đã publish. Flow mới sẽ giữ nguyên stage đã khóa và chỉ cho áp
+          dụng an toàn lên các stage chưa mở.
+        </Alert>
+      ) : null}
+
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+        <FormControlLabel
+          control={
+            <Checkbox checked={includeGroup} onChange={(e) => setIncludeGroup(e.target.checked)} />
+          }
+          label="Có vòng bảng"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox checked={includePO} onChange={(e) => setIncludePO(e.target.checked)} />
+          }
+          label="Có vòng PO (cắt bớt)"
+        />
+      </Stack>
+
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+        <TextField
+          size="small"
+          type="number"
+          label="Số đội đã thanh toán"
+          value={paidCount}
+          onChange={() => toast.info("Dữ liệu thanh toán đang lấy từ API.")}
+          sx={{ width: 240 }}
+          helperText="AI chỉ dựa vào số lượng này, không gắn đội cụ thể"
+        />
+      </Stack>
+
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+        <Button variant="contained" onClick={askOpenAI} disabled={askingAI}>
+          {askingAI ? "Đang hỏi AI" : "Hỏi AI (gợi ý + seed)"}
+        </Button>
+        <Button variant="outlined" onClick={commitAIPlan} disabled={!aiPlan}>
+          Dùng đề xuất này & xem tác động
+        </Button>
+      </Stack>
+
+      {aiPlan ? (
+        <Alert severity="success" variant="outlined">
+          {aiPlan.groups
+            ? `Đề xuất: Group x${aiPlan.groups.count} → KO ${aiPlan.ko.drawSize}`
+            : aiPlan.po
+            ? `Đề xuất: PO ${aiPlan.po.drawSize} → KO ${aiPlan.ko.drawSize}`
+            : `Đề xuất: KO ${aiPlan.ko.drawSize}`}
+        </Alert>
+      ) : null}
+    </Stack>
+  );
+
+  const renderPreviewStage = (stage, idx) => {
+    const stageKey = stage.type === "group" ? "groups" : stage.type;
+    const runtime = stageCardMap[stageKey]?.runtime;
+    const locked = !!runtime?.locked;
+    const showPublishedGroups =
+      stage.type === "group" &&
+      publishedGroupPreview.some((group) => Array.isArray(group.names) && group.names.length > 0);
+
+    return (
+      <Paper key={stage.id} variant="outlined" sx={{ p: 2 }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1, flexWrap: "wrap" }}>
+          <Chip color="primary" size="small" label={stage.id} />
+          <Typography variant="h6" fontWeight={700}>
+            {stage.title}
+          </Typography>
+          <Chip size="small" label={stage.type.toUpperCase()} />
+
+          <Stack direction="row" spacing={1} sx={{ ml: 1, flexWrap: "wrap" }}>
+            {stage.type === "group" ? (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Rule: ${ruleSummary(normalizeRulesForState(groupRules, DEFAULT_RULES))}`}
+              />
+            ) : null}
+            {stage.type === "po" ? (
+              <Stack direction="row" spacing={1}>
+                {Array.from({ length: Math.max(1, Number(poPlan.maxRounds || 1)) }, (_, ri) => {
+                  const rule = poRoundRules[ri] || poRules || DEFAULT_PO_RULES;
+                  return (
+                    <Chip
+                      key={ri}
+                      size="small"
+                      variant="outlined"
+                      label={`PO V${ri + 1}: ${ruleSummary(
+                        normalizeRulesForState(rule, DEFAULT_PO_RULES)
+                      )}`}
+                    />
+                  );
+                })}
+              </Stack>
+            ) : null}
+            {stage.type === "ko" ? (
+              <Stack direction="row" spacing={1}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={`Rule: ${ruleSummary(normalizeRulesForState(koRules, DEFAULT_RULES))}`}
+                />
+                {koSemiOverride ? (
+                  <Chip
+                    size="small"
+                    color="secondary"
+                    variant="outlined"
+                    label={`Bán kết: ${ruleSummary(
+                      normalizeRulesForState(koSemiRules, DEFAULT_RULES)
+                    )}`}
+                  />
+                ) : null}
+                {koFinalOverride ? (
+                  <Chip
+                    size="small"
+                    color="secondary"
+                    variant="outlined"
+                    label={`Chung kết: ${ruleSummary(
+                      normalizeRulesForState(koFinalRules, DEFAULT_RULES)
+                    )}`}
+                  />
+                ) : null}
+                {koThirdPlace ? (
+                  <Chip size="small" color="secondary" label="Có trận tranh hạng 3–4" />
+                ) : null}
+              </Stack>
+            ) : null}
+          </Stack>
+        </Stack>
+
+        {stage.type === "group" ? (
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              {`Số bảng: ${
+                showPublishedGroups ? publishedGroupPreview.length : stage.config.groupCount
+              }${
+                showPublishedGroups
+                  ? " • Đã hiển thị đội thực tế từ kết quả bốc thăm"
+                  : (groupTotal || 0) > 0
+                  ? ` • Tổng số đội: ${groupTotal} (chia đều, dư dồn bảng cuối)`
+                  : ` • Mỗi bảng dự kiến: ${stage.config.groupSize} đội`
+              } • Top N/bảng để đổ KO: ${Math.max(
+                1,
+                Math.min(Number(groupTopN) || 1, Math.max(1, minGroupSize || 1))
+              )}`}
+            </Typography>
+
+            <Stack gap={2}>
+              {(showPublishedGroups
+                ? publishedGroupPreview
+                : stage.config.groups.map((g, gi) => {
+                    const sizes = stage.config.groupSizes || [];
+                    const sizeThis = sizes[gi] ?? stage.config.groupSize ?? 0;
+                    const start = sizes.slice(0, gi).reduce((a, b) => a + (b || 0), 0) + 1;
+
+                    return {
+                      key: String(g),
+                      code: String(g),
+                      size: sizeThis,
+                      names: Array.from({ length: sizeThis }, (_, j) => `Đội ${start + j}`),
+                    };
+                  })).map((groupPreview, gi) => {
+                const sizeThis = Math.max(0, Number(groupPreview.size || 0));
+                const names = Array.isArray(groupPreview.names) ? groupPreview.names : [];
+
+                return (
+                  <Paper key={groupPreview.key} variant="outlined" sx={{ p: 1.5 }}>
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                      <Chip size="small" color="secondary" label={`B${groupPreview.code}`} />
+                      <Typography variant="subtitle2">
+                        {`${
+                          showPublishedGroups ? "Đã bốc thăm" : "Dự kiến"
+                        } ${sizeThis} đội • ${RR_MATCHES(sizeThis)} trận`}
+                      </Typography>
+                      {manualRemainder && !locked && (Number(groupTotal) || 0) > 0 ? (
+                        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ ml: 1 }}>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              setGroupExtras((prev) => {
+                                const next = Array.from(
+                                  { length: groupCount },
+                                  (_, i) => prev[i] || 0
+                                );
+                                if (next[gi] > 0) next[gi] -= 1;
+                                else toast.info("Nhóm này chưa nhận dư để bớt.");
+                                return next;
+                              });
+                            }}
+                          >
+                            <RemoveIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              if (groupRemainder <= 0) {
+                                toast.info("Hết số dư để phân bổ.");
+                                return;
+                              }
+                              setGroupExtras((prev) => {
+                                const next = Array.from(
+                                  { length: groupCount },
+                                  (_, i) => prev[i] || 0
+                                );
+                                next[gi] += 1;
+                                return next;
+                              });
+                            }}
+                          >
+                            <AddIcon fontSize="small" />
+                          </IconButton>
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={`+${groupExtras[gi] || 0}`}
+                          />
+                        </Stack>
+                      ) : null}
+                    </Stack>
+                    <Stack direction="row" gap={1} flexWrap="wrap">
+                      {names.map((name) => (
+                        <Chip key={name} label={name} size="small" />
+                      ))}
+                    </Stack>
+                  </Paper>
+                );
+              })}
+            </Stack>
+          </>
+        ) : locked ? (
+          renderLockedStageCard(
+            stageKey,
+            stage.title,
+            stageCardMap[stageKey]?.config || stage.config
+          )
+        ) : (
+          <Box sx={{ overflowX: "auto" }}>{renderEditableBracket(idx)}</Box>
+        )}
+      </Paper>
+    );
+  };
+
+  const manualContent = (
+    <Stack spacing={3}>
+      {hasLockedStages ? (
+        <Alert severity="info" variant="outlined">
+          Stage đã bốc thăm hoặc đã vận hành sẽ khóa phần cấu trúc. Rule và BO vẫn chỉnh được; các
+          stage phía sau chưa mở vẫn có thể rebuild sau khi xem impact.
+        </Alert>
+      ) : null}
+
+      {groupRuntime?.locked ? (
+        renderLockedStageCard("groups", "Vòng bảng", stageCardMap.groups?.config)
+      ) : (
+        <>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="center">
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={includeGroup}
+                  onChange={(e) => setIncludeGroup(e.target.checked)}
+                />
+              }
+              label="Thêm Vòng bảng (Vx)"
+            />
+            {includeGroup ? (
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Số bảng"
+                  value={groupCount}
+                  onChange={(e) => setGroupCount(parseInt(e.target.value || "0", 10))}
+                />
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Số đội / bảng (nếu không nhập tổng)"
+                  value={groupSize}
+                  onChange={(e) => setGroupSize(parseInt(e.target.value || "0", 10))}
+                />
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Tổng số đội (tuỳ chọn)"
+                  value={groupTotal}
+                  onChange={(e) => setGroupTotal(parseInt(e.target.value || "0", 10))}
+                  helperText="Nếu >0: chia đều, dư dồn bảng cuối"
+                />
+                <Divider orientation="vertical" flexItem />
+                <TextField
+                  size="small"
+                  type="number"
+                  label={`Top N/bảng (≤ ${Math.max(1, minGroupSize || 1)})`}
+                  value={groupTopN}
+                  onChange={(e) =>
+                    setGroupTopN(
+                      Math.max(
+                        1,
+                        Math.min(
+                          parseInt(e.target.value || "1", 10),
+                          Math.max(1, minGroupSize || 1)
+                        )
+                      )
+                    )
+                  }
+                  sx={{ width: 180 }}
+                />
+                <Chip
+                  size="small"
+                  label={`Min size bảng hiện tại: ${Math.max(0, minGroupSize || 0)}`}
+                />
+
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+                  <TextField
+                    select
+                    size="small"
+                    label="Cách đổ KO (nguồn: Vòng bảng)"
+                    value={group2KOMethod}
+                    onChange={(e) => setGroup2KOMethod(e.target.value)}
+                    sx={{ minWidth: 240 }}
+                  >
+                    <MenuItem value="default">Mặc định (theo thứ hạng)</MenuItem>
+                    <MenuItem value="cross">So le (A1–B2, B1–A2)</MenuItem>
+                    <MenuItem value="shift">Xoay lệch (#2 xoay nửa vòng)</MenuItem>
+                    <MenuItem value="random">Ngẫu nhiên (khác bảng)</MenuItem>
+                    <MenuItem value="snake">Serpentine (rank1 →, rank2 ← ...)</MenuItem>
+                    <MenuItem value="antiSameGroup">Tránh cùng bảng tối đa</MenuItem>
+                    <MenuItem value="strongWeak">
+                      Mạnh–Yếu (Top1 vs Top2; tránh cùng bảng & gặp sớm)
+                    </MenuItem>
+                    <MenuItem value="strongWeakSpread">
+                      Mạnh–Yếu xa nhất (1 mạnh nhất vs yếu nhất, dần vào giữa)
+                    </MenuItem>
+                  </TextField>
+
+                  <Button variant="outlined" onClick={() => prefillKOfromGroups(group2KOMethod)}>
+                    Đổ seed KO từ Vòng bảng
+                  </Button>
+                </Stack>
+
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems="center">
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={manualRemainder}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setManualRemainder(on);
+                          if (!on) setGroupExtras(Array.from({ length: groupCount }, () => 0));
+                        }}
+                        disabled={(Number(groupTotal) || 0) <= 0}
+                      />
+                    }
+                    label="Chia dư thủ công"
+                  />
+                  {(Number(groupTotal) || 0) > 0 ? (
+                    <Chip
+                      size="small"
+                      color={groupRemainder > 0 ? "warning" : "success"}
+                      label={`Dư còn lại: ${groupRemainder}`}
+                    />
+                  ) : null}
+                </Stack>
+              </Stack>
+            ) : null}
+          </Stack>
+
+        </>
+      )}
+
+      {includeGroup || groupRuntime?.locked || !!stageCardMap.groups?.config ? (
+        <Box sx={{ mt: 1 }}>
+          <RulesEditor label="Luật (Vòng bảng)" value={groupRules} onChange={setGroupRules} />
+        </Box>
+      ) : null}
+
+      {poRuntime?.locked ? (
+        renderLockedStageCard("po", "Play-Off", stageCardMap.po?.config)
+      ) : (
+        <>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="center">
+            <FormControlLabel
+              control={
+                <Checkbox checked={includePO} onChange={(e) => setIncludePO(e.target.checked)} />
+              }
+              label="Thêm Play-Off (PO) trước KO"
+            />
+            {includePO ? (
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+                <TextField
+                  size="small"
+                  type="number"
+                  label="PO drawSize"
+                  value={poPlan.drawSize}
+                  onChange={(e) => {
+                    const ds = parseInt(e.target.value || "0", 10);
+                    const maxPossible = maxPoRoundsFor(ds);
+                    setPoPlan((p) => ({
+                      ...p,
+                      drawSize: ds,
+                      maxRounds: Math.max(1, Math.min(maxPossible, p.maxRounds || 1)),
+                    }));
+                  }}
+                />
+
+                <Stack direction="column" spacing={0.5} sx={{ minWidth: 220 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    PO tối đa bao nhiêu vòng?
+                  </Typography>
+                  <Select
+                    size="small"
+                    value={poPlan.maxRounds || 1}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value || "1", 10);
+                      const maxPossible = maxPoRoundsFor(poPlan.drawSize);
+                      setPoPlan((p) => ({
+                        ...p,
+                        maxRounds: Math.max(1, Math.min(maxPossible, v)),
+                      }));
+                    }}
+                  >
+                    {Array.from({ length: maxPoRoundsFor(poPlan.drawSize) }, (_, i) => (
+                      <MenuItem key={i + 1} value={i + 1}>{`V${i + 1} (dừng sau vòng ${
+                        i + 1
+                      })`}</MenuItem>
+                    ))}
+                  </Select>
+                </Stack>
+
+                <Chip
+                  size="small"
+                  label={`PO V1: ${poMatchesForRound(
+                    poPlan.drawSize,
+                    1
+                  )} trận • V tối đa: ${maxPoRoundsFor(poPlan.drawSize)}`}
+                />
+
+                <TextField
+                  select
+                  size="small"
+                  label="Cách đổ KO (nguồn: PO)"
+                  value={po2KOMethod}
+                  onChange={(e) => setPo2KOMethod(e.target.value)}
+                  sx={{ minWidth: 240 }}
+                >
+                  <MenuItem value="default">Mặc định (1–2, 3–4,…)</MenuItem>
+                  <MenuItem value="cross">So le nửa nhánh</MenuItem>
+                  <MenuItem value="shift">Xoay lệch</MenuItem>
+                  <MenuItem value="random">Ngẫu nhiên</MenuItem>
+                  <MenuItem value="lateFirst">Ưu tiên vòng cao (Vmax→…→V1)</MenuItem>
+                  <MenuItem value="interleave">Đan xen theo vòng</MenuItem>
+                  <MenuItem value="pairSplit">Tách lẻ/chẵn</MenuItem>
+                  <MenuItem value="snake">Serpentine</MenuItem>
+                  <MenuItem value="v1v2">Ưu tiên V1 vs V2 (hết V2 → BYE)</MenuItem>
+                  <MenuItem value="ladder">Ladder (giữ dáng + tránh tái đấu)</MenuItem>
+                  <MenuItem value="ladderReverse">
+                    Ladder ngược (tránh tái đấu, ghép xa nhất)
+                  </MenuItem>
+                </TextField>
+
+                <Button variant="outlined" onClick={() => prefillKOfromPO(po2KOMethod)}>
+                  Đổ seed KO từ PO
+                </Button>
+              </Stack>
+            ) : null}
+          </Stack>
+
+        </>
+      )}
+
+      {includePO || poRuntime?.locked || !!stageCardMap.po?.config ? (
+        <Box sx={{ mt: 1 }}>
+          <RulesEditor
+            label="Luật (PO) – mặc định cho tất cả round"
+            value={poRules}
+            onChange={(val) => {
+              setPoRules(val);
+              setPoRoundRules((prev) => {
+                const need = Math.max(1, Number(poPlan.maxRounds || 1));
+                const next = [];
+                for (let i = 0; i < need; i++) {
+                  next.push(prev[i] ? prev[i] : val);
+                }
+                return next;
+              });
+            }}
+          />
+
+          <Stack spacing={1} sx={{ mt: 1 }}>
+            {Array.from({ length: Math.max(1, Number(poPlan.maxRounds || 1)) }, (_, idx) => (
+              <RulesEditor
+                key={idx}
+                label={`Luật PO • V${idx + 1}`}
+                value={poRoundRules[idx] || poRules || DEFAULT_PO_RULES}
+                onChange={(val) =>
+                  setPoRoundRules((prev) => {
+                    const next = prev.slice();
+                    next[idx] = val;
+                    return next;
+                  })
+                }
+              />
+            ))}
+          </Stack>
+        </Box>
+      ) : null}
+
+      {koRuntime?.locked ? (
+        renderLockedStageCard("ko", "Knockout", stageCardMap.ko?.config)
+      ) : (
+        <>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+            <TextField
+              size="small"
+              type="number"
+              label="KO drawSize"
+              value={koPlan.drawSize}
+              onChange={(e) =>
+                setKoPlan((p) => ({
+                  ...p,
+                  drawSize: parseInt(e.target.value || "2", 10),
+                }))
+              }
+            />
+            <Chip size="small" label={`KO R1: ${Math.max(1, nextPow2(koPlan.drawSize) / 2)} cặp`} />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={koThirdPlace}
+                  onChange={(e) => setKoThirdPlace(e.target.checked)}
+                />
+              }
+              label="Có trận tranh hạng 3–4 (hai đội thua Bán kết)"
+            />
+          </Stack>
+
+        </>
+      )}
+
+      <Box sx={{ mt: 1 }}>
+        <RulesEditor label="Luật (KO)" value={koRules} onChange={setKoRules} />
+
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={koSemiOverride}
+                  onChange={(e) => setKoSemiOverride(e.target.checked)}
+                />
+              }
+              label="Dùng Rule riêng cho trận Bán kết (KO)"
+              sx={{ minWidth: 240 }}
+            />
+            {koSemiOverride ? (
+              <Box sx={{ flexGrow: 1 }}>
+                <RulesEditor
+                  label="Luật Bán kết (KO)"
+                  value={koSemiRules}
+                  onChange={setKoSemiRules}
+                />
+              </Box>
+            ) : null}
+          </Stack>
+
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={koFinalOverride}
+                  onChange={(e) => setKoFinalOverride(e.target.checked)}
+                />
+              }
+              label="Dùng Rule riêng cho trận Chung kết (KO)"
+              sx={{ minWidth: 240 }}
+            />
+            {koFinalOverride ? (
+              <Box sx={{ flexGrow: 1 }}>
+                <RulesEditor
+                  label="Luật Chung kết (KO)"
+                  value={koFinalRules}
+                  onChange={setKoFinalRules}
+                />
+              </Box>
+            ) : null}
+          </Stack>
+        </Stack>
+      </Box>
+
+      <Divider />
+
+      {stages.map((stage, idx) => renderPreviewStage(stage, idx))}
+    </Stack>
+  );
+
+  return (
+    <DashboardLayout>
+      <DashboardNavbar />
+      <Box p={3}>
+        <Stack spacing={2.5}>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: "wrap" }}>
+            <Typography variant="h5" fontWeight={700}>
+              Blueprint • {tournament?.name}
+            </Typography>
+            <Chip size="small" label={(tournament?.eventType || "").toUpperCase()} />
+            {hasExisting ? (
+              <Chip size="small" color="info" label="Đã có blueprint publish" />
+            ) : null}
+          </Stack>
+
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Stepper activeStep={activeStep} alternativeLabel>
+              {wizardSteps.map((step) => (
+                <Step key={step}>
+                  <StepLabel>{step}</StepLabel>
+                </Step>
+              ))}
+            </Stepper>
+          </Paper>
+
+          {activeStep === 0 ? (
+            <BlueprintOverviewStep
+              tournament={tournament}
+              paidCount={paidCount}
+              stageCards={stageCards}
+              onOpenBracket={openBracketAdmin}
+              onNext={() => setActiveStep(1)}
+            />
+          ) : null}
+
+          {activeStep === 1 ? (
+            <BlueprintDesignerStep
+              tab={tab}
+              onTabChange={setTab}
+              autoContent={autoContent}
+              manualContent={manualContent}
+              onBack={() => setActiveStep(0)}
+              onNext={goToImpactStep}
+            />
+          ) : null}
+
+          {activeStep === 2 ? (
+            <BlueprintPublishStep
+              impact={impact}
+              impactError={impactError}
+              loadingImpact={loadingImpact}
+              savingDraft={savingDraft}
+              publishing={committing}
+              onRefreshImpact={() => refreshImpact(planPayload).catch(() => {})}
+              onSaveDraft={() => saveDraft()}
+              onSafeApply={commitPlan}
+              onReplaceAll={replaceAllPlan}
+              onBack={() => setActiveStep(1)}
+            />
+          ) : null}
+        </Stack>
+
+        <SeedPickerDialog
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          stages={stages.map((s) => ({ ...s, id: s.id }))}
+          currentStageIndex={pickerTarget?.stageIdx ?? stages.length - 1}
+          onPick={(seed) => {
+            if (pickerTarget) {
+              putSeed(pickerTarget.stageIdx, pickerTarget.pair, pickerTarget.slot, seed);
+            }
+            setPickerOpen(false);
+          }}
+        />
+      </Box>
+    </DashboardLayout>
+  );
 
   return (
     <DashboardLayout>

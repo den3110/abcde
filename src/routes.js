@@ -37,6 +37,7 @@ import AdminOverlayPage from "layouts/tournament/OverlayTab";
 import GlobalMatchViewerPage from "layouts/match/GlobalMatchViewerPage";
 import AdminMatchDetailPage from "layouts/match/AdminMatchDetailPage";
 import AdminCourtManagerPage from "layouts/tournament/AdminCourtManagerPage";
+import AdminCourtClustersPage from "layouts/tournament/AdminCourtClustersPage";
 import AdminBracketCourtManagerPage from "layouts/tournament/AdminBracketCourtManagerPage";
 import RatingTesterPage from "layouts/tools/RatingTesterPage";
 import AdminEvaluatorManagement from "layouts/tournament/AdminEvaluatorManagement";
@@ -319,6 +320,17 @@ const routes = [
     icon: <Icon fontSize="small">online_prediction</Icon>, // hoặc 'live_tv'
     route: "/admin/live-sessions",
     component: <AdminLiveSessionsPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Cụm sân live",
+    key: "admin-court-clusters",
+    icon: <Icon fontSize="small">view_module</Icon>,
+    route: "/admin/court-clusters",
+    component: <AdminCourtClustersPage />,
     private: true,
     roles: ["admin"],
     show: true,

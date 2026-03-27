@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import {
   Alert,
@@ -37,6 +37,8 @@ import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
 import PhotoLibraryIcon from "@mui/icons-material/PhotoLibrary";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
+import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import { toast } from "react-toastify";
 
 import {
@@ -44,6 +46,7 @@ import {
   useBackfillNewsImagesMutation,
   useCleanupGatewayImagesMutation,
   useQueueNewsImageRegenerationJobMutation,
+  useUpdateSeoNewsImageSettingsMutation,
 } from "slices/newsImageAdminApiSlice";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -116,18 +119,19 @@ SummaryCard.propTypes = {
   color: PropTypes.string.isRequired,
 };
 
-function ImageThumb({ url }) {
-  const [broken, setBroken] = useState(false);
+function resolveMonitorImageUrl(url) {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("/")) {
+    const base = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "";
+    return `${base.replace(/\/api\/?$/, "")}${url}`;
+  }
+  return url;
+}
 
-  const resolvedUrl = useMemo(() => {
-    if (!url) return null;
-    if (/^https?:\/\//i.test(url)) return url;
-    if (url.startsWith("/")) {
-      const base = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "";
-      return `${base.replace(/\/api\/?$/, "")}${url}`;
-    }
-    return url;
-  }, [url]);
+function ImageThumb({ url, alt = "thumb", onClick }) {
+  const [broken, setBroken] = useState(false);
+  const resolvedUrl = useMemo(() => resolveMonitorImageUrl(url), [url]);
 
   if (!resolvedUrl || broken) {
     return (
@@ -151,8 +155,9 @@ function ImageThumb({ url }) {
     <Box
       component="img"
       src={resolvedUrl}
-      alt="thumb"
+      alt={alt}
       onError={() => setBroken(true)}
+      onClick={onClick}
       sx={{
         width: 56,
         height: 36,
@@ -160,13 +165,58 @@ function ImageThumb({ url }) {
         borderRadius: 1,
         border: "1px solid",
         borderColor: "divider",
+        cursor: onClick ? "zoom-in" : "default",
       }}
     />
   );
 }
 
 ImageThumb.propTypes = {
+  alt: PropTypes.string,
+  onClick: PropTypes.func,
   url: PropTypes.string,
+};
+
+function ImagePreviewDialog({ open, imageUrl, title, subtitle, onClose }) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+      <DialogTitle>{title || "Xem ảnh"}</DialogTitle>
+      <DialogContent dividers>
+        {subtitle ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {subtitle}
+          </Typography>
+        ) : null}
+        {imageUrl ? (
+          <Box
+            component="img"
+            src={imageUrl}
+            alt={title || "preview"}
+            sx={{
+              width: "100%",
+              maxHeight: "75vh",
+              objectFit: "contain",
+              borderRadius: 1,
+              bgcolor: "grey.100",
+            }}
+          />
+        ) : (
+          <Alert severity="info">Không có ảnh để xem.</Alert>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Đóng</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+ImagePreviewDialog.propTypes = {
+  imageUrl: PropTypes.string,
+  onClose: PropTypes.func.isRequired,
+  open: PropTypes.bool.isRequired,
+  subtitle: PropTypes.string,
+  title: PropTypes.string,
 };
 
 function classifyImageOrigin(heroImageUrl) {
@@ -199,6 +249,37 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("vi-VN");
+}
+
+function formatDurationMs(value) {
+  const totalSeconds = Math.max(0, Math.round((Number(value) || 0) / 1000));
+  if (!totalSeconds) return "0s";
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts = [];
+
+  if (hours) parts.push(`${hours}h`);
+  if (minutes) parts.push(`${minutes}m`);
+  if (seconds && !hours) parts.push(`${seconds}s`);
+
+  return parts.join(" ");
+}
+
+function getLatestGeneratedJobItem(job) {
+  const completedItems = Array.isArray(job?.items)
+    ? job.items.filter((item) => item?.status === "completed" && item?.resultHeroImageUrl)
+    : [];
+
+  if (!completedItems.length) return null;
+
+  return completedItems.sort((a, b) => {
+    const aTime = new Date(a?.completedAt || 0).getTime();
+    const bTime = new Date(b?.completedAt || 0).getTime();
+    return bTime - aTime;
+  })[0];
 }
 
 function FailedJobItemsDialog({ job, open, onClose }) {
@@ -261,16 +342,27 @@ export default function NewsImageMonitorPage() {
   });
   const [searchText, setSearchText] = useState("");
   const [viewFailedJob, setViewFailedJob] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedModelDirty, setSelectedModelDirty] = useState(false);
+  const [delaySecondsInput, setDelaySecondsInput] = useState("");
+  const [delayDirty, setDelayDirty] = useState(false);
+  const [refreshHealthKey, setRefreshHealthKey] = useState(0);
 
-  const { data, isLoading, isFetching, refetch } = useGetNewsImageStatsQuery(filters, {
-    pollingInterval: 15000,
-    refetchOnMountOrArgChange: true,
-  });
+  const { data, isLoading, isFetching, refetch } = useGetNewsImageStatsQuery(
+    { ...filters, refreshHealth: refreshHealthKey },
+    {
+      pollingInterval: 15000,
+      refetchOnMountOrArgChange: true,
+    }
+  );
 
   const [backfillImages, { isLoading: isBackfilling }] = useBackfillNewsImagesMutation();
   const [cleanupImages, { isLoading: isCleaning }] = useCleanupGatewayImagesMutation();
   const [queueImageRegenerationJob, { isLoading: isQueueingRegeneration }] =
     useQueueNewsImageRegenerationJobMutation();
+  const [updateSeoNewsImageSettings, { isLoading: isSavingModel }] =
+    useUpdateSeoNewsImageSettingsMutation();
 
   const summary = data?.summary || {};
   const items = data?.items || [];
@@ -279,6 +371,63 @@ export default function NewsImageMonitorPage() {
   const activeRegenJob = regeneration.activeJob || null;
   const recentRegenJobs = Array.isArray(regeneration.recentJobs) ? regeneration.recentJobs : [];
   const aiHealth = regeneration.aiHealth || null;
+  const isRegenPaused = regeneration?.summary?.isPaused === true;
+  const hasOpenRegenerationJob =
+    Boolean(activeRegenJob) ||
+    Number(regeneration?.summary?.queued || 0) > 0 ||
+    Number(regeneration?.summary?.running || 0) > 0;
+  const availableModels = Array.isArray(aiHealth?.availableModels) ? aiHealth.availableModels : [];
+  const selectedRemoteModel = aiHealth?.selectedModel || "";
+  const effectiveModel = aiHealth?.effectiveModel || "";
+  const configuredIntervalMs = Number(regeneration?.summary?.intervalMs) || 0;
+  const configuredIntervalSeconds =
+    Number(regeneration?.summary?.intervalSeconds) ||
+    Math.max(0, Math.round(configuredIntervalMs / 1000));
+  const configuredIntervalLabel = formatDurationMs(configuredIntervalMs);
+  const activeJobIntervalMs =
+    Number(activeRegenJob?.request?.itemIntervalMs) || configuredIntervalMs;
+  const activeJobIntervalLabel = formatDurationMs(activeJobIntervalMs);
+  const activeJobLatestGeneratedItem = getLatestGeneratedJobItem(activeRegenJob);
+  const activeJobDisplayState =
+    isRegenPaused && activeRegenJob?.state !== "processing" ? "paused" : activeRegenJob?.state;
+  const selectValue = availableModels.includes(selectedModel) ? selectedModel : "";
+  const parsedDelaySeconds = Number(delaySecondsInput);
+  const normalizedDelaySeconds = Number.isFinite(parsedDelaySeconds)
+    ? Math.max(5, Math.floor(parsedDelaySeconds))
+    : null;
+  const delayInputInvalid =
+    delayDirty && (!Number.isFinite(parsedDelaySeconds) || parsedDelaySeconds < 5);
+  const hasModelChange = selectedModelDirty && selectedModel !== selectedRemoteModel;
+  const hasDelayChange =
+    delayDirty &&
+    normalizedDelaySeconds !== null &&
+    normalizedDelaySeconds !== configuredIntervalSeconds;
+  const hasGatewayConfigChanges = hasModelChange || hasDelayChange;
+
+  useEffect(() => {
+    if (selectedModelDirty) return;
+    setSelectedModel(selectedRemoteModel || effectiveModel || "");
+  }, [effectiveModel, selectedModelDirty, selectedRemoteModel]);
+
+  useEffect(() => {
+    if (delayDirty) return;
+    setDelaySecondsInput(configuredIntervalSeconds ? String(configuredIntervalSeconds) : "");
+  }, [configuredIntervalSeconds, delayDirty]);
+
+  const openImagePreview = useCallback((url, title, subtitle = "") => {
+    const resolvedUrl = resolveMonitorImageUrl(url);
+    if (!resolvedUrl) return;
+
+    setImagePreview({
+      url: resolvedUrl,
+      title: title || "Xem ảnh",
+      subtitle: subtitle || "",
+    });
+  }, []);
+
+  const closeImagePreview = useCallback(() => {
+    setImagePreview(null);
+  }, []);
 
   const handleFilterChange = useCallback((key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value, page: 1 }));
@@ -341,6 +490,75 @@ export default function NewsImageMonitorPage() {
     }
   }, [cleanupImages, refetch]);
 
+  const handleToggleRegenerationPause = useCallback(async () => {
+    const nextPaused = !isRegenPaused;
+
+    try {
+      await updateSeoNewsImageSettings({
+        imageRegenerationPaused: nextPaused,
+      }).unwrap();
+      refetch();
+      toast.success(
+        nextPaused
+          ? activeRegenJob?.state === "processing"
+            ? "Da bat tam dung. Worker se dung sau anh hien tai."
+            : "Da tam dung gen anh AI."
+          : "Da tiep tuc gen anh AI."
+      );
+    } catch (err) {
+      toast.error(err?.data?.message || "Cap nhat trang thai gen anh that bai.");
+    }
+  }, [activeRegenJob?.state, isRegenPaused, refetch, updateSeoNewsImageSettings]);
+
+  const triggerHealthRefresh = useCallback(() => {
+    setRefreshHealthKey(Date.now());
+  }, []);
+
+  const handleSaveGatewayConfig = useCallback(async () => {
+    const payload = {};
+
+    if (hasModelChange) {
+      if (!selectedModel) {
+        toast.error("Chưa có model để lưu.");
+        return;
+      }
+      payload.imageGenerationModel = selectedModel;
+    }
+
+    if (delayDirty) {
+      if (!Number.isFinite(parsedDelaySeconds) || parsedDelaySeconds < 5) {
+        toast.error("Delay giữa 2 lần gen phải từ 5 giây trở lên.");
+        return;
+      }
+      payload.imageGenerationDelaySeconds = normalizedDelaySeconds;
+    }
+
+    if (!Object.keys(payload).length) {
+      toast.info("Không có thay đổi để lưu.");
+      return;
+    }
+
+    try {
+      await updateSeoNewsImageSettings(payload).unwrap();
+      setSelectedModelDirty(false);
+      setDelayDirty(false);
+      triggerHealthRefresh();
+      refetch();
+      toast.success("Đã lưu cấu hình gateway.");
+    } catch (err) {
+      toast.error(err?.data?.message || "Lưu cấu hình gateway thất bại.");
+    }
+  }, [
+    delayDirty,
+    hasModelChange,
+    normalizedDelaySeconds,
+    parsedDelaySeconds,
+    refetch,
+    selectedModel,
+    triggerHealthRefresh,
+    updateSeoNewsImageSettings,
+  ]);
+
   return (
     <DashboardLayout>
       <DashboardNavbar />
@@ -361,6 +579,7 @@ export default function NewsImageMonitorPage() {
               size="small"
               startIcon={<RefreshIcon />}
               onClick={() => {
+                triggerHealthRefresh();
                 refetch();
                 toast.info("Đã tải lại.");
               }}
@@ -377,6 +596,16 @@ export default function NewsImageMonitorPage() {
               disabled={isQueueingRegeneration}
             >
               {isQueueingRegeneration ? "Đang xếp hàng..." : "Gen lại ảnh AI"}
+            </Button>
+            <Button
+              variant={isRegenPaused ? "contained" : "outlined"}
+              size="small"
+              color={isRegenPaused ? "success" : "warning"}
+              startIcon={isRegenPaused ? <PlayArrowIcon /> : <PauseCircleOutlineIcon />}
+              onClick={handleToggleRegenerationPause}
+              disabled={isSavingModel || (!hasOpenRegenerationJob && !isRegenPaused)}
+            >
+              {isSavingModel ? "Dang luu..." : isRegenPaused ? "Tiep tuc gen" : "Tam ngung gen"}
             </Button>
             <Button
               variant="contained"
@@ -447,6 +676,133 @@ export default function NewsImageMonitorPage() {
           </Stack>
         )}
 
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={2}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              justifyContent="space-between"
+              alignItems={{ xs: "flex-start", md: "center" }}
+            >
+              <Box>
+                <Typography variant="h6" fontWeight={700}>
+                  Gateway config
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  SEO News image generation đang dùng route image riêng và model global.
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Delay hiện tại: {configuredIntervalLabel}.
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Chip variant="outlined" label={`Selected: ${selectedRemoteModel || "-"}`} />
+                <Chip
+                  color={effectiveModel ? "info" : "default"}
+                  label={`Effective: ${effectiveModel || "-"}`}
+                />
+                <Chip variant="outlined" label={`Delay: ${configuredIntervalLabel}`} />
+              </Stack>
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="Connection URL"
+                value={aiHealth?.baseUrl || ""}
+                fullWidth
+                size="small"
+                InputProps={{ readOnly: true }}
+              />
+              <TextField
+                label="Models URL"
+                value={aiHealth?.modelsUrl || ""}
+                fullWidth
+                size="small"
+                InputProps={{ readOnly: true }}
+              />
+            </Stack>
+
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              alignItems={{ xs: "stretch", md: "center" }}
+            >
+              <FormControl
+                fullWidth
+                size="small"
+                disabled={!availableModels.length || isSavingModel}
+              >
+                <InputLabel>SEO image model</InputLabel>
+                <Select
+                  value={selectValue}
+                  label="SEO image model"
+                  onChange={(e) => {
+                    setSelectedModel(e.target.value);
+                    setSelectedModelDirty(true);
+                  }}
+                >
+                  <MenuItem value="">
+                    {availableModels.length ? "Chọn model" : "No model available"}
+                  </MenuItem>
+                  {availableModels.map((model) => (
+                    <MenuItem key={model} value={model}>
+                      {model}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                size="small"
+                type="number"
+                label="Delay giữa 2 lần gen (giây)"
+                value={delaySecondsInput}
+                onChange={(e) => {
+                  setDelaySecondsInput(e.target.value);
+                  setDelayDirty(true);
+                }}
+                error={delayInputInvalid}
+                helperText={
+                  delayInputInvalid ? "Tối thiểu 5 giây." : "Áp dụng cho job mới để tránh spam API."
+                }
+                inputProps={{ min: 5, step: 1 }}
+                sx={{ minWidth: { xs: "100%", md: 240 } }}
+                disabled={isSavingModel}
+              />
+
+              <Button
+                variant="contained"
+                size="small"
+                onClick={handleSaveGatewayConfig}
+                disabled={isSavingModel || delayInputInvalid || !hasGatewayConfigChanges}
+              >
+                {isSavingModel ? "Đang lưu..." : "Lưu cấu hình"}
+              </Button>
+            </Stack>
+
+            {aiHealth?.selectedModel && aiHealth?.selectedModelAvailable === false ? (
+              <Alert severity="warning">
+                Saved model &quot;{aiHealth.selectedModel}&quot; không còn nằm trong danh sách
+                gateway.
+              </Alert>
+            ) : null}
+
+            {aiHealth?.modelsMessage ? (
+              <Alert
+                severity={
+                  aiHealth?.modelsStatus === "online"
+                    ? "success"
+                    : aiHealth?.modelsStatus === "degraded"
+                    ? "warning"
+                    : "info"
+                }
+              >
+                {aiHealth.modelsMessage}
+              </Alert>
+            ) : null}
+          </Stack>
+        </Paper>
+
         {/* Filters */}
         <Paper sx={{ p: 2, mb: 2 }}>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
@@ -515,6 +871,7 @@ export default function NewsImageMonitorPage() {
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {isRegenPaused ? <Chip color="warning" label="Dang tam dung" /> : null}
                 <Chip
                   color={aiHealth?.status === "online" ? "success" : "warning"}
                   label={
@@ -526,6 +883,7 @@ export default function NewsImageMonitorPage() {
                   }
                 />
                 <Chip variant="outlined" label={`Latency: ${aiHealth?.latencyMs ?? 0}ms`} />
+                <Chip variant="outlined" label={`Delay: ${configuredIntervalLabel}`} />
                 <Chip variant="outlined" label={`Queued: ${regeneration?.summary?.queued ?? 0}`} />
                 <Chip
                   variant="outlined"
@@ -538,6 +896,13 @@ export default function NewsImageMonitorPage() {
               <Alert severity={aiHealth?.status === "online" ? "success" : "warning"}>
                 {aiHealth.message}
                 {aiHealth?.baseUrl ? ` - ${aiHealth.baseUrl}` : ""}
+              </Alert>
+            ) : null}
+
+            {isRegenPaused ? (
+              <Alert severity="info">
+                Hang cho gen anh AI dang tam dung. Bam &quot;Tiep tuc gen&quot; de worker tiep tuc
+                xu ly.
               </Alert>
             ) : null}
 
@@ -563,11 +928,13 @@ export default function NewsImageMonitorPage() {
                     </Box>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       <Chip
-                        color={activeRegenJob.state === "processing" ? "info" : "warning"}
+                        color={activeJobDisplayState === "processing" ? "info" : "warning"}
                         label={
-                          activeRegenJob.state === "processing"
+                          activeJobDisplayState === "processing"
                             ? "Đang gen ảnh"
-                            : activeRegenJob.state === "cooldown"
+                            : activeJobDisplayState === "paused"
+                            ? "Äang táº¡m dá»«ng"
+                            : activeJobDisplayState === "cooldown"
                             ? "Đang chờ lượt tiếp theo"
                             : "Đang xếp hàng"
                         }
@@ -576,6 +943,7 @@ export default function NewsImageMonitorPage() {
                         variant="outlined"
                         label={`${activeRegenJob.completedItems}/${activeRegenJob.totalItems} xong`}
                       />
+                      <Chip variant="outlined" label={`Delay: ${activeJobIntervalLabel}`} />
                       {activeRegenJob.cooldownRemainingMs > 0 ? (
                         <Chip
                           variant="outlined"
@@ -584,6 +952,61 @@ export default function NewsImageMonitorPage() {
                       ) : null}
                     </Stack>
                   </Stack>
+
+                  {activeJobLatestGeneratedItem ? (
+                    <Paper
+                      variant="outlined"
+                      sx={{
+                        p: 1.25,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1.25,
+                        bgcolor: "success.50",
+                      }}
+                    >
+                      <ImageThumb
+                        url={activeJobLatestGeneratedItem.resultHeroImageUrl}
+                        alt={
+                          activeJobLatestGeneratedItem.title || activeJobLatestGeneratedItem.slug
+                        }
+                        onClick={() =>
+                          openImagePreview(
+                            activeJobLatestGeneratedItem.resultHeroImageUrl,
+                            activeJobLatestGeneratedItem.title ||
+                              activeJobLatestGeneratedItem.slug ||
+                              "Ảnh đã gen gần nhất",
+                            activeJobLatestGeneratedItem.completedAt
+                              ? `Xong lúc ${formatDateTime(
+                                  activeJobLatestGeneratedItem.completedAt
+                                )}`
+                              : activeJobLatestGeneratedItem.resultImageOrigin ||
+                                  "generated-gateway"
+                          )
+                        }
+                      />
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          Ảnh đã gen gần nhất
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          fontWeight={600}
+                          sx={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {activeJobLatestGeneratedItem.title || activeJobLatestGeneratedItem.slug}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {activeJobLatestGeneratedItem.completedAt
+                            ? `Xong lúc ${formatDateTime(activeJobLatestGeneratedItem.completedAt)}`
+                            : activeJobLatestGeneratedItem.resultImageOrigin || "generated-gateway"}
+                        </Typography>
+                      </Box>
+                    </Paper>
+                  ) : null}
 
                   <LinearProgress
                     variant="determinate"
@@ -684,6 +1107,65 @@ export default function NewsImageMonitorPage() {
                           (job.nextRunAt ? `Next run ${formatRelativeTime(job.nextRunAt)}` : "-")}
                       </Typography>
                     </Stack>
+                    {getLatestGeneratedJobItem(job) ? (
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          mt: 1.25,
+                          p: 1.25,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1.25,
+                        }}
+                      >
+                        <ImageThumb
+                          url={getLatestGeneratedJobItem(job)?.resultHeroImageUrl}
+                          alt={
+                            getLatestGeneratedJobItem(job)?.title ||
+                            getLatestGeneratedJobItem(job)?.slug
+                          }
+                          onClick={() =>
+                            openImagePreview(
+                              getLatestGeneratedJobItem(job)?.resultHeroImageUrl,
+                              getLatestGeneratedJobItem(job)?.title ||
+                                getLatestGeneratedJobItem(job)?.slug ||
+                                "Ảnh đã gen gần nhất",
+                              getLatestGeneratedJobItem(job)?.completedAt
+                                ? `Xong lúc ${formatDateTime(
+                                    getLatestGeneratedJobItem(job)?.completedAt
+                                  )}`
+                                : getLatestGeneratedJobItem(job)?.resultImageOrigin ||
+                                    "generated-gateway"
+                            )
+                          }
+                        />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            Ảnh đã gen gần nhất
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            fontWeight={600}
+                            sx={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {getLatestGeneratedJobItem(job)?.title ||
+                              getLatestGeneratedJobItem(job)?.slug}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {getLatestGeneratedJobItem(job)?.completedAt
+                              ? `Xong lúc ${formatDateTime(
+                                  getLatestGeneratedJobItem(job)?.completedAt
+                                )}`
+                              : getLatestGeneratedJobItem(job)?.resultImageOrigin ||
+                                "generated-gateway"}
+                          </Typography>
+                        </Box>
+                      </Paper>
+                    ) : null}
                   </Paper>
                 ))}
               </Stack>
@@ -755,7 +1237,17 @@ export default function NewsImageMonitorPage() {
                   return (
                     <TableRow key={article._id} hover>
                       <TableCell>
-                        <ImageThumb url={article.heroImageUrl} />
+                        <ImageThumb
+                          url={article.heroImageUrl}
+                          alt={article.title || article.slug || "thumb"}
+                          onClick={() =>
+                            openImagePreview(
+                              article.heroImageUrl,
+                              article.title || article.slug || "Ảnh bài viết",
+                              article.slug || ""
+                            )
+                          }
+                        />
                       </TableCell>
                       <TableCell>
                         <Tooltip title={article.slug || ""}>
@@ -848,6 +1340,14 @@ export default function NewsImageMonitorPage() {
             </Stack>
           )}
         </Paper>
+
+        <ImagePreviewDialog
+          open={Boolean(imagePreview?.url)}
+          imageUrl={imagePreview?.url || ""}
+          title={imagePreview?.title || "Xem ảnh"}
+          subtitle={imagePreview?.subtitle || ""}
+          onClose={closeImagePreview}
+        />
 
         <FailedJobItemsDialog
           job={viewFailedJob}

@@ -1,28 +1,32 @@
-// =========================
-// FILE: src/slices/liveApiSlice.js (thêm endpoint)
-// =========================
-// NOTE: Chèn đoạn dưới vào file slices/liveApiSlice.js hiện có của bạn
-// hoặc tạo mới nếu chưa có. Đảm bảo đã có apiSlice cấu hình sẵn.
-
 import { apiSlice } from "./apiSlice";
 
 export const liveApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    /**
-     * GET /api/admin/live-sessions?status=live
-     * Trả về mảng các phiên live với cấu trúc:
-     * {
-     *   id, status, startedAt, startedBy: {name,_id},
-     *   match: { _id, code, tournament:{_id,name}, bracket:{name,stage,round}, pairA, pairB },
-     *   outputs: [ { platform, targetName/pageName/channelName/account, publicUrl/url/viewUrl, ... } ]
-     * }
-     */
     adminListLiveSessions: builder.query({
-      query: ({ status = "live" } = {}) => ({
-        url: `/admin/l/live-sessions/all?status=${encodeURIComponent(status)}`,
-        method: "GET",
-      }),
-      providesTags: (result) => [{ type: "LiveSessions", id: "LIST" }],
+      query: ({
+        status = "live",
+        q = "",
+        platform = "",
+        tournamentId = "",
+        page = 1,
+        limit = 20,
+        includePages = false,
+      } = {}) => {
+        const params = new URLSearchParams();
+        if (status) params.set("status", status);
+        if (q) params.set("q", q);
+        if (platform) params.set("platform", platform);
+        if (tournamentId) params.set("tournamentId", tournamentId);
+        if (page) params.set("page", String(page));
+        if (limit) params.set("limit", String(limit));
+        if (includePages) params.set("includePages", "1");
+
+        return {
+          url: `/admin/l/live-sessions/all?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      providesTags: () => [{ type: "LiveSessions", id: "LIST" }],
     }),
     getLiveRecordingMonitor: builder.query({
       query: () => ({
@@ -39,6 +43,14 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       }),
       keepUnusedDataFor: 5,
     }),
+    getLiveRecordingAiCommentaryMonitor: builder.query({
+      query: () => ({
+        url: "/live/recordings/v2/admin/commentary/monitor",
+        method: "GET",
+      }),
+      keepUnusedDataFor: 5,
+      providesTags: [{ type: "LiveRecordingAiCommentaryMonitor", id: "LIST" }],
+    }),
     retryLiveRecordingExport: builder.mutation({
       query: (recordingId) => ({
         url: `/live/recordings/v2/admin/${recordingId}/retry-export`,
@@ -51,6 +63,20 @@ export const liveApiSlice = apiSlice.injectEndpoints({
         method: "POST",
       }),
     }),
+    queueLiveRecordingAiCommentary: builder.mutation({
+      query: (recordingId) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/commentary`,
+        method: "POST",
+      }),
+      invalidatesTags: [{ type: "LiveRecordingAiCommentaryMonitor", id: "LIST" }],
+    }),
+    rerenderLiveRecordingAiCommentary: builder.mutation({
+      query: (recordingId) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/commentary/rerender`,
+        method: "POST",
+      }),
+      invalidatesTags: [{ type: "LiveRecordingAiCommentaryMonitor", id: "LIST" }],
+    }),
   }),
   overrideExisting: false,
 });
@@ -58,7 +84,10 @@ export const liveApiSlice = apiSlice.injectEndpoints({
 export const {
   useAdminListLiveSessionsQuery,
   useForceLiveRecordingExportMutation,
+  useGetLiveRecordingAiCommentaryMonitorQuery,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
+  useQueueLiveRecordingAiCommentaryMutation,
+  useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
 } = liveApiSlice;

@@ -1,25 +1,23 @@
-// =========================
-// FILE: src/pages/admin/AdminLiveSessionsPage.jsx
-// =========================
 /* eslint-disable react/prop-types */
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Box,
-  Container,
-  Stack,
-  Typography,
-  Paper,
-  Chip,
-  TextField,
-  InputAdornment,
-  IconButton,
-  Tooltip,
-  Divider,
-  CircularProgress,
-  Switch,
-  FormControlLabel,
-  Button,
   Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Container,
+  Divider,
+  FormControlLabel,
+  IconButton,
+  InputAdornment,
+  Pagination,
+  Paper,
+  Stack,
+  Switch,
+  TextField,
+  Tooltip,
+  Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
@@ -30,8 +28,8 @@ import LiveTvIcon from "@mui/icons-material/LiveTv";
 import LinkIcon from "@mui/icons-material/Link";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime";
 import durationPlugin from "dayjs/plugin/duration";
+import relativeTime from "dayjs/plugin/relativeTime";
 import { useAdminListLiveSessionsQuery } from "slices/liveApiSlice";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -39,7 +37,6 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 dayjs.extend(relativeTime);
 dayjs.extend(durationPlugin);
 
-/* ---------------------------------- utils --------------------------------- */
 const PLATFORM_LABEL = {
   facebook: "Facebook",
   youtube: "YouTube",
@@ -48,14 +45,16 @@ const PLATFORM_LABEL = {
   other: "Khác",
 };
 
-function normalizePlatform(p) {
-  if (!p) return "other";
-  const s = String(p).toLowerCase();
-  if (s.includes("face")) return "facebook";
-  if (s.includes("you")) return "youtube";
-  if (s.includes("tik")) return "tiktok";
-  if (s.includes("rtmp")) return "rtmp";
-  return s;
+const PAGE_SIZE = 20;
+
+function normalizePlatform(value) {
+  if (!value) return "other";
+  const normalized = String(value).toLowerCase();
+  if (normalized.includes("face")) return "facebook";
+  if (normalized.includes("you")) return "youtube";
+  if (normalized.includes("tik")) return "tiktok";
+  if (normalized.includes("rtmp")) return "rtmp";
+  return normalized;
 }
 
 function formatPlayers(match) {
@@ -63,44 +62,48 @@ function formatPlayers(match) {
   const a2 = match?.pairA?.player2?.user?.nickname || match?.pairA?.player2?.user?.name;
   const b1 = match?.pairB?.player1?.user?.nickname || match?.pairB?.player1?.user?.name;
   const b2 = match?.pairB?.player2?.user?.nickname || match?.pairB?.player2?.user?.name;
-
-  const side = (p1, p2) => [p1, p2].filter(Boolean).join(" / ") || "?";
-  return `${side(a1, a2)}  vs  ${side(b1, b2)}`;
+  const side = (left, right) => [left, right].filter(Boolean).join(" / ") || "?";
+  return `${side(a1, a2)} vs ${side(b1, b2)}`;
 }
 
 function formatBracket(bracket) {
   if (!bracket) return "-";
-  const bits = [bracket?.name, bracket?.stage, bracket?.round].filter(Boolean);
-  return bits.join(" • ");
+  return [bracket?.name, bracket?.stage, bracket?.round].filter(Boolean).join(" • ");
 }
 
 function humanDuration(startedAt) {
   if (!startedAt) return "-";
-  const d = dayjs.duration(dayjs().diff(dayjs(startedAt)));
-  const h = d.hours();
-  const m = d.minutes();
-  const s = d.seconds();
-  return h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
+  const duration = dayjs.duration(dayjs().diff(dayjs(startedAt)));
+  const hours = duration.hours();
+  const minutes = duration.minutes();
+  const seconds = duration.seconds();
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${seconds}s`;
 }
 
 function copyToClipboard(text) {
   try {
     navigator.clipboard?.writeText(text);
-  } catch (e) {}
+  } catch {}
 }
 
-/* ------------------------------ row component ----------------------------- */
 function LiveOutputs({ outputs = [] }) {
   return (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-      {outputs.map((o, idx) => {
-        const platform = normalizePlatform(o.platform || o.provider);
-        const label = PLATFORM_LABEL[platform] || o.platform || o.provider || "N/A";
-        const target = o.targetName || o.pageName || o.channelName || o.account || o.pageId || "";
-        const url = o.publicUrl || o.viewUrl || o.url || "";
+      {outputs.map((output, index) => {
+        const platform = normalizePlatform(output.platform || output.provider);
+        const label = PLATFORM_LABEL[platform] || output.platform || output.provider || "N/A";
+        const target =
+          output.targetName ||
+          output.pageName ||
+          output.channelName ||
+          output.account ||
+          output.pageId ||
+          "";
+        const url = output.publicUrl || output.viewUrl || output.url || "";
+
         return (
           <Stack
-            key={`${platform}-${idx}`}
+            key={`${platform}-${index}`}
             direction="row"
             spacing={0.5}
             alignItems="center"
@@ -153,14 +156,13 @@ function LiveOutputs({ outputs = [] }) {
 }
 
 function LiveRow({ session }) {
-  const match = session?.match;
+  const match = session?.match || {};
   const bracket = match?.bracket || session?.bracket;
   const tournament = match?.tournament || session?.tournament;
   const code = match?.code || match?.shortCode || (match?._id ? String(match._id).slice(-6) : "-");
   const status = session?.status || "live";
   const startedBy = session?.startedBy?.name || session?.user?.name || session?.owner?.name || "?";
   const startedAt = session?.startedAt || session?.createdAt;
-
   return (
     <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
       <Stack
@@ -173,8 +175,8 @@ function LiveRow({ session }) {
           <Stack direction="row" spacing={1} alignItems="center">
             <Chip
               size="small"
-              color={status === "live" ? "error" : "default"}
-              label={status.toUpperCase()}
+              color={String(status).toLowerCase() === "live" ? "error" : "default"}
+              label={String(status).toUpperCase()}
             />
             <Typography variant="subtitle1" fontWeight={700}>
               Mã trận: {code}
@@ -185,9 +187,11 @@ function LiveRow({ session }) {
               </Typography>
             ) : null}
           </Stack>
+
           <Typography variant="body2" sx={{ opacity: 0.9 }}>
             {formatPlayers(match)}
           </Typography>
+
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Chip size="small" label={`Bracket: ${formatBracket(bracket)}`} />
             <Chip size="small" label={`Giải: ${tournament?.name || "-"}`} />
@@ -203,15 +207,31 @@ function LiveRow({ session }) {
   );
 }
 
-/* --------------------------------- page ----------------------------------- */
 export default function AdminLiveSessionsPage() {
   const theme = useTheme();
   const isSm = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [q, setQ] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [platformFilter, setPlatformFilter] = useState([]); // ["facebook","youtube",...]
+  const [platformFilter, setPlatformFilter] = useState([]);
   const [tournamentId, setTournamentId] = useState("all");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [q, tournamentId, platformFilter]);
+
+  const queryArgs = useMemo(
+    () => ({
+      status: "live",
+      q: q.trim(),
+      platform: platformFilter.join(","),
+      tournamentId: tournamentId === "all" ? "" : tournamentId,
+      page,
+      limit: PAGE_SIZE,
+    }),
+    [page, platformFilter, q, tournamentId]
+  );
 
   const {
     data: resp,
@@ -219,73 +239,27 @@ export default function AdminLiveSessionsPage() {
     isError,
     refetch,
     isFetching,
-  } = useAdminListLiveSessionsQuery(
-    { status: "live" },
-    { pollingInterval: autoRefresh ? 10000 : 0, refetchOnMountOrArgChange: true }
-  );
+  } = useAdminListLiveSessionsQuery(queryArgs, {
+    pollingInterval: autoRefresh ? 10000 : 0,
+    refetchOnMountOrArgChange: true,
+  });
 
-  const sessions = resp?.items || resp?.data || resp || [];
-
-  const tournaments = useMemo(() => {
-    const map = new Map();
-    sessions.forEach((s) => {
-      const t = s?.match?.tournament || s?.tournament;
-      if (t?._id) map.set(t._id, t);
-    });
-    return Array.from(map.values());
-  }, [sessions]);
-
-  const filtered = useMemo(() => {
-    const keyword = q.trim().toLowerCase();
-    return (sessions || []).filter((s) => {
-      // platform filter
-      if (platformFilter.length > 0) {
-        const pls = (s?.outputs || []).map((o) => normalizePlatform(o.platform || o.provider));
-        if (!pls.some((p) => platformFilter.includes(p))) return false;
-      }
-      // tournament
-      if (tournamentId !== "all") {
-        const tid = s?.match?.tournament?._id || s?.tournament?._id;
-        if (tid !== tournamentId) return false;
-      }
-      // keyword: match code, player names, bracket/tournament names, page/channel
-      if (keyword) {
-        const hay = [
-          s?.match?.code,
-          s?.match?.shortCode,
-          s?.match?._id,
-          formatPlayers(s?.match || {}),
-          s?.match?.bracket?.name,
-          s?.match?.tournament?.name,
-          s?.bracket?.name,
-          s?.tournament?.name,
-          s?.startedBy?.name,
-          ...(s?.outputs || []).map(
-            (o) =>
-              `${o.platform || o.provider} ${
-                o.targetName || o.pageName || o.channelName || o.account || o.pageId || ""
-              } ${o.publicUrl || o.url || ""}`
-          ),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(keyword)) return false;
-      }
-      return true;
-    });
-  }, [sessions, q, platformFilter, tournamentId]);
+  const sessions = Array.isArray(resp?.items) ? resp.items : [];
+  const tournaments = Array.isArray(resp?.tournaments) ? resp.tournaments : [];
+  const platformBuckets = Array.isArray(resp?.platforms) ? resp.platforms : [];
+  const total = Number(resp?.count || 0);
+  const pages = Math.max(1, Number(resp?.pages || 1));
 
   const platformsAvailable = useMemo(() => {
-    const set = new Set();
-    sessions.forEach((s) =>
-      (s.outputs || []).forEach((o) => set.add(normalizePlatform(o.platform || o.provider)))
-    );
+    const set = new Set(platformFilter);
+    platformBuckets.forEach((platform) => set.add(normalizePlatform(platform?.key)));
     return Array.from(set);
-  }, [sessions]);
+  }, [platformBuckets, platformFilter]);
 
-  const handleTogglePlatform = useCallback((p) => {
-    setPlatformFilter((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+  const handleTogglePlatform = useCallback((platform) => {
+    setPlatformFilter((prev) =>
+      prev.includes(platform) ? prev.filter((value) => value !== platform) : [...prev, platform]
+    );
   }, []);
 
   return (
@@ -309,6 +283,7 @@ export default function AdminLiveSessionsPage() {
               page/channel • người live
             </Typography>
           </Stack>
+
           <Stack direction="row" spacing={1}>
             <FormControlLabel
               control={
@@ -352,12 +327,12 @@ export default function AdminLiveSessionsPage() {
                 label="Tất cả giải"
                 onClick={() => setTournamentId("all")}
               />
-              {tournaments.map((t) => (
+              {tournaments.map((tournament) => (
                 <Chip
-                  key={t._id}
-                  variant={tournamentId === t._id ? "filled" : "outlined"}
-                  label={t.name}
-                  onClick={() => setTournamentId(t._id)}
+                  key={tournament._id}
+                  variant={tournamentId === tournament._id ? "filled" : "outlined"}
+                  label={tournament.name}
+                  onClick={() => setTournamentId(tournament._id)}
                 />
               ))}
             </Stack>
@@ -365,13 +340,13 @@ export default function AdminLiveSessionsPage() {
             <Divider flexItem orientation={isSm ? "horizontal" : "vertical"} />
 
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {platformsAvailable.map((p) => (
+              {platformsAvailable.map((platform) => (
                 <Chip
-                  key={p}
-                  color={platformFilter.includes(p) ? "primary" : "default"}
-                  variant={platformFilter.includes(p) ? "filled" : "outlined"}
-                  label={PLATFORM_LABEL[p] || p}
-                  onClick={() => handleTogglePlatform(p)}
+                  key={platform}
+                  color={platformFilter.includes(platform) ? "primary" : "default"}
+                  variant={platformFilter.includes(platform) ? "filled" : "outlined"}
+                  label={PLATFORM_LABEL[platform] || platform}
+                  onClick={() => handleTogglePlatform(platform)}
                 />
               ))}
             </Stack>
@@ -393,15 +368,30 @@ export default function AdminLiveSessionsPage() {
         ) : (
           <Stack spacing={1.25}>
             <Typography variant="body2" sx={{ opacity: 0.7 }}>
-              Tổng cộng <strong>{filtered.length}</strong> phiên live đang hoạt động
+              Tổng cộng <strong>{total}</strong> phiên live đang hoạt động
             </Typography>
-            {filtered.length === 0 ? (
+
+            {sessions.length === 0 ? (
               <Paper variant="outlined" sx={{ p: 3, textAlign: "center", borderRadius: 2 }}>
                 <Typography>Không có phiên live nào phù hợp bộ lọc.</Typography>
               </Paper>
             ) : (
-              filtered.map((s) => <LiveRow key={s.id || s._id} session={s} />)
+              sessions.map((session) => (
+                <LiveRow key={session.id || session._id} session={session} />
+              ))
             )}
+
+            {pages > 1 ? (
+              <Stack direction="row" justifyContent="center" sx={{ pt: 1 }}>
+                <Pagination
+                  color="primary"
+                  page={page}
+                  count={pages}
+                  onChange={(_, value) => setPage(value)}
+                  shape="rounded"
+                />
+              </Stack>
+            ) : null}
           </Stack>
         )}
       </Container>

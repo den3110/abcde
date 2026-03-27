@@ -15,10 +15,12 @@ import {
   RadioGroup,
   Radio,
   Skeleton,
+  Tooltip,
   InputAdornment,
   Slider,
 } from "@mui/material";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 
 // === MUI X Date Pickers v5 ===
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -38,6 +40,8 @@ import {
   useUploadAvatarMutation,
   useUploadTournamentImageMutation,
 } from "../../slices/tournamentsApiSlice";
+import { useLazySearchUsersQuery } from "../../slices/adminUsersApiSlice";
+import { useListCourtClustersQuery } from "../../slices/courtClustersApiSlice";
 import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -234,6 +238,12 @@ const normalizeVi = (s = "") =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+const normalizeLocationText = (s = "") =>
+  String(s || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
 const autoGenerateTournamentCodeFromName = (name = "") => {
   if (!name) return "";
   // Lấy phần trước dấu '-'
@@ -317,6 +327,56 @@ const computeBirthYearRange = (startDT, minAge, maxAge) => {
 };
 
 /* ---------- Skeleton block cho UI khi đang load ---------- */
+const defaultTeamFaction = (index) => ({
+  _id: "",
+  name: index === 0 ? "Phe A" : "Phe B",
+  captainUser: null,
+  order: index,
+  isActive: true,
+});
+
+const normalizeTeamFactionsForForm = (factions = []) => {
+  const list = Array.isArray(factions)
+    ? [...factions].sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0)).slice(0, 2)
+    : [];
+
+  return [0, 1].map((index) => {
+    const item = list[index] || {};
+    return {
+      ...defaultTeamFaction(index),
+      _id: item?._id || item?.id || "",
+      name: item?.name || defaultTeamFaction(index).name,
+      captainUser: item?.captainUser || null,
+      order: index,
+      isActive: item?.isActive !== false,
+    };
+  });
+};
+
+const userOptionId = (user) => String(user?._id || user?.id || "").trim();
+
+const mergeUserOptions = (...groups) => {
+  const map = new Map();
+  groups
+    .flat()
+    .filter(Boolean)
+    .forEach((user) => {
+      const key = userOptionId(user);
+      if (key) map.set(key, user);
+    });
+  return Array.from(map.values());
+};
+
+const captainOptionLabel = (user) => {
+  if (!user) return "";
+  const nickname = String(user?.nickname || user?.nickName || "").trim();
+  const name = String(user?.name || user?.fullName || "").trim();
+  const phone = String(user?.phone || "").trim();
+  const main = nickname || name || phone || "Người dùng";
+  const tail = [name && name !== main ? name : "", phone].filter(Boolean).join(" • ");
+  return tail ? `${main} • ${tail}` : main;
+};
+
 function FormSkeleton() {
   const Line = ({ w = "100%", h = 56, sx }) => (
     <Skeleton variant="rounded" width={w} height={h} sx={{ borderRadius: 1, ...sx }} />
@@ -411,9 +471,13 @@ export default function TournamentFormPage() {
   const [updateTour] = useUpdateTournamentMutation();
   const [uploadAvatar] = useUploadAvatarMutation();
   const [uploadTournamentImage] = useUploadTournamentImageMutation();
+  const { data: courtClusters = [] } = useListCourtClustersQuery();
+  const [searchUsers, { data: searchedUsers = [], isFetching: searchingCaptains }] =
+    useLazySearchUsersQuery();
 
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const captainSearchTimerRef = useRef(null);
 
   const now = dayjs();
   const nowStr = now.format(YMDHMS);
@@ -426,6 +490,8 @@ export default function TournamentFormPage() {
     sportType: 1,
     groupId: 0,
     eventType: "double",
+    tournamentMode: "standard",
+    teamFactions: normalizeTeamFactionsForForm(),
     nameDisplayMode: "nickname",
     regOpenDT: nowStr,
     registrationDeadlineDT: nowStr,
@@ -450,20 +516,102 @@ export default function TournamentFormPage() {
     bankAccountNumber: "",
     bankAccountName: "",
     registrationFee: "",
+    isFreeRegistration: false,
 
     // điều kiện
     requireKyc: true,
     ageRestricted: false,
     ageMin: 0,
     ageMax: 100,
+    allowedCourtClusterIds: [],
   });
+  const [captainOptions, setCaptainOptions] = useState([]);
 
   const autoCodePreview = useMemo(() => autoGenerateTournamentCodeFromName(form.name), [form.name]);
+  const mapGeo = useMemo(() => {
+    const lat = Number(tour?.locationGeo?.lat);
+    const lon = Number(tour?.locationGeo?.lon);
+    const sameResolvedLocation =
+      normalizeLocationText(form.location) === normalizeLocationText(tour?.location || "");
+
+    if (!isEdit || !sameResolvedLocation) return null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+    return {
+      lat,
+      lon,
+      displayName: tour?.locationGeo?.displayName || tour?.location || "",
+    };
+  }, [
+    form.location,
+    isEdit,
+    tour?.location,
+    tour?.locationGeo?.displayName,
+    tour?.locationGeo?.lat,
+    tour?.locationGeo?.lon,
+  ]);
+  const locationMapUrl = useMemo(() => {
+    if (!mapGeo) return "";
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      `${mapGeo.lat},${mapGeo.lon}`
+    )}`;
+  }, [mapGeo]);
 
   const [uploading, setUploading] = useState(false);
 
   const contactQuillRef = useRef(null);
   const contentQuillRef = useRef(null);
+
+  useEffect(() => {
+    const list = Array.isArray(searchedUsers)
+      ? searchedUsers
+      : Array.isArray(searchedUsers?.items)
+      ? searchedUsers.items
+      : Array.isArray(searchedUsers?.data)
+      ? searchedUsers.data
+      : [];
+    if (!list.length) return;
+    setCaptainOptions((prev) => mergeUserOptions(prev, list));
+  }, [searchedUsers]);
+
+  const handleCaptainSearch = (value) => {
+    const keyword = String(value || "").trim();
+    if (captainSearchTimerRef.current) {
+      clearTimeout(captainSearchTimerRef.current);
+      captainSearchTimerRef.current = null;
+    }
+    if (keyword.length < 2) return;
+    captainSearchTimerRef.current = setTimeout(() => {
+      searchUsers({ q: keyword, limit: 12 });
+    }, 250);
+  };
+
+  useEffect(
+    () => () => {
+      if (captainSearchTimerRef.current) {
+        clearTimeout(captainSearchTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const updateTeamFaction = (index, patch) => {
+    setForm((prev) => ({
+      ...prev,
+      teamFactions: prev.teamFactions.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...patch } : item
+      ),
+    }));
+  };
+
+  const captainAutocompleteOptions = useMemo(
+    () =>
+      mergeUserOptions(
+        captainOptions,
+        form.teamFactions.map((item) => item?.captainUser)
+      ),
+    [captainOptions, form.teamFactions]
+  );
 
   const resolveUploadedUrl = (res) =>
     res?.url || res?.path || res?.secure_url || res?.data?.url || res?.data?.path || "";
@@ -584,6 +732,9 @@ export default function TournamentFormPage() {
       sportType: 1,
       groupId: Number(tour.groupId ?? 0),
       eventType: tour.eventType || "double",
+      tournamentMode:
+        String(tour.tournamentMode || "").toLowerCase() === "team" ? "team" : "standard",
+      teamFactions: normalizeTeamFactionsForForm(tour.teamConfig?.factions),
       nameDisplayMode: tour.nameDisplayMode === "fullName" ? "fullName" : "nickname",
 
       regOpenDT: fixZToNaive(tour.regOpenDate) || nowStr,
@@ -610,6 +761,7 @@ export default function TournamentFormPage() {
         tour.registrationFee != null && tour.registrationFee !== ""
           ? String(Number(tour.registrationFee))
           : "",
+      isFreeRegistration: tour.isFreeRegistration === true,
       bankAccountName:
         tour.bankAccountName ||
         tour.accountName ||
@@ -621,8 +773,25 @@ export default function TournamentFormPage() {
       ageRestricted: ageEnabled,
       ageMin: Number.isFinite(ageMin) ? ageMin : 0,
       ageMax: Number.isFinite(ageMax) ? ageMax : 100,
+      allowedCourtClusterIds: Array.isArray(tour.allowedCourtClusters)
+        ? tour.allowedCourtClusters
+            .map((cluster) => cluster?._id || cluster?.id || cluster)
+            .filter(Boolean)
+            .slice(0, 1)
+        : Array.isArray(tour.allowedCourtClusterIds)
+        ? tour.allowedCourtClusterIds
+            .map((cluster) => cluster?._id || cluster?.id || cluster)
+            .filter(Boolean)
+            .slice(0, 1)
+        : [],
     };
     setForm(nextForm);
+    setCaptainOptions((prev) =>
+      mergeUserOptions(
+        prev,
+        nextForm.teamFactions.map((item) => item?.captainUser)
+      )
+    );
   }, [tour]); // eslint-disable-line
 
   const onChange = (e) => {
@@ -696,6 +865,7 @@ export default function TournamentFormPage() {
       sportType: 1,
       groupId: Number(form.groupId) || 0,
       eventType: form.eventType,
+      tournamentMode: form.tournamentMode === "team" ? "team" : "standard",
       nameDisplayMode: form.nameDisplayMode === "fullName" ? "fullName" : "nickname",
 
       regOpenDate: regOpenDT,
@@ -722,6 +892,10 @@ export default function TournamentFormPage() {
       bankAccountNumber: (form.bankAccountNumber || "").trim(),
       bankAccountName: (form.bankAccountName || "").trim(),
       registrationFee: Number(form.registrationFee) || 0,
+      isFreeRegistration: !!form.isFreeRegistration,
+      allowedCourtClusterIds: Array.isArray(form.allowedCourtClusterIds)
+        ? form.allowedCourtClusterIds.filter(Boolean).slice(0, 1)
+        : [],
 
       requireKyc: !!form.requireKyc,
       ageRestriction: {
@@ -738,8 +912,30 @@ export default function TournamentFormPage() {
     };
 
     // Chỉ gửi lên nếu có mã (để trống thì BE tự generate)
+    payload.teamConfig =
+      payload.tournamentMode === "team"
+        ? {
+            factions: normalizeTeamFactionsForForm(form.teamFactions).map((item, index) => ({
+              ...(item?._id ? { _id: item._id } : {}),
+              name: String(item?.name || "")
+                .replace(/\s+/g, " ")
+                .trim(),
+              captainUser: userOptionId(item?.captainUser) || null,
+              order: index,
+              isActive: item?.isActive !== false,
+            })),
+          }
+        : { factions: [] };
+
     if (code) {
       payload.code = code;
+    }
+
+    if (payload.isFreeRegistration) {
+      payload.bankShortName = "";
+      payload.bankAccountNumber = "";
+      payload.bankAccountName = "";
+      payload.registrationFee = 0;
     }
 
     return payload;
@@ -761,27 +957,29 @@ export default function TournamentFormPage() {
       }
     }
 
-    if (!SEPAY_BANKS.some((b) => b.value === form.bankShortName)) {
-      toast.error("Vui lòng chọn ngân hàng hợp lệ.");
-      return;
-    }
-    if (
-      !/^\d*$/.test(form.bankAccountNumber) ||
-      (form.bankAccountNumber && form.bankAccountNumber.length < 4)
-    ) {
-      toast.error("Số tài khoản chỉ gồm số và tối thiểu 4 chữ số.");
-      return;
-    }
-    if ((form.bankShortName || form.bankAccountNumber) && !form.bankAccountName.trim()) {
-      toast.error("Vui lòng nhập Tên chủ tài khoản.");
-      return;
-    }
-    if (
-      form.registrationFee !== "" &&
-      (Number.isNaN(Number(form.registrationFee)) || Number(form.registrationFee) < 0)
-    ) {
-      toast.error("Phí đăng ký không hợp lệ (không được âm).");
-      return;
+    if (!form.isFreeRegistration) {
+      if (!SEPAY_BANKS.some((b) => b.value === form.bankShortName)) {
+        toast.error("Vui lòng chọn ngân hàng hợp lệ.");
+        return;
+      }
+      if (
+        !/^\d*$/.test(form.bankAccountNumber) ||
+        (form.bankAccountNumber && form.bankAccountNumber.length < 4)
+      ) {
+        toast.error("Số tài khoản chỉ gồm số và tối thiểu 4 chữ số.");
+        return;
+      }
+      if ((form.bankShortName || form.bankAccountNumber) && !form.bankAccountName.trim()) {
+        toast.error("Vui lòng nhập Tên chủ tài khoản.");
+        return;
+      }
+      if (
+        form.registrationFee !== "" &&
+        (Number.isNaN(Number(form.registrationFee)) || Number(form.registrationFee) < 0)
+      ) {
+        toast.error("Phí đăng ký không hợp lệ (không được âm).");
+        return;
+      }
     }
     if (form.scoringScopeType === "provinces") {
       const list = (form.scoringProvinces || []).filter(Boolean);
@@ -812,6 +1010,20 @@ export default function TournamentFormPage() {
     if (rawCode && rawCode.length < 3) {
       toast.error("Mã giải tối thiểu 3 ký tự.");
       return;
+    }
+
+    if (form.tournamentMode === "team") {
+      const factions = normalizeTeamFactionsForForm(form.teamFactions);
+      const invalidName = factions.find((item) => !String(item?.name || "").trim());
+      if (invalidName) {
+        toast.error("Giải đồng đội cần nhập đủ tên 2 phe.");
+        return;
+      }
+      const missingCaptain = factions.find((item) => !userOptionId(item?.captainUser));
+      if (missingCaptain) {
+        toast.error("Giải đồng đội cần chọn đội trưởng cho từng phe.");
+        return;
+      }
     }
 
     const body = buildPayload();
@@ -908,6 +1120,33 @@ export default function TournamentFormPage() {
                     fullWidth
                     required
                     margin="normal"
+                    InputProps={{
+                      endAdornment:
+                        false && mapGeo ? (
+                          <InputAdornment position="end">
+                            <Tooltip
+                              title={
+                                mapGeo.displayName
+                                  ? `Xem trÃªn báº£n Ä‘á»“: ${mapGeo.displayName}`
+                                  : "Xem trÃªn báº£n Ä‘á»“"
+                              }
+                            >
+                              <Button
+                                size="small"
+                                color="info"
+                                variant="text"
+                                endIcon={<OpenInNewIcon fontSize="small" />}
+                                onClick={() =>
+                                  window.open(locationMapUrl, "_blank", "noopener,noreferrer")
+                                }
+                                sx={{ minWidth: "auto", px: 1, whiteSpace: "nowrap" }}
+                              >
+                                Báº£n Ä‘á»“
+                              </Button>
+                            </Tooltip>
+                          </InputAdornment>
+                        ) : null,
+                    }}
                   />
                   {/* NEW: Mã giải */}
                   <TextField
@@ -1003,6 +1242,34 @@ export default function TournamentFormPage() {
                     onChange={onChange}
                     fullWidth
                     margin="normal"
+                    InputProps={{
+                      endAdornment:
+                        false && mapGeo ? (
+                          <InputAdornment position="end">
+                            <Tooltip
+                              title={
+                                mapGeo.displayName
+                                  ? `Xem ban do: ${mapGeo.displayName}`
+                                  : "Xem ban do"
+                              }
+                            >
+                              <Button
+                                size="small"
+                                color="info"
+                                variant="text"
+                                component="a"
+                                href={locationMapUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                endIcon={<OpenInNewIcon fontSize="small" />}
+                                sx={{ minWidth: "auto", px: 1, whiteSpace: "nowrap" }}
+                              >
+                                Map
+                              </Button>
+                            </Tooltip>
+                          </InputAdornment>
+                        ) : null,
+                    }}
                   />
                   <TextField
                     name="eventType"
@@ -1016,6 +1283,77 @@ export default function TournamentFormPage() {
                     <MenuItem value="single">Đơn</MenuItem>
                     <MenuItem value="double">Đôi</MenuItem>
                   </TextField>
+                  <TextField
+                    name="tournamentMode"
+                    label="Kiểu giải"
+                    select
+                    value={form.tournamentMode}
+                    onChange={onChange}
+                    fullWidth
+                    margin="normal"
+                    helperText="Thông thường giữ flow hiện tại. Đồng đội sẽ dùng roster theo phe và tạo trận thủ công."
+                  >
+                    <MenuItem value="standard">Thông thường</MenuItem>
+                    <MenuItem value="team">Đồng đội</MenuItem>
+                  </TextField>
+                  {form.tournamentMode === "team" ? (
+                    <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
+                      <Stack spacing={2}>
+                        <Box>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Cấu hình phe đấu
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            V1 hỗ trợ 2 phe. Mỗi phe cần một đội trưởng để quản lý roster khi đăng
+                            ký.
+                          </Typography>
+                        </Box>
+                        <Grid container spacing={2}>
+                          {form.teamFactions.map((faction, index) => (
+                            <Grid item xs={12} md={6} key={faction._id || `team-faction-${index}`}>
+                              <Card variant="outlined" sx={{ p: 2, height: "100%" }}>
+                                <Stack spacing={1.5}>
+                                  <Typography variant="subtitle2">{`Phe ${index + 1}`}</Typography>
+                                  <TextField
+                                    label="Tên phe"
+                                    value={faction.name}
+                                    onChange={(e) =>
+                                      updateTeamFaction(index, { name: e.target.value })
+                                    }
+                                    fullWidth
+                                  />
+                                  <Autocomplete
+                                    options={captainAutocompleteOptions}
+                                    value={faction.captainUser || null}
+                                    loading={searchingCaptains}
+                                    onChange={(_, value) =>
+                                      updateTeamFaction(index, { captainUser: value || null })
+                                    }
+                                    onInputChange={(_, value, reason) => {
+                                      if (reason === "input") handleCaptainSearch(value);
+                                    }}
+                                    getOptionLabel={captainOptionLabel}
+                                    isOptionEqualToValue={(option, value) =>
+                                      userOptionId(option) === userOptionId(value)
+                                    }
+                                    filterOptions={(options) => options}
+                                    renderInput={(params) => (
+                                      <TextField
+                                        {...params}
+                                        label="Đội trưởng"
+                                        placeholder="Gõ tên, nickname hoặc số điện thoại"
+                                        helperText="Nhập tối thiểu 2 ký tự để tìm người dùng."
+                                      />
+                                    )}
+                                  />
+                                </Stack>
+                              </Card>
+                            </Grid>
+                          ))}
+                        </Grid>
+                      </Stack>
+                    </Card>
+                  ) : null}
                   <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
                     <Typography variant="subtitle2" gutterBottom>
                       Hiển thị tên VĐV
@@ -1042,75 +1380,166 @@ export default function TournamentFormPage() {
                     fullWidth
                     margin="normal"
                   />
+                  {mapGeo ? (
+                    <Stack direction="row" justifyContent="flex-end" sx={{ mt: -0.5, mb: 0.5 }}>
+                      <Tooltip
+                        title={
+                          mapGeo.displayName ? `Xem ban do: ${mapGeo.displayName}` : "Xem ban do"
+                        }
+                      >
+                        <Button
+                          size="small"
+                          color="info"
+                          variant="text"
+                          component="a"
+                          href={locationMapUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          endIcon={<OpenInNewIcon fontSize="small" />}
+                          sx={{ minWidth: "auto", px: 1 }}
+                        >
+                          Xem map
+                        </Button>
+                      </Tooltip>
+                    </Stack>
+                  ) : null}
+                  <Autocomplete
+                    options={courtClusters}
+                    value={
+                      courtClusters.find(
+                        (cluster) =>
+                          String(cluster?._id || cluster?.id || "") ===
+                          String(form.allowedCourtClusterIds?.[0] || "")
+                      ) || null
+                    }
+                    onChange={(_, value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        allowedCourtClusterIds: value
+                          ? [value?._id || value?.id].filter(Boolean)
+                          : [],
+                      }))
+                    }
+                    getOptionLabel={(option) =>
+                      [option?.name, option?.venueName].filter(Boolean).join(" • ")
+                    }
+                    isOptionEqualToValue={(option, value) =>
+                      String(option?._id || option?.id || "") ===
+                      String(value?._id || value?.id || "")
+                    }
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip
+                          {...getTagProps({ index })}
+                          key={option?._id || option?.id || index}
+                          label={option?.name || option?.venueName || "Cụm sân"}
+                          size="small"
+                        />
+                      ))
+                    }
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Cụm sân được phép dùng"
+                        margin="normal"
+                        helperText="Tournament chỉ được gán live lên các cụm sân đã chọn ở đây."
+                      />
+                    )}
+                  />
 
-                  {/* Thông tin chuyển khoản */}
                   <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
                     <Typography variant="subtitle2" gutterBottom>
-                      Thông tin chuyển khoản (SePay VietQR)
+                      Thông tin thanh toán
                     </Typography>
-                    <Autocomplete
-                      options={BANKS_INDEX}
-                      value={BANKS_INDEX.find((o) => o.value === form.bankShortName) || null}
-                      onChange={(_, val) =>
-                        setForm((p) => ({ ...p, bankShortName: val?.value || "" }))
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={!!form.isFreeRegistration}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              isFreeRegistration: e.target.checked,
+                            }))
+                          }
+                        />
                       }
-                      getOptionLabel={(o) => o?.label || o?.value || ""}
-                      filterOptions={filterBankOptions}
-                      isOptionEqualToValue={(o, v) => o.value === v.value}
-                      renderInput={(params) => (
+                      label="Không thu phí"
+                    />
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Bật tùy chọn này tức là giải không thu phí và mọi đăng ký đều được đánh dấu là
+                      đã thanh toán.
+                    </Typography>
+
+                    {!form.isFreeRegistration ? (
+                      <>
+                        <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>
+                          Thông tin chuyển khoản (SePay VietQR)
+                        </Typography>
+                        <Autocomplete
+                          options={BANKS_INDEX}
+                          value={BANKS_INDEX.find((o) => o.value === form.bankShortName) || null}
+                          onChange={(_, val) =>
+                            setForm((p) => ({ ...p, bankShortName: val?.value || "" }))
+                          }
+                          getOptionLabel={(o) => o?.label || o?.value || ""}
+                          filterOptions={filterBankOptions}
+                          isOptionEqualToValue={(o, v) => o.value === v.value}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="Tên ngân hàng"
+                              margin="normal"
+                              fullWidth
+                              helperText="Gõ 'VCB', 'CTG', 'TCB'… hoặc tên không dấu để tìm nhanh"
+                              required
+                            />
+                          )}
+                        />
                         <TextField
-                          {...params}
-                          label="Tên ngân hàng"
-                          margin="normal"
+                          name="bankAccountNumber"
+                          label="Số tài khoản"
                           fullWidth
-                          helperText="Gõ 'VCB', 'CTG', 'TCB'… hoặc tên không dấu để tìm nhanh"
+                          margin="normal"
+                          value={form.bankAccountNumber}
+                          onChange={onChangeBankAccountNumber}
+                          type="text"
+                          inputProps={{ inputMode: "numeric", pattern: "[0-9]*", maxLength: 32 }}
+                          helperText="Chỉ nhập số (0–9)."
                           required
                         />
-                      )}
-                    />
-                    <TextField
-                      name="bankAccountNumber"
-                      label="Số tài khoản"
-                      fullWidth
-                      margin="normal"
-                      value={form.bankAccountNumber}
-                      onChange={onChangeBankAccountNumber}
-                      type="text"
-                      inputProps={{ inputMode: "numeric", pattern: "[0-9]*", maxLength: 32 }}
-                      helperText="Chỉ nhập số (0–9)."
-                      required
-                    />
-                    <TextField
-                      name="bankAccountName"
-                      label="Tên chủ tài khoản"
-                      fullWidth
-                      margin="normal"
-                      value={form.bankAccountName}
-                      onChange={onChange}
-                      onBlur={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          bankAccountName: (e.target.value || "").replace(/\s+/g, " ").trim(),
-                        }))
-                      }
-                      inputProps={{ maxLength: 64 }}
-                      helperText="Tên người/đơn vị nhận tiền (có dấu hoặc không dấu đều được)"
-                      required
-                    />
-                    <TextField
-                      name="registrationFee"
-                      label="Phí đăng ký (VND)"
-                      fullWidth
-                      margin="normal"
-                      value={formatMoney(form.registrationFee)}
-                      onChange={onChangeRegistrationFee}
-                      type="text"
-                      inputProps={{ inputMode: "numeric" }}
-                      InputProps={{
-                        endAdornment: <InputAdornment position="end">VND</InputAdornment>,
-                      }}
-                      helperText="Nhập số tiền, tự động thêm dấu phẩy ngăn cách"
-                    />
+                        <TextField
+                          name="bankAccountName"
+                          label="Tên chủ tài khoản"
+                          fullWidth
+                          margin="normal"
+                          value={form.bankAccountName}
+                          onChange={onChange}
+                          onBlur={(e) =>
+                            setForm((p) => ({
+                              ...p,
+                              bankAccountName: (e.target.value || "").replace(/\s+/g, " ").trim(),
+                            }))
+                          }
+                          inputProps={{ maxLength: 64 }}
+                          helperText="Tên người/đơn vị nhận tiền (có dấu hoặc không dấu đều được)"
+                          required
+                        />
+                        <TextField
+                          name="registrationFee"
+                          label="Phí đăng ký (VND)"
+                          fullWidth
+                          margin="normal"
+                          value={formatMoney(form.registrationFee)}
+                          onChange={onChangeRegistrationFee}
+                          type="text"
+                          inputProps={{ inputMode: "numeric" }}
+                          InputProps={{
+                            endAdornment: <InputAdornment position="end">VND</InputAdornment>,
+                          }}
+                          helperText="Nhập số tiền, tự động thêm dấu phẩy ngăn cách"
+                        />
+                      </>
+                    ) : null}
                   </Card>
 
                   {/* Phạm vi giải đấu */}

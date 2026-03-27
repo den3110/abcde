@@ -536,6 +536,17 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         method: "POST",
         body,
       }),
+      invalidatesTags: (_res, _err, { tournamentId }) => [
+        { type: "ADMIN_BRACKETS", id: tournamentId },
+        { type: "Bracket", id: tournamentId },
+      ],
+    }),
+    previewBlueprintImpact: builder.mutation({
+      query: ({ tournamentId, body }) => ({
+        url: `/admin/tournaments/${tournamentId}/plan/impact`,
+        method: "POST",
+        body,
+      }),
     }),
     autoGenerateRegistrations: builder.mutation({
       query: ({ tourId, body }) => ({
@@ -782,6 +793,7 @@ export const {
   useBuildRoundElimSkeletonMutation,
   useCommitTournamentPlanMutation,
   usePlanTournamentMutation,
+  usePreviewBlueprintImpactMutation,
   useAutoGenerateRegistrationsMutation,
   usePreviewAiRegistrationImportMutation,
   useCommitAiRegistrationImportMutation,

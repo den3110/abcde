@@ -45,6 +45,39 @@ function capacityLabel(bytes) {
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("vi-VN");
+}
+
+function getHealthChipProps(runtimeTarget) {
+  const status = String(runtimeTarget?.healthStatus || "unknown").toLowerCase();
+  if (status === "alive") {
+    return {
+      label: "R2 sống",
+      color: "success",
+    };
+  }
+  if (status === "dead") {
+    return {
+      label: "R2 chết",
+      color: "error",
+    };
+  }
+  if (status === "disabled") {
+    return {
+      label: "Bỏ qua probe",
+      color: "default",
+    };
+  }
+  return {
+    label: "Chưa rõ",
+    color: "default",
+  };
+}
+
 function normalizeStorageTargetsForForm(targets = []) {
   return (Array.isArray(targets) ? targets : []).map((target) => ({
     id: target.id || "",
@@ -111,7 +144,18 @@ function validateStorageTargetDraft(target, existingTargets = []) {
 }
 
 export default function AdminLivePlaybackPage() {
-  const { data, isFetching, refetch } = useGetAdminLivePlaybackConfigQuery();
+  const [healthRefreshToken, setHealthRefreshToken] = React.useState(0);
+  const queryArg = React.useMemo(
+    () =>
+      healthRefreshToken > 0
+        ? {
+            forceHealth: true,
+            refreshToken: healthRefreshToken,
+          }
+        : undefined,
+    [healthRefreshToken]
+  );
+  const { data, isFetching } = useGetAdminLivePlaybackConfigQuery(queryArg);
   const [updateConfig, { isLoading: isSaving }] = useUpdateAdminLivePlaybackConfigMutation();
 
   const [form, setForm] = React.useState({
@@ -234,6 +278,10 @@ export default function AdminLivePlaybackPage() {
     }));
   }, []);
 
+  const handleRefresh = React.useCallback(() => {
+    setHealthRefreshToken(Date.now());
+  }, []);
+
   const handleSave = React.useCallback(async () => {
     try {
       await updateConfig({
@@ -290,7 +338,7 @@ export default function AdminLivePlaybackPage() {
                 <Button
                   variant="outlined"
                   startIcon={<RefreshIcon />}
-                  onClick={() => refetch()}
+                  onClick={handleRefresh}
                   disabled={isFetching}
                 >
                   Refresh
@@ -349,6 +397,32 @@ export default function AdminLivePlaybackPage() {
                     Runtime Targets
                   </Typography>
                   <Typography variant="h4">{data?.summary?.runtimeTargetCount || 0}</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <Card>
+                <CardContent>
+                  <Typography variant="overline" color="text.secondary">
+                    R2 sống
+                  </Typography>
+                  <Typography variant="h4">{data?.summary?.healthyTargetCount || 0}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Checked: {formatDateTime(data?.summary?.healthCheckedAt)}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <Card>
+                <CardContent>
+                  <Typography variant="overline" color="text.secondary">
+                    R2 chết
+                  </Typography>
+                  <Typography variant="h4">{data?.summary?.deadTargetCount || 0}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Unprobeable: {data?.summary?.unprobeableTargetCount || 0}
+                  </Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -431,6 +505,7 @@ export default function AdminLivePlaybackPage() {
               {form.storageTargets.map((target) => {
                 const runtimeTarget =
                   (data?.storageTargets || []).find((item) => item.id === target.id) || null;
+                const healthChip = getHealthChipProps(runtimeTarget);
                 const effectivePublicBaseUrl =
                   runtimeTarget?.effectivePublicBaseUrl ||
                   target.publicBaseUrl ||
@@ -464,6 +539,7 @@ export default function AdminLivePlaybackPage() {
                             label={runtimeTarget?.runtimeUsable ? "Runtime usable" : "Draft"}
                             color={runtimeTarget?.runtimeUsable ? "info" : "default"}
                           />
+                          <Chip size="small" label={healthChip.label} color={healthChip.color} />
                           <Button
                             color="error"
                             variant="outlined"
@@ -605,6 +681,73 @@ export default function AdminLivePlaybackPage() {
                           </Typography>
                         </Grid>
                       </Grid>
+
+                      <Box
+                        sx={{
+                          border: "1px dashed rgba(0,0,0,0.12)",
+                          borderRadius: 2,
+                          px: 2,
+                          py: 1.5,
+                        }}
+                      >
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} md={4}>
+                            <Typography variant="caption" color="text.secondary">
+                              R2 health
+                            </Typography>
+                            <Typography variant="body2">
+                              {runtimeTarget?.healthStatus === "alive"
+                                ? "Sống"
+                                : runtimeTarget?.healthStatus === "dead"
+                                ? "Chết"
+                                : runtimeTarget?.healthStatus === "disabled"
+                                ? "Bỏ qua (disabled)"
+                                : "Chưa rõ"}
+                              {runtimeTarget?.healthLatencyMs != null
+                                ? ` • ${runtimeTarget.healthLatencyMs}ms`
+                                : ""}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12} md={4}>
+                            <Typography variant="caption" color="text.secondary">
+                              Health checked at
+                            </Typography>
+                            <Typography variant="body2">
+                              {formatDateTime(runtimeTarget?.healthCheckedAt)}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12} md={4}>
+                            <Typography variant="caption" color="text.secondary">
+                              Probe mode
+                            </Typography>
+                            <Typography variant="body2">
+                              {runtimeTarget?.healthProbeable ? "Probe trực tiếp R2" : "Bỏ qua"}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={12}>
+                            <Typography variant="caption" color="text.secondary">
+                              Health detail
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              color={
+                                runtimeTarget?.healthStatus === "dead"
+                                  ? "error.main"
+                                  : "text.primary"
+                              }
+                              sx={{ wordBreak: "break-word" }}
+                            >
+                              {runtimeTarget?.healthMessage ||
+                                (runtimeTarget?.healthProbeable
+                                  ? "Không có thông điệp probe"
+                                  : "Đã bỏ qua probe vì target chưa đủ thông tin")}
+                              {runtimeTarget?.healthErrorCode
+                                ? ` (${runtimeTarget.healthErrorCode})`
+                                : ""}
+                            </Typography>
+                          </Grid>
+                        </Grid>
+                      </Box>
                     </Stack>
                   </Box>
                 );

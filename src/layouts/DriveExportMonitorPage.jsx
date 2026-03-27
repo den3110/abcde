@@ -29,14 +29,18 @@ import SearchIcon from "@mui/icons-material/Search";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { DataGrid } from "@mui/x-data-grid";
+import { toast } from "react-toastify";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
 import {
   useForceLiveRecordingExportMutation,
+  useGetLiveRecordingAiCommentaryMonitorQuery,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
+  useQueueLiveRecordingAiCommentaryMutation,
+  useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
 } from "slices/liveApiSlice";
 
@@ -124,6 +128,176 @@ function WorkerStatusChip({ health }) {
       ? "Worker bị treo"
       : "Worker ngoại tuyến";
   return <Chip size="small" color={color} label={label} />;
+}
+
+function CommentaryStatusChip({ commentary }) {
+  const status = String(commentary?.status || "idle").toLowerCase();
+  const meta =
+    status === "completed"
+      ? { color: "success", label: "BLV AI sẵn sàng" }
+      : status === "running"
+      ? { color: "info", label: "BLV AI đang render" }
+      : status === "queued"
+      ? { color: "secondary", label: "BLV AI đang chờ" }
+      : status === "failed"
+      ? { color: "error", label: "BLV AI lỗi" }
+      : { color: "default", label: "BLV AI chưa có" };
+  return <Chip size="small" color={meta.color} label={meta.label} />;
+}
+
+function formatTimecode(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(
+      secs
+    ).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function ScenePreviewBlock({ job }) {
+  const summary = job?.summary || {};
+  const analysisPreview = job?.analysisPreview || {};
+  const sceneWindows = Array.isArray(analysisPreview?.sceneWindows)
+    ? analysisPreview.sceneWindows
+    : [];
+  const transcriptSnippets = Array.isArray(analysisPreview?.transcriptSnippets)
+    ? analysisPreview.transcriptSnippets
+    : [];
+  const scriptPreview = Array.isArray(analysisPreview?.scriptPreview)
+    ? analysisPreview.scriptPreview
+    : [];
+
+  if (!sceneWindows.length && !transcriptSnippets.length && !scriptPreview.length) return null;
+
+  return (
+    <Stack spacing={1.1}>
+      <Stack direction="row" spacing={0.75} flexWrap="wrap">
+        <Chip size="small" variant="outlined" label={`Scenes: ${summary.sceneCount ?? 0}`} />
+        <Chip
+          size="small"
+          variant="outlined"
+          label={`Aligned: ${summary.alignedSceneCount ?? 0}`}
+        />
+        <Chip
+          size="small"
+          variant="outlined"
+          label={`Transcript: ${summary.transcriptSnippetCount ?? 0}`}
+        />
+        <Chip size="small" variant="outlined" label={`Segments: ${summary.segmentCount ?? 0}`} />
+      </Stack>
+
+      {sceneWindows.length ? (
+        <Stack spacing={0.75}>
+          <Typography variant="caption" sx={{ opacity: 0.68 }}>
+            Scene windows
+          </Typography>
+          <Grid container spacing={1}>
+            {sceneWindows.slice(0, 4).map((scene) => (
+              <Grid item xs={12} md={6} key={`scene-${scene.sceneIndex}-${scene.startSec}`}>
+                <Card variant="outlined" sx={{ borderRadius: 2 }}>
+                  <CardContent sx={{ p: 1.25, "&:last-child": { pb: 1.25 } }}>
+                    {(() => {
+                      const sceneSegments = scriptPreview
+                        .filter(
+                          (segment) =>
+                            Number(segment?.sceneIndex) === Number(scene?.sceneIndex) &&
+                            segment?.text
+                        )
+                        .slice(0, 2);
+                      return (
+                        <Stack spacing={0.45}>
+                          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                            <Chip
+                              size="small"
+                              color="info"
+                              variant="outlined"
+                              label={`#${scene.sceneIndex + 1} ${scene.kind || "scene"}`}
+                            />
+                            <Typography variant="caption" sx={{ opacity: 0.72 }}>
+                              {formatTimecode(scene.startSec)} - {formatTimecode(scene.endSec)}
+                            </Typography>
+                          </Stack>
+                          {scene.visualSummary ? (
+                            <Typography variant="caption" sx={{ whiteSpace: "normal" }}>
+                              {scene.visualSummary}
+                            </Typography>
+                          ) : null}
+                          {scene.audioSnippet ? (
+                            <Typography
+                              variant="caption"
+                              sx={{ opacity: 0.74, whiteSpace: "normal" }}
+                            >
+                              Audio: {scene.audioSnippet}
+                            </Typography>
+                          ) : null}
+                          {sceneSegments.length ? (
+                            <Stack spacing={0.35}>
+                              <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                                Script preview
+                              </Typography>
+                              {sceneSegments.map((segment) => (
+                                <Typography
+                                  key={`scene-script-${scene.sceneIndex}-${segment.segmentIndex}`}
+                                  variant="caption"
+                                  sx={{ opacity: 0.82, whiteSpace: "normal" }}
+                                >
+                                  {formatTimecode(segment.startSec)} -{" "}
+                                  {formatTimecode(segment.endSec)}: {segment.text}
+                                </Typography>
+                              ))}
+                            </Stack>
+                          ) : null}
+                        </Stack>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Stack>
+      ) : null}
+
+      {transcriptSnippets.length ? (
+        <Stack spacing={0.45}>
+          <Typography variant="caption" sx={{ opacity: 0.68 }}>
+            Transcript snippets
+          </Typography>
+          {transcriptSnippets.slice(0, 3).map((snippet) => (
+            <Typography
+              key={`snippet-${snippet.startSec}-${snippet.endSec}`}
+              variant="caption"
+              sx={{ opacity: 0.76, whiteSpace: "normal" }}
+            >
+              {formatTimecode(snippet.startSec)} - {formatTimecode(snippet.endSec)}: {snippet.text}
+            </Typography>
+          ))}
+        </Stack>
+      ) : null}
+
+      {scriptPreview.length ? (
+        <Stack spacing={0.45}>
+          <Typography variant="caption" sx={{ opacity: 0.68 }}>
+            Script segments
+          </Typography>
+          {scriptPreview.slice(0, 4).map((segment) => (
+            <Typography
+              key={`script-preview-${segment.segmentIndex}-${segment.startSec}`}
+              variant="caption"
+              sx={{ opacity: 0.8, whiteSpace: "normal" }}
+            >
+              {segment.sceneIndex !== null ? `Scene ${segment.sceneIndex + 1} • ` : ""}
+              {formatTimecode(segment.startSec)} - {formatTimecode(segment.endSec)}: {segment.text}
+            </Typography>
+          ))}
+        </Stack>
+      ) : null}
+    </Stack>
+  );
 }
 
 function MatchCell({ row }) {
@@ -396,6 +570,256 @@ function WorkerHealthPanel({ health, currentExportRow }) {
   );
 }
 
+function AiCommentaryPanel({ monitor, currentRow }) {
+  const settings = monitor?.settings || {};
+  const activeJob = monitor?.activeJob || null;
+  const gateway = monitor?.gatewayHealth || {};
+  const gatewayOnline = gateway?.overallStatus === "online";
+  const gatewayMessage =
+    gateway?.overallStatus === "online"
+      ? `${gateway?.script?.message || "Script OK"} • ${gateway?.tts?.message || "TTS OK"}`
+      : gateway?.script?.message || gateway?.tts?.message || "Gateway chưa sẵn sàng";
+  const globalEnabled = Boolean(settings?.enabled);
+  const autoEnabled = Boolean(settings?.autoGenerateAfterDriveUpload);
+  const activeRowCommentary = currentRow?.aiCommentary || null;
+
+  return (
+    <Card sx={{ borderRadius: 3 }}>
+      <CardContent>
+        <Stack spacing={2}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", md: "center" }}
+          >
+            <Box>
+              <Typography variant="h6" fontWeight={800}>
+                AI bình luận video trận
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.72 }}>
+                Queue riêng cho BLV AI sau khi recording đã lên Drive. Công tắc global nằm ở Cài đặt
+                hệ thống.
+              </Typography>
+            </Box>
+
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Chip
+                size="small"
+                color={globalEnabled ? "success" : "default"}
+                label={globalEnabled ? "Global ON" : "Global OFF"}
+              />
+              <Chip
+                size="small"
+                color={autoEnabled ? "info" : "default"}
+                label={autoEnabled ? "Auto sau Drive: ON" : "Auto sau Drive: OFF"}
+              />
+              <Chip
+                size="small"
+                color={gatewayOnline ? "success" : "warning"}
+                label={gatewayMessage}
+              />
+            </Stack>
+          </Stack>
+
+          <Grid container spacing={1.5}>
+            <Grid item xs={12} md={3}>
+              <Typography variant="caption" sx={{ opacity: 0.65 }}>
+                Voice mặc định
+              </Typography>
+              <Typography variant="body2" fontWeight={700}>
+                {settings?.defaultVoicePreset || "-"}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <Typography variant="caption" sx={{ opacity: 0.65 }}>
+                Ngôn ngữ
+              </Typography>
+              <Typography variant="body2" fontWeight={700}>
+                {settings?.defaultLanguage || "-"}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <Typography variant="caption" sx={{ opacity: 0.65 }}>
+                Tông giọng
+              </Typography>
+              <Typography variant="body2" fontWeight={700}>
+                {settings?.defaultTonePreset || "-"}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <Typography variant="caption" sx={{ opacity: 0.65 }}>
+                Queued
+              </Typography>
+              <Typography variant="body2" fontWeight={700}>
+                {monitor?.summary?.queued ?? 0}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={1.5}>
+              <Typography variant="caption" sx={{ opacity: 0.65 }}>
+                Running
+              </Typography>
+              <Typography variant="body2" fontWeight={700}>
+                {monitor?.summary?.running ?? 0}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={1.5}>
+              <Typography variant="caption" sx={{ opacity: 0.65 }}>
+                Failed
+              </Typography>
+              <Typography variant="body2" fontWeight={700}>
+                {monitor?.summary?.failed ?? 0}
+              </Typography>
+            </Grid>
+          </Grid>
+
+          {activeJob ? (
+            <>
+              <Divider />
+              <Stack spacing={1.2}>
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1}
+                  justifyContent="space-between"
+                  alignItems={{ xs: "flex-start", md: "center" }}
+                >
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                    <CommentaryStatusChip commentary={{ status: activeJob.status }} />
+                    {activeJob.matchCode ? (
+                      <Typography variant="body2" fontWeight={700}>
+                        {activeJob.matchCode}
+                      </Typography>
+                    ) : null}
+                    {activeJob.participantsLabel ? (
+                      <Typography variant="body2" sx={{ opacity: 0.82 }}>
+                        {activeJob.participantsLabel}
+                      </Typography>
+                    ) : null}
+                  </Stack>
+                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={activeJob.currentStepLabel || activeJob.status}
+                    />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`${activeJob.progressPercent || 0}%`}
+                    />
+                  </Stack>
+                </Stack>
+
+                <LinearProgress
+                  variant="determinate"
+                  value={Math.max(0, Math.min(100, activeJob.progressPercent || 0))}
+                  sx={{ height: 8, borderRadius: 999 }}
+                />
+
+                <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                  Bắt đầu {formatDateTime(activeJob.startedAt)} • cập nhật{" "}
+                  {formatRelative(activeJob.updatedAt)}
+                </Typography>
+
+                {activeJob.lastError ? <Alert severity="error">{activeJob.lastError}</Alert> : null}
+                <ScenePreviewBlock job={activeJob} />
+              </Stack>
+            </>
+          ) : (
+            <Alert severity="info">Chưa có job AI commentary đang chạy hoặc chờ trong queue.</Alert>
+          )}
+
+          {activeRowCommentary?.ready && activeRowCommentary?.dubbedPlaybackUrl ? (
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                Recording hiện tại của worker đã có bản BLV AI:
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                component={Link}
+                href={activeRowCommentary.dubbedPlaybackUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                startIcon={<PlayCircleOutlineIcon />}
+              >
+                Mở bản BLV AI
+              </Button>
+            </Stack>
+          ) : null}
+          {Array.isArray(monitor?.recentJobs) && monitor.recentJobs.length ? (
+            <>
+              <Divider />
+              <Stack spacing={1}>
+                <Typography variant="subtitle2" fontWeight={700}>
+                  Recent jobs
+                </Typography>
+                {monitor.recentJobs.slice(0, 4).map((job) => (
+                  <Card key={job.id} variant="outlined" sx={{ borderRadius: 2.5 }}>
+                    <CardContent sx={{ p: 1.25, "&:last-child": { pb: 1.25 } }}>
+                      <Stack spacing={0.8}>
+                        <Stack
+                          direction={{ xs: "column", md: "row" }}
+                          spacing={1}
+                          justifyContent="space-between"
+                          alignItems={{ xs: "flex-start", md: "center" }}
+                        >
+                          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                            <CommentaryStatusChip commentary={{ status: job.status }} />
+                            {job.matchCode ? (
+                              <Typography variant="body2" fontWeight={700}>
+                                {job.matchCode}
+                              </Typography>
+                            ) : null}
+                            {job.participantsLabel ? (
+                              <Typography variant="caption" sx={{ opacity: 0.76 }}>
+                                {job.participantsLabel}
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                          <Stack direction="row" spacing={0.75} flexWrap="wrap">
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`${job.progressPercent || 0}%`}
+                            />
+                            {job.artifacts?.dubbedPlaybackUrl ? (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                component={Link}
+                                href={job.artifacts.dubbedPlaybackUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                startIcon={<PlayCircleOutlineIcon />}
+                              >
+                                Mo
+                              </Button>
+                            ) : null}
+                          </Stack>
+                        </Stack>
+                        <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                          {formatDateTime(job.createdAt)} • {job.currentStepLabel || job.status}
+                        </Typography>
+                        <ScenePreviewBlock job={job} />
+                        {job.lastError ? (
+                          <Typography variant="caption" color="error">
+                            {job.lastError}
+                          </Typography>
+                        ) : null}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Stack>
+            </>
+          ) : null}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
 function RecordingDetailDialog({ row, open, onClose }) {
   if (!row) return null;
 
@@ -581,16 +1005,29 @@ export default function DriveExportMonitorPage() {
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
   const [forcingRecordingId, setForcingRecordingId] = useState(null);
+  const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
+  const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
 
   const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
   const [retryExport] = useRetryLiveRecordingExportMutation();
   const [forceExport] = useForceLiveRecordingExportMutation();
+  const [queueAiCommentary] = useQueueLiveRecordingAiCommentaryMutation();
+  const [rerenderAiCommentary] = useRerenderLiveRecordingAiCommentaryMutation();
   const {
     data: workerHealth,
     isError: workerHealthError,
     refetch: refetchWorkerHealth,
   } = useGetLiveRecordingWorkerHealthQuery(undefined, {
     pollingInterval: 30000,
+    refetchOnMountOrArgChange: true,
+  });
+  const {
+    data: commentaryMonitor,
+    isFetching: isCommentaryMonitorFetching,
+    isError: commentaryMonitorError,
+    refetch: refetchCommentaryMonitor,
+  } = useGetLiveRecordingAiCommentaryMonitorQuery(undefined, {
+    pollingInterval: 15000,
     refetchOnMountOrArgChange: true,
   });
 
@@ -607,6 +1044,7 @@ export default function DriveExportMonitorPage() {
         socket.emit("recordings-v2:watch");
       } catch (_) {}
       void refetch();
+      void refetchCommentaryMonitor();
     };
     const handleDisconnect = () => setSocketOn(false);
     const handleUpdate = (payload) => setSnapshot(payload);
@@ -628,7 +1066,7 @@ export default function DriveExportMonitorPage() {
         socket.off("recordings-v2:update", handleUpdate);
       } catch (_) {}
     };
-  }, [socket, refetch]);
+  }, [socket, refetch, refetchCommentaryMonitor]);
 
   const rows = useMemo(() => {
     const sourceRows = snapshot?.rows || [];
@@ -666,6 +1104,8 @@ export default function DriveExportMonitorPage() {
         row.exportPipeline?.detail,
         row.error,
         row.driveFileId,
+        row.aiCommentary?.status,
+        row.aiCommentary?.error,
       ]
         .filter(Boolean)
         .join(" ")
@@ -691,6 +1131,13 @@ export default function DriveExportMonitorPage() {
   const workerAlertVisible =
     ["stale", "offline"].includes(workerHealth?.status || "offline") &&
     summary.exporting.length > 0;
+  const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
+  const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
+  const commentaryCurrentRow = useMemo(() => {
+    const activeRecordingId = commentaryMonitor?.activeJob?.recordingId;
+    if (!activeRecordingId) return null;
+    return rows.find((row) => row.recordingId === activeRecordingId) || null;
+  }, [commentaryMonitor, rows]);
 
   const handleRetryExport = async (recordingId) => {
     try {
@@ -713,6 +1160,36 @@ export default function DriveExportMonitorPage() {
     } catch (_) {
     } finally {
       setForcingRecordingId(null);
+    }
+  };
+
+  const refreshAll = () => {
+    refetch();
+    refetchWorkerHealth();
+    refetchCommentaryMonitor();
+  };
+
+  const handleQueueCommentary = async (recordingId, forceRerender = false) => {
+    try {
+      if (forceRerender) {
+        setRerenderingCommentaryId(recordingId);
+        await rerenderAiCommentary(recordingId).unwrap();
+        toast.success("Đã đưa job render lại BLV AI vào queue.");
+      } else {
+        setQueueingCommentaryId(recordingId);
+        await queueAiCommentary(recordingId).unwrap();
+        toast.success("Đã đưa job BLV AI vào queue.");
+      }
+      refreshAll();
+    } catch (error) {
+      toast.error(
+        error?.data?.message ||
+          error?.error ||
+          (forceRerender ? "Không thể render lại BLV AI." : "Không thể đưa job BLV AI vào queue.")
+      );
+    } finally {
+      setQueueingCommentaryId(null);
+      setRerenderingCommentaryId(null);
     }
   };
 
@@ -827,6 +1304,95 @@ export default function DriveExportMonitorPage() {
         ),
       },
       {
+        field: "aiCommentary",
+        headerName: "BLV AI",
+        minWidth: 330,
+        sortable: false,
+        renderCell: ({ row }) => {
+          const commentary = row.aiCommentary || {};
+          const queueingThisRow = queueingCommentaryId === row.recordingId;
+          const rerenderingThisRow = rerenderingCommentaryId === row.recordingId;
+          const rowReady = row.status === "ready";
+          const busy = Boolean(
+            retryingRecordingId ||
+              forcingRecordingId ||
+              queueingCommentaryId ||
+              rerenderingCommentaryId
+          );
+          const canQueue =
+            commentaryGlobalEnabled &&
+            rowReady &&
+            !["queued", "running"].includes(String(commentary.status || "").toLowerCase());
+          const canRerender = commentaryGlobalEnabled && rowReady;
+
+          return (
+            <Stack spacing={0.6} sx={{ py: 0.7 }}>
+              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                <CommentaryStatusChip commentary={commentary} />
+                {commentary.ready && commentary.dubbedPlaybackUrl ? (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    component={Link}
+                    href={commentary.dubbedPlaybackUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    startIcon={<PlayCircleOutlineIcon />}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    Mở
+                  </Button>
+                ) : null}
+              </Stack>
+
+              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={!canQueue || busy}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleQueueCommentary(row.recordingId, false);
+                  }}
+                  startIcon={
+                    queueingThisRow ? <CircularProgress size={14} color="inherit" /> : null
+                  }
+                >
+                  {queueingThisRow ? "Đang queue..." : "Lồng tiếng AI"}
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                  disabled={!canRerender || busy}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleQueueCommentary(row.recordingId, true);
+                  }}
+                  startIcon={
+                    rerenderingThisRow ? <CircularProgress size={14} color="inherit" /> : null
+                  }
+                >
+                  {rerenderingThisRow ? "Đang render lại..." : "Render lại"}
+                </Button>
+              </Stack>
+
+              <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: "normal" }}>
+                {!commentaryGlobalEnabled
+                  ? "Đang tắt global trong Cài đặt hệ thống."
+                  : !rowReady
+                  ? "Chỉ chạy khi recording đã ready."
+                  : commentary.error || commentary.renderedAt
+                  ? commentary.error || `Xong ${formatRelative(commentary.renderedAt)}`
+                  : commentaryAutoEnabled
+                  ? "Auto sẽ tự queue khi video lên Drive."
+                  : "Auto đang tắt, có thể chạy tay."}
+              </Typography>
+            </Stack>
+          );
+        },
+      },
+      {
         field: "updatedAt",
         headerName: "Cập nhật",
         minWidth: 160,
@@ -863,7 +1429,14 @@ export default function DriveExportMonitorPage() {
         ),
       },
     ],
-    [forcingRecordingId, retryingRecordingId]
+    [
+      commentaryAutoEnabled,
+      commentaryGlobalEnabled,
+      forcingRecordingId,
+      queueingCommentaryId,
+      rerenderingCommentaryId,
+      retryingRecordingId,
+    ]
   );
 
   return (
@@ -896,11 +1469,8 @@ export default function DriveExportMonitorPage() {
               <Button
                 variant="outlined"
                 startIcon={<RefreshIcon />}
-                onClick={() => {
-                  refetch();
-                  refetchWorkerHealth();
-                }}
-                disabled={isFetching}
+                onClick={refreshAll}
+                disabled={isFetching || isCommentaryMonitorFetching}
               >
                 Refresh
               </Button>
@@ -917,6 +1487,9 @@ export default function DriveExportMonitorPage() {
             <Alert severity="error">Failed to load recording export snapshot.</Alert>
           ) : null}
           {workerHealthError ? <Alert severity="error">Failed to load worker health.</Alert> : null}
+          {commentaryMonitorError ? (
+            <Alert severity="error">Failed to load AI commentary monitor.</Alert>
+          ) : null}
 
           <Grid container spacing={2}>
             <Grid item xs={12} md={2}>
@@ -980,6 +1553,7 @@ export default function DriveExportMonitorPage() {
           </Grid>
 
           <WorkerHealthPanel health={workerHealth} currentExportRow={currentExportRow} />
+          <AiCommentaryPanel monitor={commentaryMonitor} currentRow={commentaryCurrentRow} />
 
           <Card sx={{ borderRadius: 3 }}>
             <CardContent>
