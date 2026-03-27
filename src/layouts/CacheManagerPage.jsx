@@ -503,6 +503,7 @@ export default function CacheManagerPage() {
                     rows={filteredRows}
                     columns={columns}
                     getRowId={(row) => row.id}
+                    getRowHeight={() => "auto"}
                     disableRowSelectionOnClick
                     pageSizeOptions={[10, 25, 50]}
                     initialState={{
