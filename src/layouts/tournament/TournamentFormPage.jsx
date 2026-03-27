@@ -35,7 +35,7 @@ import "react-quill/dist/quill.snow.css";
 import PropTypes from "prop-types";
 import {
   useCreateTournamentMutation,
-  useGetTournamentQuery,
+  useGetAdminTournamentQuery,
   useUpdateTournamentMutation,
   useUploadAvatarMutation,
   useUploadTournamentImageMutation,
@@ -243,6 +243,8 @@ const normalizeLocationText = (s = "") =>
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+
+const toEntityId = (value) => String(value?._id || value?.id || value || "").trim();
 
 const autoGenerateTournamentCodeFromName = (name = "") => {
   if (!name) return "";
@@ -465,7 +467,9 @@ function FormSkeleton() {
 export default function TournamentFormPage() {
   const { id } = useParams(); // "new" | <id>
   const isEdit = !!id && id !== "new";
-  const { data: tour, isLoading, isFetching } = useGetTournamentQuery(id, { skip: !isEdit });
+  const { data: tour, isLoading, isFetching } = useGetAdminTournamentQuery(id, {
+    skip: !isEdit,
+  });
 
   const [createTour] = useCreateTournamentMutation();
   const [updateTour] = useUpdateTournamentMutation();
@@ -775,12 +779,12 @@ export default function TournamentFormPage() {
       ageMax: Number.isFinite(ageMax) ? ageMax : 100,
       allowedCourtClusterIds: Array.isArray(tour.allowedCourtClusters)
         ? tour.allowedCourtClusters
-            .map((cluster) => cluster?._id || cluster?.id || cluster)
+            .map((cluster) => toEntityId(cluster))
             .filter(Boolean)
             .slice(0, 1)
         : Array.isArray(tour.allowedCourtClusterIds)
         ? tour.allowedCourtClusterIds
-            .map((cluster) => cluster?._id || cluster?.id || cluster)
+            .map((cluster) => toEntityId(cluster))
             .filter(Boolean)
             .slice(0, 1)
         : [],
@@ -894,7 +898,10 @@ export default function TournamentFormPage() {
       registrationFee: Number(form.registrationFee) || 0,
       isFreeRegistration: !!form.isFreeRegistration,
       allowedCourtClusterIds: Array.isArray(form.allowedCourtClusterIds)
-        ? form.allowedCourtClusterIds.filter(Boolean).slice(0, 1)
+        ? form.allowedCourtClusterIds
+            .map((value) => toEntityId(value))
+            .filter(Boolean)
+            .slice(0, 1)
         : [],
 
       requireKyc: !!form.requireKyc,
@@ -1407,25 +1414,20 @@ export default function TournamentFormPage() {
                     options={courtClusters}
                     value={
                       courtClusters.find(
-                        (cluster) =>
-                          String(cluster?._id || cluster?.id || "") ===
-                          String(form.allowedCourtClusterIds?.[0] || "")
+                        (cluster) => toEntityId(cluster) === String(form.allowedCourtClusterIds?.[0] || "")
                       ) || null
                     }
                     onChange={(_, value) =>
                       setForm((prev) => ({
                         ...prev,
-                        allowedCourtClusterIds: value
-                          ? [value?._id || value?.id].filter(Boolean)
-                          : [],
+                        allowedCourtClusterIds: value ? [toEntityId(value)].filter(Boolean) : [],
                       }))
                     }
                     getOptionLabel={(option) =>
                       [option?.name, option?.venueName].filter(Boolean).join(" • ")
                     }
                     isOptionEqualToValue={(option, value) =>
-                      String(option?._id || option?.id || "") ===
-                      String(value?._id || value?.id || "")
+                      toEntityId(option) === toEntityId(value)
                     }
                     renderTags={(value, getTagProps) =>
                       value.map((option, index) => (

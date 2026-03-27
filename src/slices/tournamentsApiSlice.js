@@ -609,6 +609,10 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       query: (id) => `/tournaments/${id}`,
       providesTags: (_res, _err, id) => [{ type: "Tournament", id }],
     }),
+    getAdminTournament: builder.query({
+      query: (id) => `/admin/tournaments/${id}`,
+      providesTags: (_res, _err, id) => [{ type: "Tournament", id }],
+    }),
 
     // Cập nhật overlay
     updateTournamentOverlay: builder.mutation({
@@ -801,6 +805,7 @@ export const {
   useGetRecentTournamentsQuery,
   useSearchTournamentsQuery,
   useGetTournamentByIdQuery,
+  useGetAdminTournamentQuery,
   useUpdateTournamentOverlayMutation,
   useClearBracketMatchesMutation,
   usePreviewRatingDeltaMutation,
