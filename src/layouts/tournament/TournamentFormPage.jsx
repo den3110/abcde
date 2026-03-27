@@ -919,20 +919,19 @@ export default function TournamentFormPage() {
     };
 
     // Chỉ gửi lên nếu có mã (để trống thì BE tự generate)
-    payload.teamConfig =
-      payload.tournamentMode === "team"
-        ? {
-            factions: normalizeTeamFactionsForForm(form.teamFactions).map((item, index) => ({
-              ...(item?._id ? { _id: item._id } : {}),
-              name: String(item?.name || "")
-                .replace(/\s+/g, " ")
-                .trim(),
-              captainUser: userOptionId(item?.captainUser) || null,
-              order: index,
-              isActive: item?.isActive !== false,
-            })),
-          }
-        : { factions: [] };
+    if (payload.tournamentMode === "team") {
+      payload.teamConfig = {
+        factions: normalizeTeamFactionsForForm(form.teamFactions).map((item, index) => ({
+          ...(item?._id ? { _id: item._id } : {}),
+          name: String(item?.name || "")
+            .replace(/\s+/g, " ")
+            .trim(),
+          captainUser: userOptionId(item?.captainUser) || null,
+          order: index,
+          isActive: item?.isActive !== false,
+        })),
+      };
+    }
 
     if (code) {
       payload.code = code;
