@@ -83,6 +83,7 @@ function normalizeStorageTargetsForForm(targets = []) {
     id: target.id || "",
     label: target.label || "",
     accountName: target.accountName || "",
+    publicDevUrl: target.publicDevUrl || "",
     enabled: target.enabled !== false,
     endpoint: target.endpoint || "",
     accessKeyId: target.accessKeyId || "",
@@ -112,6 +113,7 @@ function createEmptyStorageTarget(targets = []) {
     id: buildNextTargetId(targets),
     label: "",
     accountName: "",
+    publicDevUrl: "",
     enabled: true,
     endpoint: "",
     accessKeyId: "",
@@ -264,6 +266,7 @@ export default function AdminLivePlaybackPage() {
           bucketName: String(createDialog.target.bucketName || "").trim(),
           label: String(createDialog.target.label || "").trim(),
           accountName: String(createDialog.target.accountName || "").trim(),
+          publicDevUrl: String(createDialog.target.publicDevUrl || "").trim(),
           publicBaseUrl: String(createDialog.target.publicBaseUrl || "").trim(),
         },
       ],
@@ -296,6 +299,7 @@ export default function AdminLivePlaybackPage() {
           id: String(target.id || "").trim() || `r2-${String(index + 1).padStart(2, "0")}`,
           label: String(target.label || "").trim(),
           accountName: String(target.accountName || "").trim(),
+          publicDevUrl: String(target.publicDevUrl || "").trim(),
           enabled: Boolean(target.enabled),
           endpoint: String(target.endpoint || "").trim(),
           accessKeyId: String(target.accessKeyId || "").trim(),
@@ -532,6 +536,15 @@ export default function AdminLivePlaybackPage() {
                               Account: {target.accountName}
                             </Typography>
                           ) : null}
+                          {target.publicDevUrl ? (
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ wordBreak: "break-all" }}
+                            >
+                              Public dev URL: {target.publicDevUrl}
+                            </Typography>
+                          ) : null}
                           <Typography variant="body2" color="text.secondary">
                             `{target.id || "no-id"}` • bucket `{target.bucketName || "—"}` •{" "}
                             {capacityLabel(target.capacityBytes)}
@@ -671,6 +684,17 @@ export default function AdminLivePlaybackPage() {
                                 }
                               />
                             }
+                          />
+                        </Grid>
+                        <Grid item xs={12}>
+                          <TextField
+                            label="publicDevUrl"
+                            value={target.publicDevUrl}
+                            onChange={(event) =>
+                              onStorageTargetChange(target.id, "publicDevUrl", event.target.value)
+                            }
+                            helperText="Vi du: https://pub-xxxx.r2.dev"
+                            fullWidth
                           />
                         </Grid>
                       </Grid>
@@ -904,6 +928,17 @@ export default function AdminLivePlaybackPage() {
                       }
                     />
                   }
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  label="publicDevUrl"
+                  value={createDialog.target.publicDevUrl}
+                  onChange={(event) =>
+                    handleCreateTargetFieldChange("publicDevUrl", event.target.value)
+                  }
+                  helperText="Optional"
+                  fullWidth
                 />
               </Grid>
             </Grid>
