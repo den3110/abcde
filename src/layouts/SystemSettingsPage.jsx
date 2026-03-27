@@ -96,6 +96,7 @@ const hydrateFormState = (source) => ({
   recordingDrive: {
     enabled: source?.recordingDrive?.enabled ?? true,
     mode: getInitialRecordingDriveMode(source?.recordingDrive?.mode),
+    useModernPickerFlow: source?.recordingDrive?.useModernPickerFlow ?? true,
     folderId: source?.recordingDrive?.folderId ?? "",
     sharedDriveId: source?.recordingDrive?.sharedDriveId ?? "",
   },
@@ -308,6 +309,7 @@ export default function SystemSettingsPage() {
   const commentaryTtsModels = Array.isArray(commentaryTtsGateway?.availableModels)
     ? commentaryTtsGateway.availableModels
     : [];
+  const isModernRecordingDriveFlow = form?.recordingDrive?.useModernPickerFlow !== false;
 
   const buildSettingsPayload = (source) => ({
     maintenance: {
@@ -345,6 +347,7 @@ export default function SystemSettingsPage() {
     recordingDrive: {
       enabled: !!source.recordingDrive?.enabled,
       mode: getInitialRecordingDriveMode(source.recordingDrive?.mode),
+      useModernPickerFlow: source.recordingDrive?.useModernPickerFlow ?? true,
       folderId: source.recordingDrive?.folderId ?? "",
       sharedDriveId: source.recordingDrive?.sharedDriveId ?? "",
     },
@@ -374,7 +377,7 @@ export default function SystemSettingsPage() {
   }, [data]);
 
   useEffect(() => {
-    const handleRecordingDriveAuthDone = (event) => {
+    const handleRecordingDriveAuthDone = async (event) => {
       if (event.data?.type !== "recording-drive-auth-done") return;
       if (recordingDrivePopupRef.current && !recordingDrivePopupRef.current.closed) {
         try {
@@ -382,8 +385,11 @@ export default function SystemSettingsPage() {
         } catch (_) {}
       }
       recordingDrivePopupRef.current = null;
-      refetch();
-      refetchRecordingDriveStatus();
+      await Promise.all([refetch(), refetchRecordingDriveStatus()]);
+      window.setTimeout(() => {
+        refetch();
+        refetchRecordingDriveStatus();
+      }, 1200);
       if (event.data?.ok) {
         toast.success("Đã kết nối Google Drive cho bản ghi.");
       } else {
@@ -393,7 +399,7 @@ export default function SystemSettingsPage() {
 
     window.addEventListener("message", handleRecordingDriveAuthDone);
     return () => window.removeEventListener("message", handleRecordingDriveAuthDone);
-  }, [refetchRecordingDriveStatus]);
+  }, [refetch, refetchRecordingDriveStatus]);
 
   useEffect(() => {
     if (isLoading || !topSaveRef.current) return undefined;
@@ -531,7 +537,6 @@ export default function SystemSettingsPage() {
       );
     }
   };
-  void handleOpenRecordingDriveAuth;
 
   const handlePickRecordingDriveFolder = async () => {
     try {
@@ -885,6 +890,21 @@ export default function SystemSettingsPage() {
               </Button>
             </Stack>
 
+            {form.recordingDrive?.mode === "oauthUser" ? (
+              <Stack direction="row" alignItems="center" justifyContent="space-between">
+                <Box>
+                  <Typography>DÃ¹ng phiÃªn báº£n má»›i (drive.file + Google Picker)</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Táº¯t Ä‘i Ä‘á»ƒ quay vá» flow cÅ©: full Drive OAuth + nháº­p Folder ID tay.
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={isModernRecordingDriveFlow}
+                  onChange={onToggle("recordingDrive.useModernPickerFlow")}
+                />
+              </Stack>
+            ) : null}
+
             <Alert severity={recordingDriveAlertSeverityValue}>
               {isRecordingDriveStatusLoading
                 ? "Đang kiểm tra kết nối Google Drive..."
@@ -898,13 +918,19 @@ export default function SystemSettingsPage() {
                 onChange={onChange("recordingDrive.folderId")}
                 helperText={
                   form.recordingDrive?.mode === "oauthUser"
-                    ? recordingDriveStatus?.folderName
-                      ? `Folder da chon: ${recordingDriveStatus.folderName}`
-                      : "OAuth mode dung drive.file: hay chon dung folder cu bang Google Picker."
+                    ? isModernRecordingDriveFlow
+                      ? recordingDriveStatus?.folderName
+                        ? `Folder da chon: ${recordingDriveStatus.folderName}`
+                        : "OAuth mode dung drive.file: hay chon dung folder cu bang Google Picker."
+                      : "Flow cu: nhap dung Folder ID cu roi ket noi lai de lay refresh token scope cu."
                     : ""
                 }
-                disabled={form.recordingDrive?.mode === "oauthUser"}
-                InputProps={{ readOnly: form.recordingDrive?.mode === "oauthUser" }}
+                disabled={form.recordingDrive?.mode === "oauthUser" && isModernRecordingDriveFlow}
+                InputProps={{
+                  readOnly:
+                    form.recordingDrive?.mode === "oauthUser" &&
+                    isModernRecordingDriveFlow,
+                }}
                 placeholder="Folder đích tạo bản ghi"
                 fullWidth
               />
@@ -940,24 +966,30 @@ export default function SystemSettingsPage() {
             <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
               <Button
                 variant="contained"
-                onClick={handleOpenRecordingDriveAuthAutoFolder}
+                onClick={
+                  isModernRecordingDriveFlow
+                    ? handleOpenRecordingDriveAuthAutoFolder
+                    : handleOpenRecordingDriveAuth
+                }
                 disabled={form.recordingDrive?.mode !== "oauthUser" || isRecordingDriveConnecting}
               >
                 {isRecordingDriveConnecting ? "Đang mở kết nối..." : "Kết nối Google Drive"}
               </Button>
-              <Button
-                variant="outlined"
-                onClick={handlePickRecordingDriveFolder}
-                disabled={
-                  form.recordingDrive?.mode !== "oauthUser" ||
-                  !recordingDriveStatus?.connected ||
-                  isRecordingDrivePickingFolder
-                }
-              >
-                {isRecordingDrivePickingFolder
-                  ? "Dang mo Google Picker..."
-                  : "Chon folder Google Drive"}
-              </Button>
+              {isModernRecordingDriveFlow ? (
+                <Button
+                  variant="outlined"
+                  onClick={handlePickRecordingDriveFolder}
+                  disabled={
+                    form.recordingDrive?.mode !== "oauthUser" ||
+                    !recordingDriveStatus?.connected ||
+                    isRecordingDrivePickingFolder
+                  }
+                >
+                  {isRecordingDrivePickingFolder
+                    ? "Dang mo Google Picker..."
+                    : "Chon folder Google Drive"}
+                </Button>
+              ) : null}
               <Button
                 variant="outlined"
                 onClick={() => refetchRecordingDriveStatus()}
