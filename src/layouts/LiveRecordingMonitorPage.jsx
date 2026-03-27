@@ -856,8 +856,18 @@ export default function LiveRecordingMonitorPage() {
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [forceExportingId, setForceExportingId] = useState(null);
   const [actionError, setActionError] = useState("");
+  const monitorPollingInterval = socketOn ? 0 : 15000;
 
-  const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
+  const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery(
+    undefined,
+    {
+      pollingInterval: monitorPollingInterval,
+      skipPollingIfUnfocused: true,
+      refetchOnFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMountOrArgChange: true,
+    }
+  );
   const [forceLiveRecordingExport] = useForceLiveRecordingExportMutation();
   const { data: workerHealthPoll } = useGetLiveRecordingWorkerHealthQuery(undefined, {
     pollingInterval: 30000,
@@ -1110,8 +1120,14 @@ export default function LiveRecordingMonitorPage() {
 
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
               <Chip
-                color={socketOn ? "success" : "default"}
-                label={socketOn ? "Socket realtime OK" : "Socket disconnected"}
+                color={socketOn ? "success" : "warning"}
+                label={
+                  socketOn
+                    ? "Socket realtime OK"
+                    : `Socket disconnected - HTTP poll ${Math.round(
+                        monitorPollingInterval / 1000
+                      )}s`
+                }
               />
               <Chip
                 color={meta.lastPublishMode === "reconcile" ? "warning" : "info"}
