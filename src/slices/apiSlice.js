@@ -64,6 +64,7 @@ export const apiSlice = createApi({
     "Registration",
     "LiveSessions",
     "LiveRecordingMonitor",
+    "LiveRecordingAiCommentaryMonitor",
     "FbVodMonitor",
     "PushDispatch",
     "SystemSettings",

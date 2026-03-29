@@ -43,6 +43,9 @@ import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
+import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { toast } from "react-toastify";
@@ -53,10 +56,14 @@ import { useSocket } from "context/SocketContext";
 import {
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingAiCommentaryMonitorQuery,
+  useLazyGetLiveRecordingDriveAssetQuery,
   useGetLiveRecordingMonitorQuery,
+  useMoveLiveRecordingDriveAssetMutation,
   useQueueLiveRecordingAiCommentaryMutation,
+  useRenameLiveRecordingDriveAssetMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
+  useTrashLiveRecordingDriveAssetMutation,
 } from "slices/liveApiSlice";
 
 dayjs.extend(relativeTime);
@@ -156,6 +163,17 @@ function hasDriveLinks(row) {
       row?.rawStreamAvailable ||
       row?.rawStreamUrl
   );
+}
+
+function getDriveAssetLabel(target) {
+  return target === "ai" ? "video BLV AI" : "video goc";
+}
+
+function getDriveAssetFileId(row, target) {
+  if (target === "ai") {
+    return String(row?.aiCommentary?.dubbedDriveFileId || "").trim();
+  }
+  return String(row?.driveFileId || "").trim();
 }
 
 function rowNeedsAction(row) {
@@ -347,7 +365,136 @@ function DriveLinksCell({ row }) {
   );
 }
 
-function RecordingDetailDialog({ row, open, onClose, onCopyFileId }) {
+function DriveAssetActionDialog({
+  open,
+  row,
+  target,
+  mode,
+  assetQuery,
+  draftName,
+  draftFolderId,
+  submitting,
+  onChangeName,
+  onChangeFolderId,
+  onClose,
+  onSubmit,
+}) {
+  if (!open || !row) return null;
+
+  const assetLabel = getDriveAssetLabel(target);
+  const title =
+    mode === "rename"
+      ? `Doi ten ${assetLabel}`
+      : mode === "move"
+      ? `Chuyen folder ${assetLabel}`
+      : `Dua ${assetLabel} vao thung rac`;
+  const file = assetQuery?.data?.file || null;
+  const fileId = getDriveAssetFileId(row, target);
+  const errorMessage =
+    assetQuery?.error?.data?.message || assetQuery?.error?.error || assetQuery?.error?.message || "";
+
+  return (
+    <Dialog open={open} onClose={submitting ? undefined : onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>{title}</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={1.5}>
+          <Alert severity={mode === "trash" ? "warning" : "info"}>
+            {mode === "rename"
+              ? "Ten file se duoc doi truc tiep tren Google Drive."
+              : mode === "move"
+              ? "Nhap folder ID dich. Neu de trong, backend se dung folder Drive recording mac dinh."
+              : "Action nay se dua file vao Google Drive Trash va dong bo lai DB recording."}
+          </Alert>
+          <InfoBox label="Match" value={row.matchCode || row.matchId || "-"} />
+          <InfoBox label="Asset" value={assetLabel} />
+          <InfoBox label="Drive fileId" value={fileId || "-"} />
+          <InfoBox label="Ten hien tai" value={file?.name || "-"} />
+          <InfoBox
+            label="Folder hien tai"
+            value={Array.isArray(file?.parents) && file.parents.length ? file.parents.join(", ") : "-"}
+          />
+
+          {assetQuery?.isFetching ? (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <CircularProgress size={16} />
+              <Typography variant="body2" sx={{ opacity: 0.72 }}>
+                Dang tai metadata Drive...
+              </Typography>
+            </Stack>
+          ) : null}
+
+          {errorMessage ? <Alert severity="warning">{errorMessage}</Alert> : null}
+
+          {mode === "rename" ? (
+            <TextField
+              autoFocus
+              fullWidth
+              label="Ten file moi"
+              value={draftName}
+              onChange={(event) => onChangeName(event.target.value)}
+              placeholder="Nhap ten file moi..."
+              disabled={submitting}
+            />
+          ) : null}
+
+          {mode === "move" ? (
+            <TextField
+              autoFocus
+              fullWidth
+              label="Folder ID dich"
+              value={draftFolderId}
+              onChange={(event) => onChangeFolderId(event.target.value)}
+              placeholder="Folder ID moi, de trong de dung folder mac dinh"
+              disabled={submitting}
+            />
+          ) : null}
+
+          {mode === "trash" ? (
+            <Typography variant="body2" sx={{ opacity: 0.8 }}>
+              Sau khi trash, {assetLabel} se khong con duoc xem la san sang trong he thong.
+            </Typography>
+          ) : null}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={submitting}>
+          Huy
+        </Button>
+        <Button
+          onClick={onSubmit}
+          color={mode === "trash" ? "error" : "primary"}
+          variant="contained"
+          disabled={
+            submitting ||
+            !fileId ||
+            (mode === "rename" && !String(draftName || "").trim())
+          }
+          startIcon={
+            submitting ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : mode === "rename" ? (
+              <DriveFileRenameOutlineIcon />
+            ) : mode === "move" ? (
+              <DriveFileMoveIcon />
+            ) : (
+              <DeleteOutlineIcon />
+            )
+          }
+        >
+          {submitting
+            ? "Dang xu ly..."
+            : mode === "rename"
+            ? "Luu ten moi"
+            : mode === "move"
+            ? "Chuyen folder"
+            : "Dua vao thung rac"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function RecordingDetailDialog({ row, open, onClose, onCopyFileId, onOpenDriveAction, driveActionBusy }) {
   if (!row) return null;
 
   const segments = Array.isArray(row?.segmentSummary?.segments) ? row.segmentSummary.segments : [];
@@ -471,6 +618,42 @@ function RecordingDetailDialog({ row, open, onClose, onCopyFileId }) {
                 Copy fileId
               </Button>
             ) : null}
+            {row.driveFileId ? (
+              <Button
+                size="small"
+                variant="outlined"
+                color="inherit"
+                disabled={driveActionBusy}
+                startIcon={<DriveFileRenameOutlineIcon />}
+                onClick={() => onOpenDriveAction(row, "source", "rename")}
+              >
+                Doi ten goc
+              </Button>
+            ) : null}
+            {row.driveFileId ? (
+              <Button
+                size="small"
+                variant="outlined"
+                color="inherit"
+                disabled={driveActionBusy}
+                startIcon={<DriveFileMoveIcon />}
+                onClick={() => onOpenDriveAction(row, "source", "move")}
+              >
+                Chuyen folder goc
+              </Button>
+            ) : null}
+            {row.driveFileId ? (
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                disabled={driveActionBusy}
+                startIcon={<DeleteOutlineIcon />}
+                onClick={() => onOpenDriveAction(row, "source", "trash")}
+              >
+                Thung rac goc
+              </Button>
+            ) : null}
             {ai?.ready && ai?.dubbedPlaybackUrl ? (
               <Button
                 size="small"
@@ -483,6 +666,42 @@ function RecordingDetailDialog({ row, open, onClose, onCopyFileId }) {
                 startIcon={<PlayCircleOutlineIcon />}
               >
                 Mo BLV AI
+              </Button>
+            ) : null}
+            {ai?.dubbedDriveFileId ? (
+              <Button
+                size="small"
+                variant="outlined"
+                color="inherit"
+                disabled={driveActionBusy}
+                startIcon={<DriveFileRenameOutlineIcon />}
+                onClick={() => onOpenDriveAction(row, "ai", "rename")}
+              >
+                Doi ten AI
+              </Button>
+            ) : null}
+            {ai?.dubbedDriveFileId ? (
+              <Button
+                size="small"
+                variant="outlined"
+                color="inherit"
+                disabled={driveActionBusy}
+                startIcon={<DriveFileMoveIcon />}
+                onClick={() => onOpenDriveAction(row, "ai", "move")}
+              >
+                Chuyen folder AI
+              </Button>
+            ) : null}
+            {ai?.dubbedDriveFileId ? (
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                disabled={driveActionBusy}
+                startIcon={<DeleteOutlineIcon />}
+                onClick={() => onOpenDriveAction(row, "ai", "trash")}
+              >
+                Thung rac AI
               </Button>
             ) : null}
           </Stack>
@@ -740,6 +959,15 @@ export default function DriveVideoManagerPage() {
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
   const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
   const [bulkAction, setBulkAction] = useState(null);
+  const [driveActionDialog, setDriveActionDialog] = useState({
+    open: false,
+    rowId: null,
+    target: "source",
+    mode: "rename",
+  });
+  const [driveActionName, setDriveActionName] = useState("");
+  const [driveActionFolderId, setDriveActionFolderId] = useState("");
+  const [driveActionSubmitting, setDriveActionSubmitting] = useState(false);
   const deferredSearch = useDeferredValue(search);
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
@@ -764,6 +992,10 @@ export default function DriveVideoManagerPage() {
   const [forceExport] = useForceLiveRecordingExportMutation();
   const [queueAiCommentary] = useQueueLiveRecordingAiCommentaryMutation();
   const [rerenderAiCommentary] = useRerenderLiveRecordingAiCommentaryMutation();
+  const [loadDriveAsset, driveAssetQuery] = useLazyGetLiveRecordingDriveAssetQuery();
+  const [renameDriveAsset] = useRenameLiveRecordingDriveAssetMutation();
+  const [moveDriveAsset] = useMoveLiveRecordingDriveAssetMutation();
+  const [trashDriveAsset] = useTrashLiveRecordingDriveAssetMutation();
 
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
@@ -832,6 +1064,42 @@ export default function DriveVideoManagerPage() {
       null,
     [filteredRows, rows, selectedRowId]
   );
+  const driveActionRow = useMemo(
+    () =>
+      rows.find((row) => row.id === driveActionDialog.rowId) ||
+      filteredRows.find((row) => row.id === driveActionDialog.rowId) ||
+      null,
+    [driveActionDialog.rowId, filteredRows, rows]
+  );
+  const activeDriveAssetQuery = useMemo(() => {
+    const queryArgs = driveAssetQuery?.originalArgs || {};
+    if (!driveActionDialog.open) {
+      return {
+        data: null,
+        error: null,
+        isFetching: false,
+      };
+    }
+
+    const sameRow =
+      String(queryArgs.recordingId || "") === String(driveActionRow?.recordingId || "");
+    const sameTarget =
+      String(queryArgs.target || "source") === String(driveActionDialog.target || "source");
+
+    return {
+      data: sameRow && sameTarget ? driveAssetQuery?.data || null : null,
+      error: sameRow && sameTarget ? driveAssetQuery?.error || null : null,
+      isFetching: Boolean(driveAssetQuery?.isFetching && sameRow && sameTarget),
+    };
+  }, [
+    driveActionDialog.open,
+    driveActionDialog.target,
+    driveActionRow?.recordingId,
+    driveAssetQuery?.data,
+    driveAssetQuery?.error,
+    driveAssetQuery?.isFetching,
+    driveAssetQuery?.originalArgs,
+  ]);
 
   const summary = useMemo(
     () =>
@@ -858,6 +1126,18 @@ export default function DriveVideoManagerPage() {
       ),
     [rows]
   );
+
+  useEffect(() => {
+    if (!driveActionDialog.open) return;
+    const file = activeDriveAssetQuery?.data?.file || null;
+    if (!file) return;
+
+    if (driveActionDialog.mode === "rename") {
+      setDriveActionName(file?.name || "");
+    } else if (driveActionDialog.mode === "move") {
+      setDriveActionFolderId(file?.parentId || "");
+    }
+  }, [activeDriveAssetQuery?.data, driveActionDialog.mode, driveActionDialog.open]);
 
   const refreshAll = useCallback(() => {
     refetch();
@@ -916,6 +1196,7 @@ export default function DriveVideoManagerPage() {
       forcingRecordingId ||
       queueingCommentaryId ||
       rerenderingCommentaryId ||
+      driveActionSubmitting ||
       bulkAction
   );
 
@@ -1010,6 +1291,102 @@ export default function DriveVideoManagerPage() {
       setRerenderingCommentaryId(null);
     }
   };
+
+  const closeDriveActionDialog = useCallback(() => {
+    setDriveActionDialog({
+      open: false,
+      rowId: null,
+      target: "source",
+      mode: "rename",
+    });
+    setDriveActionName("");
+    setDriveActionFolderId("");
+  }, []);
+
+  const openDriveActionDialog = useCallback(
+    (row, target, mode) => {
+      const fileId = getDriveAssetFileId(row, target);
+      if (!fileId) {
+        toast.info(`Khong co ${getDriveAssetLabel(target)} de thao tac.`);
+        return;
+      }
+
+      setDriveActionDialog({
+        open: true,
+        rowId: row.id,
+        target,
+        mode,
+      });
+      setDriveActionName("");
+      setDriveActionFolderId("");
+
+      loadDriveAsset({
+        recordingId: row.recordingId,
+        target,
+      })
+        .unwrap()
+        .catch((apiError) => {
+          toast.warn(
+            apiError?.data?.message ||
+              apiError?.error ||
+              `Khong tai duoc metadata cho ${getDriveAssetLabel(target)}.`
+          );
+        });
+    },
+    [loadDriveAsset]
+  );
+
+  const handleSubmitDriveAction = useCallback(async () => {
+    if (!driveActionRow) return;
+
+    try {
+      setDriveActionSubmitting(true);
+      const payload = {
+        recordingId: driveActionRow.recordingId,
+        target: driveActionDialog.target,
+      };
+      const assetLabel = getDriveAssetLabel(driveActionDialog.target);
+
+      if (driveActionDialog.mode === "rename") {
+        await renameDriveAsset({
+          ...payload,
+          name: String(driveActionName || "").trim(),
+        }).unwrap();
+        toast.success(`Da doi ten ${assetLabel}.`);
+      } else if (driveActionDialog.mode === "move") {
+        await moveDriveAsset({
+          ...payload,
+          folderId: String(driveActionFolderId || "").trim(),
+        }).unwrap();
+        toast.success(`Da chuyen folder cho ${assetLabel}.`);
+      } else {
+        await trashDriveAsset(payload).unwrap();
+        toast.success(`Da dua ${assetLabel} vao thung rac.`);
+      }
+
+      closeDriveActionDialog();
+      refreshAll();
+    } catch (apiError) {
+      toast.error(
+        apiError?.data?.message ||
+          apiError?.error ||
+          `Khong the xu ly ${getDriveAssetLabel(driveActionDialog.target)}.`
+      );
+    } finally {
+      setDriveActionSubmitting(false);
+    }
+  }, [
+    closeDriveActionDialog,
+    driveActionDialog.mode,
+    driveActionDialog.target,
+    driveActionFolderId,
+    driveActionName,
+    driveActionRow,
+    moveDriveAsset,
+    refreshAll,
+    renameDriveAsset,
+    trashDriveAsset,
+  ]);
 
   const handlePresetChange = useCallback((_event, nextValue) => {
     setViewMode(nextValue);
@@ -1597,6 +1974,22 @@ export default function DriveVideoManagerPage() {
             open={Boolean(selectedRow)}
             onClose={() => setSelectedRowId(null)}
             onCopyFileId={(fileId) => copyTextToClipboard(fileId, "Da sao chep fileId.")}
+            onOpenDriveAction={openDriveActionDialog}
+            driveActionBusy={driveActionSubmitting}
+          />
+          <DriveAssetActionDialog
+            open={driveActionDialog.open && Boolean(driveActionRow)}
+            row={driveActionRow}
+            target={driveActionDialog.target}
+            mode={driveActionDialog.mode}
+            assetQuery={activeDriveAssetQuery}
+            draftName={driveActionName}
+            draftFolderId={driveActionFolderId}
+            submitting={driveActionSubmitting}
+            onChangeName={setDriveActionName}
+            onChangeFolderId={setDriveActionFolderId}
+            onClose={closeDriveActionDialog}
+            onSubmit={handleSubmitDriveAction}
           />
         </Stack>
       </Box>

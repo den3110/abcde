@@ -75,6 +75,15 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
       providesTags: [{ type: "LiveRecordingAiCommentaryMonitor", id: "LIST" }],
     }),
+    getLiveRecordingDriveAsset: builder.query({
+      query: ({ recordingId, target = "source" }) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/drive-asset?target=${encodeURIComponent(
+          target
+        )}`,
+        method: "GET",
+      }),
+      keepUnusedDataFor: 0,
+    }),
     retryLiveRecordingExport: builder.mutation({
       query: (recordingId) => ({
         url: `/live/recordings/v2/admin/${recordingId}/retry-export`,
@@ -101,6 +110,33 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: [{ type: "LiveRecordingAiCommentaryMonitor", id: "LIST" }],
     }),
+    renameLiveRecordingDriveAsset: builder.mutation({
+      query: ({ recordingId, target = "source", name }) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/drive-asset/rename`,
+        method: "POST",
+        body: { target, name },
+      }),
+      invalidatesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
+    moveLiveRecordingDriveAsset: builder.mutation({
+      query: ({ recordingId, target = "source", folderId = "" }) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/drive-asset/move`,
+        method: "POST",
+        body: { target, folderId },
+      }),
+      invalidatesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
+    trashLiveRecordingDriveAsset: builder.mutation({
+      query: ({ recordingId, target = "source" }) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/drive-asset/trash`,
+        method: "POST",
+        body: { target },
+      }),
+      invalidatesTags: [
+        { type: "LiveRecordingMonitor", id: "LIST" },
+        { type: "LiveRecordingAiCommentaryMonitor", id: "LIST" },
+      ],
+    }),
   }),
   overrideExisting: false,
 });
@@ -111,9 +147,13 @@ export const {
   useForceLiveRecordingExportMutation,
   useGetFbVodDriveMonitorQuery,
   useGetLiveRecordingAiCommentaryMonitorQuery,
+  useLazyGetLiveRecordingDriveAssetQuery,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
+  useMoveLiveRecordingDriveAssetMutation,
   useQueueLiveRecordingAiCommentaryMutation,
+  useRenameLiveRecordingDriveAssetMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
+  useTrashLiveRecordingDriveAssetMutation,
 } = liveApiSlice;
