@@ -19,6 +19,11 @@ import {
   ListItemText,
   Skeleton,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Divider,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
@@ -105,6 +110,29 @@ StatsCard.propTypes = {
   subtitle: PropTypes.string,
 };
 
+const DetailRow = ({ label, value, mono = false }) => (
+  <Box py={1.25}>
+    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+      {label}
+    </Typography>
+    <Typography
+      variant="body2"
+      sx={{
+        fontFamily: mono ? "monospace" : "inherit",
+        wordBreak: "break-word",
+      }}
+    >
+      {value || "-"}
+    </Typography>
+  </Box>
+);
+
+DetailRow.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  mono: PropTypes.bool,
+};
+
 const VersionActions = ({ version, onDeactivate, isLoading }) => {
   const [anchorEl, setAnchorEl] = useState(null);
 
@@ -151,6 +179,7 @@ export default function OTAAdminPage() {
   const [platform, setPlatform] = useState("android");
   const [testModalOpen, setTestModalOpen] = useState(false);
   const [analyticsDays, setAnalyticsDays] = useState(7);
+  const [selectedBundle, setSelectedBundle] = useState(null);
 
   const {
     data: versions = [],
@@ -186,6 +215,14 @@ export default function OTAAdminPage() {
   const handleRefresh = () => {
     refetchVersions();
     refetchAnalytics();
+  };
+
+  const handleOpenBundleDetails = (bundle) => {
+    setSelectedBundle(bundle);
+  };
+
+  const handleCloseBundleDetails = () => {
+    setSelectedBundle(null);
   };
 
   const columns = [
@@ -228,7 +265,18 @@ export default function OTAAdminPage() {
       minWidth: 220,
       flex: 1,
       renderCell: (params) => (
-        <Typography variant="body2" color="text.secondary">
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            whiteSpace: "normal",
+            lineHeight: 1.5,
+          }}
+        >
           {params.value || "-"}
         </Typography>
       ),
@@ -425,22 +473,31 @@ export default function OTAAdminPage() {
             columns={columns}
             getRowId={(row) => row._id || row.bundleId}
             loading={versionsLoading}
-            disableRowSelectionOnClick
+            disableSelectionOnClick
+            hideFooterSelectedRowCount
+            rowHeight={88}
+            headerHeight={56}
             pageSizeOptions={[10, 25, 50]}
             initialState={{
               pagination: { paginationModel: { pageSize: 10 } },
             }}
+            onRowClick={(params) => handleOpenBundleDetails(params.row)}
             autoHeight
             sx={{
               border: 0,
               "& .MuiDataGrid-cell": {
-                py: 1.5,
+                py: 2,
+                alignItems: "center",
+                cursor: "pointer",
               },
               "& .MuiDataGrid-columnHeaders": {
                 bgcolor: "grey.50",
               },
               "& .MuiDataGrid-row:hover": {
                 bgcolor: "action.hover",
+              },
+              "& .MuiDataGrid-footerContainer": {
+                minHeight: 60,
               },
             }}
             localeText={{
@@ -469,6 +526,51 @@ export default function OTAAdminPage() {
             }}
           />
         </Paper>
+
+        <Dialog
+          open={Boolean(selectedBundle)}
+          onClose={handleCloseBundleDetails}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>Chi tiết bundle OTA</DialogTitle>
+          <DialogContent dividers>
+            {selectedBundle && (
+              <Box>
+                <Box
+                  display="grid"
+                  gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }}
+                  gap={2}
+                >
+                  <DetailRow label="Bundle ID" value={selectedBundle.bundleId} mono />
+                  <DetailRow label="Phiên bản app đích" value={selectedBundle.targetAppVersion} />
+                  <DetailRow label="Kênh" value={selectedBundle.channel} />
+                  <DetailRow
+                    label="Trạng thái"
+                    value={selectedBundle.enabled ? "Đang bật" : "Đã tắt"}
+                  />
+                  <DetailRow
+                    label="Force update"
+                    value={selectedBundle.shouldForceUpdate ? "Có" : "Không"}
+                  />
+                  <DetailRow label="Kích thước" value={formatBytes(selectedBundle.size)} />
+                  <DetailRow label="Commit" value={selectedBundle.gitCommitHash} mono />
+                  <DetailRow label="Ngày deploy" value={formatDate(selectedBundle.createdAt)} />
+                </Box>
+
+                <Divider sx={{ my: 2 }} />
+
+                <DetailRow label="Mô tả" value={selectedBundle.message || selectedBundle.description} />
+                <DetailRow label="File hash" value={selectedBundle.fileHash} mono />
+                <DetailRow label="Fingerprint hash" value={selectedBundle.fingerprintHash} mono />
+                <DetailRow label="Storage URI" value={selectedBundle.storageUri} mono />
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={handleCloseBundleDetails}>Đóng</Button>
+          </DialogActions>
+        </Dialog>
 
         <TestUpdateModal
           open={testModalOpen}
