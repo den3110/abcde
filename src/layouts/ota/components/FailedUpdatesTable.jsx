@@ -1,6 +1,5 @@
-// pages/admin/components/FailedUpdatesTable.jsx
-import React, { useState } from "react";
-import PropTypes from "prop-types"; // 1. Import PropTypes
+import React from "react";
+import PropTypes from "prop-types";
 import {
   Paper,
   Typography,
@@ -12,11 +11,9 @@ import {
   TableRow,
   Chip,
   Box,
-  IconButton,
-  Collapse,
   Skeleton,
 } from "@mui/material";
-import { KeyboardArrowDown, KeyboardArrowUp, BugReport } from "@mui/icons-material";
+import { Block } from "@mui/icons-material";
 import { useGetOtaAnalyticsQuery } from "../../../slices/otaApiSlice";
 
 const formatDate = (date) => {
@@ -29,138 +26,9 @@ const formatDate = (date) => {
   });
 };
 
-const FailedUpdateRow = ({ log }) => {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      <TableRow
-        sx={{ "&:hover": { bgcolor: "action.hover" }, cursor: "pointer" }}
-        onClick={() => setOpen(!open)}
-      >
-        <TableCell>
-          <IconButton size="small">{open ? <KeyboardArrowUp /> : <KeyboardArrowDown />}</IconButton>
-        </TableCell>
-        <TableCell>
-          <Typography variant="body2" fontFamily="monospace">
-            {log.fromVersion} → {log.toVersion}
-          </Typography>
-        </TableCell>
-        <TableCell>
-          <Chip label={log.errorCode || "UNKNOWN"} size="small" color="error" variant="outlined" />
-        </TableCell>
-        <TableCell>
-          <Typography
-            variant="body2"
-            sx={{
-              maxWidth: 200,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {log.errorMessage || "-"}
-          </Typography>
-        </TableCell>
-        <TableCell>{log.deviceInfo?.model || "-"}</TableCell>
-        <TableCell>{formatDate(log.createdAt)}</TableCell>
-      </TableRow>
-
-      <TableRow>
-        <TableCell colSpan={6} sx={{ py: 0 }}>
-          <Collapse in={open} timeout="auto" unmountOnExit>
-            <Box sx={{ py: 2, px: 4, bgcolor: "action.hover" }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Chi tiết lỗi
-              </Typography>
-
-              <Box display="grid" gridTemplateColumns="repeat(2, 1fr)" gap={2} mb={2}>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    App Version
-                  </Typography>
-                  <Typography variant="body2">{log.appVersion}</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Duration
-                  </Typography>
-                  <Typography variant="body2">
-                    {log.duration ? `${log.duration}ms` : "-"}
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Device
-                  </Typography>
-                  <Typography variant="body2">
-                    {log.deviceInfo?.brand} {log.deviceInfo?.model}
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    OS Version
-                  </Typography>
-                  <Typography variant="body2">{log.deviceInfo?.osVersion || "-"}</Typography>
-                </Box>
-              </Box>
-
-              <Typography variant="caption" color="text.secondary">
-                Error Message
-              </Typography>
-              <Paper
-                variant="outlined"
-                sx={{
-                  p: 1.5,
-                  mt: 0.5,
-                  bgcolor: "error.dark",
-                  fontFamily: "monospace",
-                  fontSize: 12,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
-                }}
-              >
-                {log.errorMessage || "No error message provided"}
-              </Paper>
-
-              {log.ip && (
-                <Box mt={1}>
-                  <Typography variant="caption" color="text.secondary">
-                    IP: {log.ip}
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          </Collapse>
-        </TableCell>
-      </TableRow>
-    </>
-  );
-};
-
-// 2. Thêm validation cho FailedUpdateRow
-FailedUpdateRow.propTypes = {
-  log: PropTypes.shape({
-    _id: PropTypes.string,
-    fromVersion: PropTypes.string,
-    toVersion: PropTypes.string,
-    errorCode: PropTypes.string,
-    errorMessage: PropTypes.string,
-    appVersion: PropTypes.string,
-    duration: PropTypes.number,
-    createdAt: PropTypes.string,
-    ip: PropTypes.string,
-    deviceInfo: PropTypes.shape({
-      brand: PropTypes.string,
-      model: PropTypes.string,
-      osVersion: PropTypes.string,
-    }),
-  }).isRequired,
-};
-
 export default function FailedUpdatesTable({ platform }) {
   const { data: analytics, isLoading } = useGetOtaAnalyticsQuery({ platform, days: 7 });
-  const failedUpdates = analytics?.failedUpdates || [];
+  const disabledBundles = analytics?.recentDisabledBundles || [];
 
   if (isLoading) {
     return <Skeleton variant="rounded" height={200} />;
@@ -169,35 +37,60 @@ export default function FailedUpdatesTable({ platform }) {
   return (
     <Paper>
       <Box display="flex" alignItems="center" gap={1} p={2} borderBottom={1} borderColor="divider">
-        <BugReport color="error" />
-        <Typography variant="h6">Update thất bại gần đây</Typography>
-        {failedUpdates.length > 0 && (
-          <Chip label={failedUpdates.length} size="small" color="error" sx={{ ml: 1 }} />
+        <Block color="warning" />
+        <Typography variant="h6">Bundle đã tắt gần đây</Typography>
+        {disabledBundles.length > 0 && (
+          <Chip label={disabledBundles.length} size="small" color="warning" sx={{ ml: 1 }} />
         )}
       </Box>
 
-      {failedUpdates.length === 0 ? (
+      {disabledBundles.length === 0 ? (
         <Box p={4} textAlign="center">
-          <Typography color="text.secondary">
-            🎉 Không có lỗi update nào trong 7 ngày qua
-          </Typography>
+          <Typography color="text.secondary">Không có bundle nào bị tắt trong 7 ngày qua</Typography>
         </Box>
       ) : (
         <TableContainer sx={{ maxHeight: 400 }}>
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
-                <TableCell width={50} />
-                <TableCell>Version</TableCell>
-                <TableCell>Error Code</TableCell>
-                <TableCell>Message</TableCell>
-                <TableCell>Device</TableCell>
-                <TableCell>Thời gian</TableCell>
+                <TableCell>Bundle ID</TableCell>
+                <TableCell>Phiên bản app đích</TableCell>
+                <TableCell>Kênh</TableCell>
+                <TableCell>Mô tả</TableCell>
+                <TableCell>Trạng thái</TableCell>
+                <TableCell>Ngày deploy</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {failedUpdates.map((log, index) => (
-                <FailedUpdateRow key={log._id || index} log={log} />
+              {disabledBundles.map((bundle, index) => (
+                <TableRow key={bundle.bundleId || bundle._id || index} hover>
+                  <TableCell>
+                    <Typography variant="body2" fontFamily="monospace">
+                      {bundle.bundleId || "-"}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{bundle.targetAppVersion || "-"}</TableCell>
+                  <TableCell>
+                    <Chip label={bundle.channel || "production"} size="small" variant="outlined" />
+                  </TableCell>
+                  <TableCell>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        maxWidth: 200,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {bundle.message || "-"}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Chip label="Đã tắt" size="small" color="warning" />
+                  </TableCell>
+                  <TableCell>{formatDate(bundle.createdAt)}</TableCell>
+                </TableRow>
               ))}
             </TableBody>
           </Table>
@@ -207,7 +100,6 @@ export default function FailedUpdatesTable({ platform }) {
   );
 }
 
-// 3. Thêm validation cho FailedUpdatesTable
 FailedUpdatesTable.propTypes = {
   platform: PropTypes.string.isRequired,
 };

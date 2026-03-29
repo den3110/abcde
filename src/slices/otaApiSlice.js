@@ -83,10 +83,10 @@ export const otaApiSlice = apiSlice.injectEndpoints({
 
     // Deactivate version
     deactivateOtaVersion: builder.mutation({
-      query: ({ platform, version }) => ({
+      query: ({ platform, version, bundleId }) => ({
         url: "/ota/deactivate",
         method: "POST",
-        body: { platform, version },
+        body: { platform, version, bundleId },
       }),
       invalidatesTags: (result, error, { platform }) => [
         { type: "OTA_VERSIONS", id: platform },

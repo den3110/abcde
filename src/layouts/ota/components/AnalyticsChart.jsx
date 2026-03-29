@@ -1,4 +1,3 @@
-// pages/admin/components/AnalyticsChart.jsx
 import React, { useMemo } from "react";
 import PropTypes from "prop-types";
 import { Box, Paper, Typography, Skeleton, ToggleButton, ToggleButtonGroup } from "@mui/material";
@@ -20,24 +19,15 @@ export default function AnalyticsChart({ platform, days, onDaysChange }) {
   const chartData = useMemo(() => {
     if (!analytics?.dailyStats || analytics.dailyStats.length === 0) return [];
 
-    const dateMap = {};
-    analytics.dailyStats.forEach((item) => {
-      const date = item._id.date;
-      if (!dateMap[date]) {
-        dateMap[date] = {
-          date,
-          checking: 0,
-          downloading: 0,
-          installing: 0,
-          success: 0,
-          failed: 0,
-          skipped: 0,
-        };
-      }
-      dateMap[date][item._id.status] = item.count;
-    });
-
-    return Object.values(dateMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+    return analytics.dailyStats
+      .map((item) => ({
+        date: item.date,
+        deployments: Number(item.enabled || 0) + Number(item.disabled || 0),
+        enabled: Number(item.enabled || 0),
+        disabled: Number(item.disabled || 0),
+        force: Number(item.force || 0),
+      }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
   }, [analytics]);
 
   const handleDaysChange = (_, newDays) => {
@@ -51,7 +41,7 @@ export default function AnalyticsChart({ platform, days, onDaysChange }) {
   return (
     <Paper sx={{ p: 2 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h6">Thống kê Update</Typography>
+        <Typography variant="h6">Thống kê deploy hot-updater</Typography>
         <ToggleButtonGroup value={days} exclusive onChange={handleDaysChange} size="small">
           <ToggleButton value={7}>7 ngày</ToggleButton>
           <ToggleButton value={14}>14 ngày</ToggleButton>
@@ -61,7 +51,9 @@ export default function AnalyticsChart({ platform, days, onDaysChange }) {
 
       {chartData.length === 0 ? (
         <Box display="flex" alignItems="center" justifyContent="center" height={250}>
-          <Typography color="text.secondary">Chưa có dữ liệu thống kê</Typography>
+          <Typography color="text.secondary">
+            Chưa có dữ liệu deploy trong khoảng thời gian này
+          </Typography>
         </Box>
       ) : (
         <ResponsiveContainer width="100%" height={300}>
@@ -86,12 +78,10 @@ export default function AnalyticsChart({ platform, days, onDaysChange }) {
               }}
             />
             <Legend />
-            <Bar dataKey="checking" name="Kiểm tra" fill="#9c27b0" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="downloading" name="Đang tải" fill="#2196f3" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="installing" name="Đang cài" fill="#ff9800" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="success" name="Thành công" fill="#4caf50" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="failed" name="Thất bại" fill="#f44336" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="skipped" name="Bỏ qua" fill="#607d8b" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="deployments" name="Tổng deploy" fill="#1976d2" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="enabled" name="Đang bật" fill="#2e7d32" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="disabled" name="Đã tắt" fill="#ef6c00" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="force" name="Force update" fill="#d32f2f" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )}

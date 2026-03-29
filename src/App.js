@@ -42,16 +42,32 @@ import themeDarkRTL from "assets/theme-dark/theme-rtl";
 import rtlPlugin from "stylis-plugin-rtl";
 import { CacheProvider } from "@emotion/react";
 import createCache from "@emotion/cache";
+import { useSelector } from "react-redux";
 
 // PickleTour React routes
 import routes from "routes";
 import RequireAuth from "components/RequireAuth";
+import { useVerifyQuery } from "slices/authApiSlice";
 // PickleTour React contexts
 import { useMaterialUIController, setMiniSidenav, setOpenConfigurator } from "context";
 
 // Images
 import brandWhite from "assets/images/logo-ct.png";
 import brandDark from "assets/images/logo-ct-dark.png";
+
+function AdminSessionSync() {
+  const userInfo = useSelector((state) => state.auth?.userInfo || null);
+  const hasLocalSession = Boolean(userInfo?.token);
+
+  useVerifyQuery(undefined, {
+    skip: !hasLocalSession,
+    refetchOnMountOrArgChange: true,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+  });
+
+  return null;
+}
 
 export default function App() {
   const [controller, dispatch] = useMaterialUIController();
@@ -174,6 +190,7 @@ export default function App() {
     <CacheProvider value={rtlCache}>
       <ThemeProvider theme={darkMode ? themeDarkRTL : themeRTL}>
         <CssBaseline />
+        <AdminSessionSync />
         {layout === "dashboard" && (
           <>
             <Sidenav
@@ -198,6 +215,7 @@ export default function App() {
   ) : (
     <ThemeProvider theme={darkMode ? themeDark : theme}>
       <CssBaseline />
+      <AdminSessionSync />
       {layout === "dashboard" && (
         <>
           <Sidenav

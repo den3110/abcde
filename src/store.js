@@ -1,4 +1,5 @@
 import { configureStore } from "@reduxjs/toolkit";
+import { setupListeners } from "@reduxjs/toolkit/query";
 import { apiSlice } from "./slices/apiSlice";
 import authReducer from "./slices/authSlice";
 import adminUiReducer from "./slices/adminUiSlice";
@@ -14,3 +15,5 @@ export const store = configureStore({
   middleware: (getDefault) => getDefault().concat(apiSlice.middleware),
   devTools: process.env.NODE_ENV !== "production",
 });
+
+setupListeners(store.dispatch);

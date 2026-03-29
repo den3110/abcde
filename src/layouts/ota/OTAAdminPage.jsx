@@ -1,4 +1,3 @@
-// pages/admin/OTAAdminPage.jsx
 import React, { useState } from "react";
 import PropTypes from "prop-types";
 import {
@@ -20,37 +19,31 @@ import {
   ListItemText,
   Skeleton,
   Alert,
-  LinearProgress,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
-  CloudUpload,
   Android,
   Apple,
   MoreVert,
-  Restore,
   Delete,
-  Download,
   Refresh,
   CheckCircle,
-  Error,
   Storage,
   BugReport,
+  Block,
+  Hub,
 } from "@mui/icons-material";
 import {
   useGetOtaVersionsQuery,
   useGetOtaAnalyticsQuery,
-  useRollbackOtaMutation,
   useDeactivateOtaVersionMutation,
 } from "../../slices/otaApiSlice";
-import UploadBundleModal from "./components/UploadBundleModal";
 import TestUpdateModal from "./components/TestUpdateModal";
 import AnalyticsChart from "./components/AnalyticsChart";
 import FailedUpdatesTable from "./components/FailedUpdatesTable";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
-// Utils
 const formatBytes = (bytes) => {
   if (!bytes) return "0 B";
   const k = 1024;
@@ -75,40 +68,31 @@ const formatNumber = (num) => {
   return new Intl.NumberFormat("vi-VN").format(num);
 };
 
-// Stats Card Component
-const StatsCard = ({ title, value, icon, color = "primary", subtitle }) => (
-  <Card
-    sx={{
-      height: "100%",
-      background: `linear-gradient(135deg, ${color}.dark 0%, ${color}.main 100%)`,
-      color: "white",
-    }}
-  >
+const truncateMiddle = (value, head = 8, tail = 6) => {
+  const text = String(value || "");
+  if (!text) return "-";
+  if (text.length <= head + tail + 3) return text;
+  return `${text.slice(0, head)}...${text.slice(-tail)}`;
+};
+
+const StatsCard = ({ title, value, icon, subtitle }) => (
+  <Card sx={{ height: "100%" }}>
     <CardContent>
       <Box display="flex" justifyContent="space-between" alignItems="flex-start">
         <Box>
-          <Typography variant="body2" sx={{ opacity: 0.8, mb: 0.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
             {title}
           </Typography>
           <Typography variant="h4" fontWeight="bold">
             {value}
           </Typography>
           {subtitle && (
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+            <Typography variant="caption" color="text.secondary">
               {subtitle}
             </Typography>
           )}
         </Box>
-        <Box
-          sx={{
-            bgcolor: "rgba(255,255,255,0.2)",
-            borderRadius: 2,
-            p: 1,
-            display: "flex",
-          }}
-        >
-          {icon}
-        </Box>
+        <Box sx={{ bgcolor: "action.hover", borderRadius: 2, p: 1, display: "flex" }}>{icon}</Box>
       </Box>
     </CardContent>
   </Card>
@@ -118,12 +102,10 @@ StatsCard.propTypes = {
   title: PropTypes.string.isRequired,
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   icon: PropTypes.node,
-  color: PropTypes.string,
   subtitle: PropTypes.string,
 };
 
-// Version Actions Component
-const VersionActions = ({ version, onRollback, onDeactivate, isLoading }) => {
+const VersionActions = ({ version, onDeactivate, isLoading }) => {
   const [anchorEl, setAnchorEl] = useState(null);
 
   const handleMenuOpen = (event) => {
@@ -133,15 +115,14 @@ const VersionActions = ({ version, onRollback, onDeactivate, isLoading }) => {
 
   const handleMenuClose = () => setAnchorEl(null);
 
-  const handleRollback = () => {
-    handleMenuClose();
-    onRollback(version.version);
-  };
-
   const handleDeactivate = () => {
     handleMenuClose();
-    onDeactivate(version.version);
+    onDeactivate(version.bundleId);
   };
+
+  if (!version.enabled) {
+    return null;
+  }
 
   return (
     <>
@@ -149,23 +130,11 @@ const VersionActions = ({ version, onRollback, onDeactivate, isLoading }) => {
         <MoreVert />
       </IconButton>
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
-        {!version.isLatest && (
-          <MenuItem onClick={handleRollback}>
-            <ListItemIcon>
-              <Restore fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Rollback về version này</ListItemText>
-          </MenuItem>
-        )}
-        <MenuItem
-          onClick={handleDeactivate}
-          sx={{ color: "error.main" }}
-          disabled={version.isLatest}
-        >
+        <MenuItem onClick={handleDeactivate} sx={{ color: "error.main" }}>
           <ListItemIcon>
             <Delete fontSize="small" color="error" />
           </ListItemIcon>
-          <ListItemText>Vô hiệu hóa</ListItemText>
+          <ListItemText>Tắt bundle này</ListItemText>
         </MenuItem>
       </Menu>
     </>
@@ -174,15 +143,12 @@ const VersionActions = ({ version, onRollback, onDeactivate, isLoading }) => {
 
 VersionActions.propTypes = {
   version: PropTypes.object.isRequired,
-  onRollback: PropTypes.func.isRequired,
   onDeactivate: PropTypes.func.isRequired,
   isLoading: PropTypes.bool,
 };
 
-// Main Component
 export default function OTAAdminPage() {
   const [platform, setPlatform] = useState("android");
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [testModalOpen, setTestModalOpen] = useState(false);
   const [analyticsDays, setAnalyticsDays] = useState(7);
 
@@ -192,62 +158,75 @@ export default function OTAAdminPage() {
     refetch: refetchVersions,
   } = useGetOtaVersionsQuery(platform);
 
-  const { data: analytics, isLoading: analyticsLoading } = useGetOtaAnalyticsQuery({
+  const {
+    data: analytics,
+    isLoading: analyticsLoading,
+    refetch: refetchAnalytics,
+  } = useGetOtaAnalyticsQuery({
     platform,
     days: analyticsDays,
   });
 
-  const [rollback, { isLoading: rollbackLoading }] = useRollbackOtaMutation();
   const [deactivate, { isLoading: deactivateLoading }] = useDeactivateOtaVersionMutation();
 
   const handlePlatformChange = (_, newPlatform) => {
     if (newPlatform) setPlatform(newPlatform);
   };
 
-  const handleRollback = async (version) => {
-    if (window.confirm(`Bạn có chắc muốn rollback về version ${version}?`)) {
+  const handleDeactivate = async (bundleId) => {
+    if (window.confirm(`Bạn có chắc muốn tắt bundle ${bundleId}?`)) {
       try {
-        await rollback({ platform, version }).unwrap();
-      } catch (error) {
-        console.error("Rollback failed:", error);
-      }
-    }
-  };
-
-  const handleDeactivate = async (version) => {
-    if (window.confirm(`Bạn có chắc muốn vô hiệu hóa version ${version}?`)) {
-      try {
-        await deactivate({ platform, version }).unwrap();
+        await deactivate({ platform, bundleId }).unwrap();
       } catch (error) {
         console.error("Deactivate failed:", error);
       }
     }
   };
 
-  const isActionLoading = rollbackLoading || deactivateLoading;
+  const handleRefresh = () => {
+    refetchVersions();
+    refetchAnalytics();
+  };
 
-  // DataGrid columns
   const columns = [
     {
-      field: "version",
-      headerName: "Version",
-      width: 160,
+      field: "bundleId",
+      headerName: "Bundle ID",
+      minWidth: 240,
+      flex: 1.2,
       renderCell: (params) => (
-        <Box display="flex" alignItems="center" gap={1}>
-          <Typography fontWeight="medium">{params.value}</Typography>
-          {params.row.isLatest && (
-            <Chip label="Latest" size="small" color="success" sx={{ fontWeight: "bold" }} />
-          )}
-          {params.row.mandatory && (
-            <Chip label="Bắt buộc" size="small" color="error" variant="outlined" />
-          )}
+        <Box py={0.5}>
+          <Typography fontWeight="medium" fontFamily="monospace">
+            {truncateMiddle(params.value, 12, 8)}
+          </Typography>
+          <Box display="flex" gap={0.5} mt={0.5} flexWrap="wrap">
+            {params.row.isLatest && <Chip label="Latest" size="small" color="success" />}
+            {params.row.shouldForceUpdate && (
+              <Chip label="Force update" size="small" color="error" variant="outlined" />
+            )}
+          </Box>
         </Box>
       ),
     },
     {
-      field: "description",
-      headerName: "Mô tả",
-      width: 200,
+      field: "targetAppVersion",
+      headerName: "Target App Version",
+      width: 160,
+      renderCell: (params) => <Chip label={params.value || "-"} size="small" variant="outlined" />,
+    },
+    {
+      field: "channel",
+      headerName: "Channel",
+      width: 120,
+      renderCell: (params) => (
+        <Chip label={params.value || "production"} size="small" color="primary" variant="outlined" />
+      ),
+    },
+    {
+      field: "message",
+      headerName: "Message",
+      minWidth: 220,
+      flex: 1,
       renderCell: (params) => (
         <Typography variant="body2" color="text.secondary">
           {params.value || "-"}
@@ -255,62 +234,38 @@ export default function OTAAdminPage() {
       ),
     },
     {
-      field: "minAppVersion",
-      headerName: "Min App Version",
-      width: 130,
-      renderCell: (params) => <Chip label={`≥ ${params.value}`} size="small" variant="outlined" />,
-    },
-    {
       field: "size",
       headerName: "Kích thước",
-      width: 110,
+      width: 120,
       valueFormatter: (params) => formatBytes(params.value),
     },
     {
-      field: "downloads",
-      headerName: "Downloads",
-      width: 110,
-      valueGetter: (params) => params.row?.stats?.downloads || 0,
+      field: "gitCommitHash",
+      headerName: "Commit",
+      width: 130,
       renderCell: (params) => (
-        <Box display="flex" alignItems="center" gap={0.5}>
-          <Download fontSize="small" color="action" />
-          {formatNumber(params.value)}
-        </Box>
+        <Typography variant="body2" fontFamily="monospace">
+          {truncateMiddle(params.value, 7, 5)}
+        </Typography>
       ),
     },
     {
-      field: "successRate",
-      headerName: "Tỷ lệ thành công",
-      width: 150,
-      valueGetter: (params) => {
-        const stats = params.row?.stats;
-        if (!stats) return null;
-        const total = (stats.successfulUpdates || 0) + (stats.failedUpdates || 0);
-        return total > 0 ? ((stats.successfulUpdates / total) * 100).toFixed(1) : null;
-      },
-      renderCell: (params) =>
-        params.value !== null ? (
-          <Box display="flex" alignItems="center" gap={1}>
-            <Box sx={{ width: 60 }}>
-              <LinearProgress
-                variant="determinate"
-                value={parseFloat(params.value)}
-                color={parseFloat(params.value) >= 90 ? "success" : "warning"}
-                sx={{ height: 6, borderRadius: 3 }}
-              />
-            </Box>
-            <Typography variant="body2">{params.value}%</Typography>
-          </Box>
-        ) : (
-          <Typography variant="body2" color="text.secondary">
-            -
-          </Typography>
-        ),
+      field: "enabled",
+      headerName: "Trạng thái",
+      width: 120,
+      renderCell: (params) => (
+        <Chip
+          label={params.value ? "Đang bật" : "Đã tắt"}
+          size="small"
+          color={params.value ? "success" : "warning"}
+          variant={params.value ? "filled" : "outlined"}
+        />
+      ),
     },
     {
       field: "createdAt",
-      headerName: "Ngày upload",
-      width: 160,
+      headerName: "Ngày deploy",
+      width: 170,
       valueFormatter: (params) => formatDate(params.value),
     },
     {
@@ -323,9 +278,8 @@ export default function OTAAdminPage() {
       renderCell: (params) => (
         <VersionActions
           version={params.row}
-          onRollback={handleRollback}
           onDeactivate={handleDeactivate}
-          isLoading={isActionLoading}
+          isLoading={deactivateLoading}
         />
       ),
     },
@@ -335,14 +289,13 @@ export default function OTAAdminPage() {
     <DashboardLayout>
       <DashboardNavbar />
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        {/* Header */}
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
           <Box>
             <Typography variant="h4" fontWeight="bold" gutterBottom>
               OTA Update Manager
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Quản lý và phân phối bản cập nhật Over-The-Air cho PickleTour
+              Trang này đang đọc bundle deploy thật từ hot-updater D1/R2 cho PickleTour
             </Typography>
           </Box>
           <Box display="flex" gap={2}>
@@ -368,81 +321,75 @@ export default function OTAAdminPage() {
               Test Update
             </Button>
 
-            <Button
-              variant="contained"
-              startIcon={<CloudUpload />}
-              onClick={() => setUploadModalOpen(true)}
-            >
-              Upload Bundle
+            <Button variant="contained" startIcon={<Refresh />} onClick={handleRefresh}>
+              Làm mới
             </Button>
           </Box>
         </Box>
 
-        {/* Stats Cards */}
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Dữ liệu trong trang này lấy trực tiếp từ hot-updater. Deploy bundle vẫn thực hiện bằng
+          CLI, không qua form upload cũ.
+        </Alert>
+
         <Grid container spacing={3} mb={4}>
           <Grid item xs={12} sm={6} md={3}>
             {analyticsLoading ? (
               <Skeleton variant="rounded" height={120} />
             ) : (
               <StatsCard
-                title="Tổng Downloads"
-                value={formatNumber(analytics?.totals?.downloading || 0)}
-                icon={<Download />}
-                color="primary"
-                subtitle="7 ngày qua"
-              />
-            )}
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            {analyticsLoading ? (
-              <Skeleton variant="rounded" height={120} />
-            ) : (
-              <StatsCard
-                title="Update Thành Công"
-                value={formatNumber(analytics?.totals?.success || 0)}
-                icon={<CheckCircle />}
-                color="success"
-                subtitle="7 ngày qua"
-              />
-            )}
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            {analyticsLoading ? (
-              <Skeleton variant="rounded" height={120} />
-            ) : (
-              <StatsCard
-                title="Update Thất Bại"
-                value={formatNumber(analytics?.totals?.failed || 0)}
-                icon={<Error />}
-                color="error"
-                subtitle="7 ngày qua"
-              />
-            )}
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            {analyticsLoading ? (
-              <Skeleton variant="rounded" height={120} />
-            ) : (
-              <StatsCard
-                title="Tổng Versions"
-                value={versions.length}
+                title="Tổng deploy"
+                value={formatNumber(analytics?.totals?.deployments || 0)}
                 icon={<Storage />}
-                color="info"
+                subtitle={`${formatNumber(analytics?.totals?.channels || 0)} channel`}
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Đang bật"
+                value={formatNumber(analytics?.totals?.enabled || 0)}
+                icon={<CheckCircle />}
                 subtitle={platform === "android" ? "Android" : "iOS"}
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Đã tắt"
+                value={formatNumber(analytics?.totals?.disabled || 0)}
+                icon={<Block />}
+                subtitle="Bundle đang tắt"
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Force update"
+                value={formatNumber(analytics?.totals?.force || 0)}
+                icon={<Hub />}
+                subtitle="Bundle có ép cập nhật"
               />
             )}
           </Grid>
         </Grid>
 
-        {/* Failed Updates Alert */}
-        {analytics?.failedUpdates?.length > 0 && (
+        {analytics?.recentDisabledBundles?.length > 0 && (
           <Alert severity="warning" sx={{ mb: 3 }}>
-            Có {analytics.failedUpdates.length} lần update thất bại gần đây. Kiểm tra chi tiết để
-            debug.
+            Có {analytics.recentDisabledBundles.length} bundle đang ở trạng thái đã tắt trên{" "}
+            {platform}.
           </Alert>
         )}
 
-        {/* Analytics Chart & Failed Updates */}
         <Grid container spacing={3} mb={4}>
           <Grid item xs={12} md={8}>
             <AnalyticsChart
@@ -456,7 +403,6 @@ export default function OTAAdminPage() {
           </Grid>
         </Grid>
 
-        {/* Versions DataGrid */}
         <Paper sx={{ width: "100%" }}>
           <Box
             display="flex"
@@ -466,21 +412,18 @@ export default function OTAAdminPage() {
             borderBottom={1}
             borderColor="divider"
           >
-            <Typography variant="h6">Danh sách Versions</Typography>
-            <Button
+            <Typography variant="h6">Danh sách bundle deploy</Typography>
+            <Chip
+              label={`Nguồn: ${analytics?.source || "hot-updater"}`}
               size="small"
-              startIcon={<Refresh />}
-              onClick={refetchVersions}
-              disabled={versionsLoading}
-            >
-              Làm mới
-            </Button>
+              variant="outlined"
+            />
           </Box>
 
           <DataGrid
             rows={versions}
             columns={columns}
-            getRowId={(row) => row._id || row.version}
+            getRowId={(row) => row._id || row.bundleId}
             loading={versionsLoading}
             disableRowSelectionOnClick
             pageSizeOptions={[10, 25, 50]}
@@ -501,7 +444,7 @@ export default function OTAAdminPage() {
               },
             }}
             localeText={{
-              noRowsLabel: "Chưa có version nào được upload",
+              noRowsLabel: "Chưa có bundle nào được deploy",
               MuiTablePagination: {
                 labelRowsPerPage: "Số dòng:",
                 labelDisplayedRows: ({ from, to, count }) =>
@@ -518,28 +461,15 @@ export default function OTAAdminPage() {
                   height="100%"
                   py={8}
                 >
-                  <Typography color="text.secondary" mb={2}>
-                    Chưa có version nào được upload
+                  <Typography color="text.secondary">
+                    Chưa có bundle nào được deploy qua hot-updater
                   </Typography>
-                  <Button
-                    variant="contained"
-                    startIcon={<CloudUpload />}
-                    onClick={() => setUploadModalOpen(true)}
-                  >
-                    Upload Bundle đầu tiên
-                  </Button>
                 </Box>
               ),
             }}
           />
         </Paper>
 
-        {/* Modals */}
-        <UploadBundleModal
-          open={uploadModalOpen}
-          onClose={() => setUploadModalOpen(false)}
-          platform={platform}
-        />
         <TestUpdateModal
           open={testModalOpen}
           onClose={() => setTestModalOpen(false)}

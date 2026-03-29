@@ -1,6 +1,5 @@
-// pages/admin/components/TestUpdateModal.jsx
 import React, { useState } from "react";
-import PropTypes from "prop-types"; // 1. Import PropTypes
+import PropTypes from "prop-types";
 import {
   Dialog,
   DialogTitle,
@@ -33,12 +32,12 @@ export default function TestUpdateModal({ open, onClose, platform }) {
     useLazyCheckOtaUpdateQuery();
 
   const [formData, setFormData] = useState({
-    bundleVersion: "1.0.0",
+    bundleVersion: "",
     appVersion: "1.0.0",
   });
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
+  const handleChange = (event) => {
+    const { name, value } = event.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -55,7 +54,7 @@ export default function TestUpdateModal({ open, onClose, platform }) {
       <DialogTitle>
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Typography variant="h6">
-            Test OTA Update - {platform === "android" ? "Android" : "iOS"}
+            Test hot-updater - {platform === "android" ? "Android" : "iOS"}
           </Typography>
           <IconButton onClick={onClose} size="small">
             <Close />
@@ -65,18 +64,18 @@ export default function TestUpdateModal({ open, onClose, platform }) {
 
       <DialogContent dividers>
         <Alert severity="info" sx={{ mb: 3 }}>
-          Giả lập request check update từ client app để test logic OTA
+          Giả lập request check update từ app để test logic hot-updater thật.
         </Alert>
 
         <Box display="flex" gap={2} mb={3}>
           <TextField
             fullWidth
-            label="Bundle Version hiện tại"
+            label="Bundle ID hiện tại"
             name="bundleVersion"
             value={formData.bundleVersion}
             onChange={handleChange}
-            placeholder="1.0.0"
-            helperText="Version bundle đang có trên device"
+            placeholder="Bỏ trống nếu máy chưa có bundle OTA"
+            helperText="ID bundle đang có trên device, không phải version native"
           />
           <TextField
             fullWidth
@@ -84,7 +83,7 @@ export default function TestUpdateModal({ open, onClose, platform }) {
             name="appVersion"
             value={formData.appVersion}
             onChange={handleChange}
-            placeholder="1.0.0"
+            placeholder="1.0.25"
             helperText="Version native app"
           />
         </Box>
@@ -99,7 +98,7 @@ export default function TestUpdateModal({ open, onClose, platform }) {
           }
           sx={{ mb: 3 }}
         >
-          {isLoading || isFetching ? "Đang kiểm tra..." : "Kiểm tra Update"}
+          {isLoading || isFetching ? "Đang kiểm tra..." : "Kiểm tra update"}
         </Button>
 
         <Divider sx={{ my: 2 }} />
@@ -119,16 +118,32 @@ export default function TestUpdateModal({ open, onClose, platform }) {
                 <Box display="flex" alignItems="center" gap={1} mb={2}>
                   <CheckCircle color="success" />
                   <Typography fontWeight="medium" color="success.main">
-                    Có bản cập nhật mới!
+                    Có bundle mới từ hot-updater
                   </Typography>
                 </Box>
 
                 <Box display="flex" flexDirection="column" gap={1.5}>
                   <Box display="flex" justifyContent="space-between">
                     <Typography variant="body2" color="text.secondary">
-                      Version mới:
+                      Bundle ID:
                     </Typography>
-                    <Chip label={result.version} size="small" color="primary" />
+                    <Chip label={result.bundleId || "-"} size="small" color="primary" />
+                  </Box>
+
+                  <Box display="flex" justifyContent="space-between">
+                    <Typography variant="body2" color="text.secondary">
+                      Phiên bản app đích:
+                    </Typography>
+                    <Typography variant="body2">
+                      {result.targetAppVersion || result.version || "-"}
+                    </Typography>
+                  </Box>
+
+                  <Box display="flex" justifyContent="space-between">
+                    <Typography variant="body2" color="text.secondary">
+                      Kênh:
+                    </Typography>
+                    <Chip label={result.channel || "production"} size="small" variant="outlined" />
                   </Box>
 
                   <Box display="flex" justifyContent="space-between">
@@ -158,51 +173,55 @@ export default function TestUpdateModal({ open, onClose, platform }) {
                     </Box>
                   )}
 
-                  <Box>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Hash (SHA256):
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        fontFamily: "monospace",
-                        bgcolor: "action.hover",
-                        p: 1,
-                        borderRadius: 1,
-                        display: "block",
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {result.hash}
-                    </Typography>
-                  </Box>
+                  {result.hash && (
+                    <Box>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Mã băm file:
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontFamily: "monospace",
+                          bgcolor: "action.hover",
+                          p: 1,
+                          borderRadius: 1,
+                          display: "block",
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {result.hash}
+                      </Typography>
+                    </Box>
+                  )}
 
-                  <Box>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Download URL:
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        fontFamily: "monospace",
-                        bgcolor: "action.hover",
-                        p: 1,
-                        borderRadius: 1,
-                        display: "block",
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {result.downloadUrl?.substring(0, 100)}...
-                    </Typography>
-                  </Box>
+                  {result.downloadUrl && (
+                    <Box>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Đường dẫn tải:
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontFamily: "monospace",
+                          bgcolor: "action.hover",
+                          p: 1,
+                          borderRadius: 1,
+                          display: "block",
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {result.downloadUrl}
+                      </Typography>
+                    </Box>
+                  )}
 
-                  {result.logId && (
+                  {result.status && (
                     <Box display="flex" justifyContent="space-between">
                       <Typography variant="body2" color="text.secondary">
-                        Log ID:
+                        Trạng thái worker:
                       </Typography>
                       <Typography variant="caption" fontFamily="monospace">
-                        {result.logId}
+                        {result.status}
                       </Typography>
                     </Box>
                   )}
@@ -212,7 +231,8 @@ export default function TestUpdateModal({ open, onClose, platform }) {
               <Box display="flex" alignItems="center" gap={1}>
                 <Info color="info" />
                 <Typography color="text.secondary">
-                  Không có bản cập nhật mới. App đang ở phiên bản mới nhất hoặc không tương thích.
+                  Không có bundle mới phù hợp. App đang ở bản mới nhất hoặc target app version
+                  không khớp.
                 </Typography>
               </Box>
             )}
@@ -221,8 +241,7 @@ export default function TestUpdateModal({ open, onClose, platform }) {
 
         {!result && !error && (
           <Paper variant="outlined" sx={{ p: 3, textAlign: "center", bgcolor: "action.hover" }}>
-            {/* Fix lỗi no-unescaped-entities bằng cách dùng &quot; */}
-            <Typography color="text.secondary">Nhấn &quot;Kiểm tra Update&quot; để test</Typography>
+            <Typography color="text.secondary">Nhấn &quot;Kiểm tra update&quot; để test</Typography>
           </Paper>
         )}
       </DialogContent>
@@ -234,7 +253,6 @@ export default function TestUpdateModal({ open, onClose, platform }) {
   );
 }
 
-// 2. Định nghĩa PropTypes
 TestUpdateModal.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
