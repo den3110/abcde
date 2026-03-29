@@ -57,6 +57,7 @@ import YouTubeLiveAdmin from "layouts/YouTubeLiveAdmin";
 import AdminLiveSessionsPage from "layouts/AdminLiveSessionsPage";
 import LiveRecordingMonitorPage from "layouts/LiveRecordingMonitorPage";
 import DriveExportMonitorPage from "layouts/DriveExportMonitorPage";
+import DriveVideoManagerPage from "layouts/DriveVideoManagerPage";
 import FbVodDriveMonitorPage from "layouts/FbVodDriveMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
@@ -746,6 +747,18 @@ const routes = [
     icon: <Icon fontSize="small">cloud_upload</Icon>,
     route: "/admin/live-recording-drive-monitor",
     component: <DriveExportMonitorPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Drive Video Manager",
+    key: "drive-video-manager",
+    icon: <Icon fontSize="small">smart_display</Icon>,
+    route: "/admin/drive-video-manager",
+    component: <DriveVideoManagerPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,
