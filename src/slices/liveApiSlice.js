@@ -28,6 +28,30 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       },
       providesTags: () => [{ type: "LiveSessions", id: "LIST" }],
     }),
+    getFbVodDriveMonitor: builder.query({
+      query: ({ range = "7d", status = "all", q = "", page = 1, limit = 20 } = {}) => {
+        const params = new URLSearchParams();
+        if (range) params.set("range", String(range));
+        if (status) params.set("status", String(status));
+        if (q) params.set("q", q);
+        if (page) params.set("page", String(page));
+        if (limit) params.set("limit", String(limit));
+
+        return {
+          url: `/admin/fb-vod-monitor?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      keepUnusedDataFor: 5,
+      providesTags: [{ type: "FbVodMonitor", id: "LIST" }],
+    }),
+    ensureFbVodDriveExport: builder.mutation({
+      query: (matchId) => ({
+        url: `/admin/fb-vod-monitor/${matchId}/ensure-export`,
+        method: "POST",
+      }),
+      invalidatesTags: [{ type: "FbVodMonitor", id: "LIST" }],
+    }),
     getLiveRecordingMonitor: builder.query({
       query: () => ({
         url: "/live/recordings/v2/admin/monitor",
@@ -83,7 +107,9 @@ export const liveApiSlice = apiSlice.injectEndpoints({
 
 export const {
   useAdminListLiveSessionsQuery,
+  useEnsureFbVodDriveExportMutation,
   useForceLiveRecordingExportMutation,
+  useGetFbVodDriveMonitorQuery,
   useGetLiveRecordingAiCommentaryMonitorQuery,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
