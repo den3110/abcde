@@ -1,60 +1,59 @@
 import React, { useState } from "react";
 import PropTypes from "prop-types";
 import {
+  Alert,
   Box,
-  Container,
-  Typography,
-  Grid,
+  Button,
   Card,
   CardContent,
-  Button,
-  ToggleButton,
-  ToggleButtonGroup,
-  Paper,
   Chip,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Grid,
   IconButton,
-  Menu,
-  MenuItem,
   ListItemIcon,
   ListItemText,
+  Menu,
+  MenuItem,
+  Paper,
   Skeleton,
-  Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Divider,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
   Android,
   Apple,
-  MoreVert,
-  Delete,
-  Refresh,
-  CheckCircle,
-  Storage,
   BugReport,
-  Block,
-  Hub,
+  CheckCircle,
+  Delete,
+  Download,
+  MoreVert,
+  Refresh,
+  Storage,
 } from "@mui/icons-material";
 import {
-  useGetOtaVersionsQuery,
-  useGetOtaAnalyticsQuery,
   useDeactivateOtaVersionMutation,
+  useGetOtaAnalyticsQuery,
+  useGetOtaVersionsQuery,
 } from "../../slices/otaApiSlice";
-import TestUpdateModal from "./components/TestUpdateModal";
-import AnalyticsChart from "./components/AnalyticsChart";
-import FailedUpdatesTable from "./components/FailedUpdatesTable";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+import AnalyticsChart from "./components/AnalyticsChart";
+import FailedUpdatesTable from "./components/FailedUpdatesTable";
+import TestUpdateModal from "./components/TestUpdateModal";
 
 const formatBytes = (bytes) => {
   if (!bytes) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 };
 
 const formatDate = (date) => {
@@ -68,12 +67,9 @@ const formatDate = (date) => {
   });
 };
 
-const formatNumber = (num) => {
-  if (!num) return "0";
-  return new Intl.NumberFormat("vi-VN").format(num);
-};
+const formatNumber = (num) => new Intl.NumberFormat("vi-VN").format(Number(num) || 0);
 
-const truncateMiddle = (value, head = 8, tail = 6) => {
+const truncateMiddle = (value, head = 10, tail = 8) => {
   const text = String(value || "");
   if (!text) return "-";
   if (text.length <= head + tail + 3) return text;
@@ -91,13 +87,22 @@ const StatsCard = ({ title, value, icon, subtitle }) => (
           <Typography variant="h4" fontWeight="bold">
             {value}
           </Typography>
-          {subtitle && (
+          {subtitle ? (
             <Typography variant="caption" color="text.secondary">
               {subtitle}
             </Typography>
-          )}
+          ) : null}
         </Box>
-        <Box sx={{ bgcolor: "action.hover", borderRadius: 2, p: 1, display: "flex" }}>{icon}</Box>
+        <Box
+          sx={{
+            bgcolor: "action.hover",
+            borderRadius: 2,
+            p: 1,
+            display: "flex",
+          }}
+        >
+          {icon}
+        </Box>
       </Box>
     </CardContent>
   </Card>
@@ -203,12 +208,14 @@ export default function OTAAdminPage() {
   };
 
   const handleDeactivate = async (bundleId) => {
-    if (window.confirm(`Bạn có chắc muốn tắt bundle ${bundleId}?`)) {
-      try {
-        await deactivate({ platform, bundleId }).unwrap();
-      } catch (error) {
-        console.error("Deactivate failed:", error);
-      }
+    if (!window.confirm(`Bạn có chắc muốn tắt bundle ${bundleId}?`)) {
+      return;
+    }
+
+    try {
+      await deactivate({ platform, bundleId }).unwrap();
+    } catch (error) {
+      console.error("Deactivate failed:", error);
     }
   };
 
@@ -217,38 +224,30 @@ export default function OTAAdminPage() {
     refetchAnalytics();
   };
 
-  const handleOpenBundleDetails = (bundle) => {
-    setSelectedBundle(bundle);
-  };
-
-  const handleCloseBundleDetails = () => {
-    setSelectedBundle(null);
-  };
-
   const columns = [
     {
       field: "bundleId",
       headerName: "Bundle ID",
       minWidth: 240,
-      flex: 1.2,
+      flex: 1.15,
       renderCell: (params) => (
         <Box py={0.5}>
           <Typography fontWeight="medium" fontFamily="monospace">
             {truncateMiddle(params.value, 12, 8)}
           </Typography>
           <Box display="flex" gap={0.5} mt={0.5} flexWrap="wrap">
-            {params.row.isLatest && <Chip label="Latest" size="small" color="success" />}
-            {params.row.shouldForceUpdate && (
+            {params.row.isLatest ? <Chip label="Mới nhất" size="small" color="success" /> : null}
+            {params.row.shouldForceUpdate ? (
               <Chip label="Force update" size="small" color="error" variant="outlined" />
-            )}
+            ) : null}
           </Box>
         </Box>
       ),
     },
     {
       field: "targetAppVersion",
-      headerName: "Target App Version",
-      width: 160,
+      headerName: "App đích",
+      width: 140,
       renderCell: (params) => <Chip label={params.value || "-"} size="small" variant="outlined" />,
     },
     {
@@ -260,8 +259,29 @@ export default function OTAAdminPage() {
       ),
     },
     {
+      field: "downloads",
+      headerName: "Downloads",
+      width: 120,
+      valueGetter: (params) => params.row?.stats?.downloads || 0,
+      valueFormatter: (params) => formatNumber(params.value),
+    },
+    {
+      field: "successfulUpdates",
+      headerName: "Thành công",
+      width: 120,
+      valueGetter: (params) => params.row?.stats?.successfulUpdates || 0,
+      valueFormatter: (params) => formatNumber(params.value),
+    },
+    {
+      field: "failedUpdates",
+      headerName: "Thất bại",
+      width: 120,
+      valueGetter: (params) => params.row?.stats?.failedUpdates || 0,
+      valueFormatter: (params) => formatNumber(params.value),
+    },
+    {
       field: "message",
-      headerName: "Message",
+      headerName: "Ghi chú",
       minWidth: 220,
       flex: 1,
       renderCell: (params) => (
@@ -300,7 +320,7 @@ export default function OTAAdminPage() {
     {
       field: "enabled",
       headerName: "Trạng thái",
-      width: 120,
+      width: 130,
       renderCell: (params) => (
         <Chip
           label={params.value ? "Đang bật" : "Đã tắt"}
@@ -343,9 +363,10 @@ export default function OTAAdminPage() {
               OTA Update Manager
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Trang này đang đọc bundle deploy thật từ hot-updater D1/R2 cho PickleTour
+              Trang này đọc bundle thật từ hot-updater và số liệu tải/cài từ telemetry mới.
             </Typography>
           </Box>
+
           <Box display="flex" gap={2}>
             <ToggleButtonGroup
               value={platform}
@@ -376,8 +397,8 @@ export default function OTAAdminPage() {
         </Box>
 
         <Alert severity="info" sx={{ mb: 3 }}>
-          Dữ liệu trong trang này lấy trực tiếp từ hot-updater. Deploy bundle vẫn thực hiện bằng
-          CLI, không qua form upload cũ.
+          Deploy bundle vẫn đi qua CLI hot-updater. Trang này chỉ đọc dữ liệu thật từ D1/R2 và
+          telemetry mới của app mobile.
         </Alert>
 
         <Grid container spacing={3} mb={4}>
@@ -386,57 +407,57 @@ export default function OTAAdminPage() {
               <Skeleton variant="rounded" height={120} />
             ) : (
               <StatsCard
-                title="Tổng deploy"
+                title="Tổng lượt tải"
+                value={formatNumber(analytics?.totals?.downloads || 0)}
+                icon={<Download />}
+                subtitle={`${analyticsDays} ngày qua`}
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Cập nhật thành công"
+                value={formatNumber(analytics?.totals?.success || 0)}
+                icon={<CheckCircle />}
+                subtitle={`${analyticsDays} ngày qua`}
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Cập nhật thất bại"
+                value={formatNumber(analytics?.totals?.failed || 0)}
+                icon={<BugReport />}
+                subtitle={`${analyticsDays} ngày qua`}
+              />
+            )}
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            {analyticsLoading ? (
+              <Skeleton variant="rounded" height={120} />
+            ) : (
+              <StatsCard
+                title="Tổng bundle deploy"
                 value={formatNumber(analytics?.totals?.deployments || 0)}
                 icon={<Storage />}
                 subtitle={`${formatNumber(analytics?.totals?.channels || 0)} channel`}
               />
             )}
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            {analyticsLoading ? (
-              <Skeleton variant="rounded" height={120} />
-            ) : (
-              <StatsCard
-                title="Đang bật"
-                value={formatNumber(analytics?.totals?.enabled || 0)}
-                icon={<CheckCircle />}
-                subtitle={platform === "android" ? "Android" : "iOS"}
-              />
-            )}
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            {analyticsLoading ? (
-              <Skeleton variant="rounded" height={120} />
-            ) : (
-              <StatsCard
-                title="Đã tắt"
-                value={formatNumber(analytics?.totals?.disabled || 0)}
-                icon={<Block />}
-                subtitle="Bundle đang tắt"
-              />
-            )}
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            {analyticsLoading ? (
-              <Skeleton variant="rounded" height={120} />
-            ) : (
-              <StatsCard
-                title="Force update"
-                value={formatNumber(analytics?.totals?.force || 0)}
-                icon={<Hub />}
-                subtitle="Bundle có ép cập nhật"
-              />
-            )}
-          </Grid>
         </Grid>
 
-        {analytics?.recentDisabledBundles?.length > 0 && (
+        {analytics?.recentDisabledBundles?.length > 0 ? (
           <Alert severity="warning" sx={{ mb: 3 }}>
             Có {analytics.recentDisabledBundles.length} bundle đang ở trạng thái đã tắt trên{" "}
             {platform}.
           </Alert>
-        )}
+        ) : null}
 
         <Grid container spacing={3} mb={4}>
           <Grid item xs={12} md={8}>
@@ -461,11 +482,7 @@ export default function OTAAdminPage() {
             borderColor="divider"
           >
             <Typography variant="h6">Danh sách bundle deploy</Typography>
-            <Chip
-              label={`Nguồn: ${analytics?.source || "hot-updater"}`}
-              size="small"
-              variant="outlined"
-            />
+            <Chip label={`Nguồn: ${analytics?.source || "hot-updater"}`} size="small" variant="outlined" />
           </Box>
 
           <DataGrid
@@ -477,11 +494,11 @@ export default function OTAAdminPage() {
             hideFooterSelectedRowCount
             rowHeight={88}
             headerHeight={56}
-            pageSizeOptions={[10, 25, 50]}
+            pageSizeOptions={[10, 25, 50, 100]}
             initialState={{
               pagination: { paginationModel: { pageSize: 10 } },
             }}
-            onRowClick={(params) => handleOpenBundleDetails(params.row)}
+            onRowClick={(params) => setSelectedBundle(params.row)}
             autoHeight
             sx={{
               border: 0,
@@ -527,15 +544,10 @@ export default function OTAAdminPage() {
           />
         </Paper>
 
-        <Dialog
-          open={Boolean(selectedBundle)}
-          onClose={handleCloseBundleDetails}
-          maxWidth="md"
-          fullWidth
-        >
+        <Dialog open={Boolean(selectedBundle)} onClose={() => setSelectedBundle(null)} maxWidth="md" fullWidth>
           <DialogTitle>Chi tiết bundle OTA</DialogTitle>
           <DialogContent dividers>
-            {selectedBundle && (
+            {selectedBundle ? (
               <Box>
                 <Box
                   display="grid"
@@ -544,7 +556,7 @@ export default function OTAAdminPage() {
                 >
                   <DetailRow label="Bundle ID" value={selectedBundle.bundleId} mono />
                   <DetailRow label="Phiên bản app đích" value={selectedBundle.targetAppVersion} />
-                  <DetailRow label="Kênh" value={selectedBundle.channel} />
+                  <DetailRow label="Channel" value={selectedBundle.channel} />
                   <DetailRow
                     label="Trạng thái"
                     value={selectedBundle.enabled ? "Đang bật" : "Đã tắt"}
@@ -556,6 +568,22 @@ export default function OTAAdminPage() {
                   <DetailRow label="Kích thước" value={formatBytes(selectedBundle.size)} />
                   <DetailRow label="Commit" value={selectedBundle.gitCommitHash} mono />
                   <DetailRow label="Ngày deploy" value={formatDate(selectedBundle.createdAt)} />
+                  <DetailRow
+                    label="Downloads"
+                    value={formatNumber(selectedBundle?.stats?.downloads || 0)}
+                  />
+                  <DetailRow
+                    label="Cập nhật thành công"
+                    value={formatNumber(selectedBundle?.stats?.successfulUpdates || 0)}
+                  />
+                  <DetailRow
+                    label="Cập nhật thất bại"
+                    value={formatNumber(selectedBundle?.stats?.failedUpdates || 0)}
+                  />
+                  <DetailRow
+                    label="Được thấy bản update"
+                    value={formatNumber(selectedBundle?.stats?.updateAvailable || 0)}
+                  />
                 </Box>
 
                 <Divider sx={{ my: 2 }} />
@@ -565,10 +593,10 @@ export default function OTAAdminPage() {
                 <DetailRow label="Fingerprint hash" value={selectedBundle.fingerprintHash} mono />
                 <DetailRow label="Storage URI" value={selectedBundle.storageUri} mono />
               </Box>
-            )}
+            ) : null}
           </DialogContent>
           <DialogActions sx={{ px: 3, py: 2 }}>
-            <Button onClick={handleCloseBundleDetails}>Đóng</Button>
+            <Button onClick={() => setSelectedBundle(null)}>Đóng</Button>
           </DialogActions>
         </Dialog>
 

@@ -28,7 +28,10 @@ const linearProgress = {
     root: {
       height: pxToRem(6),
       borderRadius: borderRadius.md,
-      overflow: "visible",
+      // MUI uses overflow:hidden + transform:translateX to clip the bar.
+      // overflow:visible breaks this — the bar appears full width regardless
+      // of value because the shifted portion is not clipped.
+      overflow: "hidden",
       position: "relative",
     },
 
@@ -43,7 +46,8 @@ const linearProgress = {
     bar: {
       height: pxToRem(6),
       borderRadius: borderRadius.sm,
-      position: "absolute",
+      // Do NOT override transform or position — MUI handles these
+      // natively via transform: translateX(value - 100%) for determinate.
       transition: "transform 0.6s ease !important",
     },
   },
