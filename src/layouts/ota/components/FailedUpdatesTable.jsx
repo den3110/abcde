@@ -1,19 +1,19 @@
 import React from "react";
 import PropTypes from "prop-types";
 import {
+  Box,
+  Chip,
   Paper,
-  Typography,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Chip,
-  Box,
-  Skeleton,
+  Typography,
 } from "@mui/material";
-import { Block } from "@mui/icons-material";
+import { BugReport } from "@mui/icons-material";
 import { useGetOtaAnalyticsQuery } from "../../../slices/otaApiSlice";
 
 const formatDate = (date) => {
@@ -26,70 +26,84 @@ const formatDate = (date) => {
   });
 };
 
+const truncateMiddle = (value, head = 8, tail = 6) => {
+  const text = String(value || "");
+  if (!text) return "-";
+  if (text.length <= head + tail + 3) return text;
+  return `${text.slice(0, head)}...${text.slice(-tail)}`;
+};
+
 export default function FailedUpdatesTable({ platform }) {
   const { data: analytics, isLoading } = useGetOtaAnalyticsQuery({ platform, days: 7 });
-  const disabledBundles = analytics?.recentDisabledBundles || [];
+  const failedUpdates = analytics?.failedUpdates || [];
 
   if (isLoading) {
-    return <Skeleton variant="rounded" height={200} />;
+    return <Skeleton variant="rounded" height={220} />;
   }
 
   return (
     <Paper>
       <Box display="flex" alignItems="center" gap={1} p={2} borderBottom={1} borderColor="divider">
-        <Block color="warning" />
-        <Typography variant="h6">Bundle đã tắt gần đây</Typography>
-        {disabledBundles.length > 0 && (
-          <Chip label={disabledBundles.length} size="small" color="warning" sx={{ ml: 1 }} />
-        )}
+        <BugReport color="error" />
+        <Typography variant="h6">Update thất bại gần đây</Typography>
+        {failedUpdates.length ? (
+          <Chip label={failedUpdates.length} size="small" color="error" sx={{ ml: 1 }} />
+        ) : null}
       </Box>
 
-      {disabledBundles.length === 0 ? (
+      {!failedUpdates.length ? (
         <Box p={4} textAlign="center">
-          <Typography color="text.secondary">Không có bundle nào bị tắt trong 7 ngày qua</Typography>
+          <Typography color="text.secondary">
+            Không có lỗi update nào trong 7 ngày qua
+          </Typography>
         </Box>
       ) : (
-        <TableContainer sx={{ maxHeight: 400 }}>
+        <TableContainer sx={{ maxHeight: 420 }}>
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Bundle ID</TableCell>
-                <TableCell>Phiên bản app đích</TableCell>
-                <TableCell>Kênh</TableCell>
-                <TableCell>Mô tả</TableCell>
-                <TableCell>Trạng thái</TableCell>
-                <TableCell>Ngày deploy</TableCell>
+                <TableCell>Bundle</TableCell>
+                <TableCell>App đích</TableCell>
+                <TableCell>Lỗi</TableCell>
+                <TableCell>Thiết bị</TableCell>
+                <TableCell>Thời gian</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {disabledBundles.map((bundle, index) => (
-                <TableRow key={bundle.bundleId || bundle._id || index} hover>
+              {failedUpdates.map((event) => (
+                <TableRow key={event._id || event.eventId} hover>
                   <TableCell>
                     <Typography variant="body2" fontFamily="monospace">
-                      {bundle.bundleId || "-"}
+                      {truncateMiddle(event.bundleId, 10, 8)}
                     </Typography>
+                    <Chip
+                      label={event.status === "recovered" ? "Recovered" : "Failed"}
+                      size="small"
+                      color={event.status === "recovered" ? "warning" : "error"}
+                      variant="outlined"
+                      sx={{ mt: 0.5 }}
+                    />
                   </TableCell>
-                  <TableCell>{bundle.targetAppVersion || "-"}</TableCell>
-                  <TableCell>
-                    <Chip label={bundle.channel || "production"} size="small" variant="outlined" />
-                  </TableCell>
+                  <TableCell>{event.targetAppVersion || "-"}</TableCell>
                   <TableCell>
                     <Typography
                       variant="body2"
                       sx={{
-                        maxWidth: 200,
+                        maxWidth: 220,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {bundle.message || "-"}
+                      {event.errorMessage || event.message || "-"}
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    <Chip label="Đã tắt" size="small" color="warning" />
+                    <Typography variant="body2">
+                      {event?.deviceInfo?.model || event?.deviceInfo?.deviceId || "-"}
+                    </Typography>
                   </TableCell>
-                  <TableCell>{formatDate(bundle.createdAt)}</TableCell>
+                  <TableCell>{formatDate(event.createdAt)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
