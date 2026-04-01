@@ -14,6 +14,7 @@ import {
   Link,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -36,6 +37,10 @@ import {
   useQueueLiveRecordingAiCommentaryMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
 } from "slices/liveApiSlice";
+import {
+  useGetSystemSettingsQuery,
+  useUpdateSystemSettingsMutation,
+} from "slices/settingsApiSlice";
 
 dayjs.extend(relativeTime);
 
@@ -53,6 +58,54 @@ const RECORDING_STATUS_META = {
   ready: { color: "success", label: "Drive đã sẵn sàng" },
   failed: { color: "error", label: "Export lỗi" },
 };
+
+const AI_COMMENTARY_LANGUAGE_OPTIONS = [
+  { value: "vi", label: "Tiếng Việt" },
+  { value: "en", label: "English" },
+];
+
+function normalizeAiGatewayBaseUrl(value = "") {
+  let next = String(value || "").trim();
+  if (!next) return "";
+  next = next.replace(/\/+$/, "");
+  next = next.replace(/\/responses$/i, "");
+  next = next.replace(/\/models$/i, "");
+  next = next.replace(/\/audio\/speech$/i, "");
+  return next;
+}
+
+function buildAiGatewayModelsUrl(value = "") {
+  const baseUrl = normalizeAiGatewayBaseUrl(value);
+  return baseUrl ? `${baseUrl}/models` : "";
+}
+
+function buildAiGatewayResponsesUrl(value = "") {
+  const baseUrl = normalizeAiGatewayBaseUrl(value);
+  return baseUrl ? `${baseUrl}/responses` : "";
+}
+
+function buildAiGatewaySpeechUrl(value = "") {
+  const baseUrl = normalizeAiGatewayBaseUrl(value);
+  return baseUrl ? `${baseUrl}/audio/speech` : "";
+}
+
+function hydrateAiSettings(source) {
+  return {
+    enabled: source?.liveRecording?.aiCommentary?.enabled ?? false,
+    autoGenerateAfterDriveUpload:
+      source?.liveRecording?.aiCommentary?.autoGenerateAfterDriveUpload ?? true,
+    defaultLanguage: source?.liveRecording?.aiCommentary?.defaultLanguage ?? "vi",
+    defaultVoicePreset: source?.liveRecording?.aiCommentary?.defaultVoicePreset ?? "vi_male_pro",
+    scriptBaseUrl: source?.liveRecording?.aiCommentary?.scriptBaseUrl ?? "",
+    scriptModel: source?.liveRecording?.aiCommentary?.scriptModel ?? "",
+    ttsBaseUrl: source?.liveRecording?.aiCommentary?.ttsBaseUrl ?? "",
+    ttsModel: source?.liveRecording?.aiCommentary?.ttsModel ?? "",
+    defaultTonePreset: source?.liveRecording?.aiCommentary?.defaultTonePreset ?? "professional",
+    keepOriginalAudioBed: source?.liveRecording?.aiCommentary?.keepOriginalAudioBed ?? true,
+    audioBedLevelDb: source?.liveRecording?.aiCommentary?.audioBedLevelDb ?? -18,
+    duckAmountDb: source?.liveRecording?.aiCommentary?.duckAmountDb ?? -12,
+  };
+}
 
 function formatRelative(ts) {
   if (!ts) return "-";
@@ -141,8 +194,12 @@ export default function AiCommentaryMonitorPage() {
   const [search, setSearch] = useState("");
   const [commentaryFilter, setCommentaryFilter] = useState("all");
   const [snapshot, setSnapshot] = useState(null);
+  const [aiSettings, setAiSettings] = useState(null);
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
   const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
+
+  const { data: systemSettingsData } = useGetSystemSettingsQuery();
+  const [updateSystemSettings, { isLoading: isSavingSettings }] = useUpdateSystemSettingsMutation();
 
   const {
     data: initialSnapshot,
@@ -169,6 +226,12 @@ export default function AiCommentaryMonitorPage() {
   useEffect(() => {
     if (initialSnapshot) setSnapshot(initialSnapshot);
   }, [initialSnapshot]);
+
+  useEffect(() => {
+    if (systemSettingsData) {
+      setAiSettings(hydrateAiSettings(systemSettingsData));
+    }
+  }, [systemSettingsData]);
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -264,11 +327,25 @@ export default function AiCommentaryMonitorPage() {
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
   const gateway = commentaryMonitor?.gatewayHealth || {};
+  const commentaryScriptGateway = gateway?.script || {};
+  const commentaryTtsGateway = gateway?.tts || {};
   const gatewayOnline = gateway?.overallStatus === "online";
   const gatewayMessage =
     gateway?.overallStatus === "online"
       ? `${gateway?.script?.message || "Script OK"} • ${gateway?.tts?.message || "TTS OK"}`
       : gateway?.script?.message || gateway?.tts?.message || "Gateway chưa sẵn sàng";
+  const commentaryScriptModels = Array.isArray(commentaryScriptGateway?.availableModels)
+    ? commentaryScriptGateway.availableModels
+    : [];
+  const commentaryTtsModels = Array.isArray(commentaryTtsGateway?.availableModels)
+    ? commentaryTtsGateway.availableModels
+    : [];
+  const voiceOptions = Array.isArray(commentaryMonitor?.presets?.voice)
+    ? commentaryMonitor.presets.voice
+    : [];
+  const toneOptions = Array.isArray(commentaryMonitor?.presets?.tone)
+    ? commentaryMonitor.presets.tone
+    : [];
 
   const summary = useMemo(() => {
     const readyRows = rows.filter((row) => row?.status === "ready");
@@ -281,6 +358,56 @@ export default function AiCommentaryMonitorPage() {
   const refreshAll = () => {
     refetchRecordingMonitor();
     refetchCommentaryMonitor();
+  };
+
+  const updateAiSettingsField = (path, value) => {
+    setAiSettings((prev) => {
+      const next = structuredClone(prev || {});
+      const segments = path.split(".");
+      let cursor = next;
+      for (let i = 0; i < segments.length - 1; i += 1) {
+        if (!cursor[segments[i]]) cursor[segments[i]] = {};
+        cursor = cursor[segments[i]];
+      }
+      cursor[segments.at(-1)] = value;
+      return next;
+    });
+  };
+
+  const onAiToggle = (path) => (event) => {
+    updateAiSettingsField(path, event.target.checked);
+  };
+
+  const onAiChange = (path) => (event) => {
+    updateAiSettingsField(path, event.target.value);
+  };
+
+  const onAiNumber =
+    (path, { min, max, step = 1 } = {}) =>
+    (event) => {
+      const raw = event.target.value;
+      if (raw === "") return;
+      let value = Number(raw);
+      if (!Number.isFinite(value)) return;
+      if (min != null) value = Math.max(min, value);
+      if (max != null) value = Math.min(max, value);
+      value = Math.round(value / step) * step;
+      updateAiSettingsField(path, value);
+    };
+
+  const handleSaveAiSettings = async () => {
+    try {
+      const updated = await updateSystemSettings({
+        liveRecording: {
+          aiCommentary: aiSettings,
+        },
+      }).unwrap();
+      setAiSettings(hydrateAiSettings(updated));
+      toast.success("Đã lưu cấu hình BLV AI.");
+      await refetchCommentaryMonitor();
+    } catch (error) {
+      toast.error(error?.data?.message || error?.message || "Không thể lưu cấu hình BLV AI.");
+    }
   };
 
   const handleQueueCommentary = async (recordingId, forceRerender = false) => {
@@ -629,48 +756,228 @@ export default function AiCommentaryMonitorPage() {
 
           <Card sx={{ borderRadius: 3 }}>
             <CardContent>
-              <Grid container spacing={1.5}>
-                <Grid item xs={12} md={3}>
-                  <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                    Voice mặc định
-                  </Typography>
-                  <Typography variant="body2" fontWeight={700}>
-                    {commentaryMonitor?.settings?.defaultVoicePreset || "-"}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                    Ngôn ngữ
-                  </Typography>
-                  <Typography variant="body2" fontWeight={700}>
-                    {commentaryMonitor?.settings?.defaultLanguage || "-"}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                    Tông giọng
-                  </Typography>
-                  <Typography variant="body2" fontWeight={700}>
-                    {commentaryMonitor?.settings?.defaultTonePreset || "-"}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={2.5}>
-                  <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                    Tick worker
-                  </Typography>
-                  <Typography variant="body2" fontWeight={700}>
-                    {formatDuration((commentaryMonitor?.meta?.tickMs || 0) / 1000)}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={2.5}>
-                  <Typography variant="caption" sx={{ opacity: 0.65 }}>
-                    Stale timeout
-                  </Typography>
-                  <Typography variant="body2" fontWeight={700}>
-                    {formatDuration((commentaryMonitor?.meta?.staleMs || 0) / 1000)}
-                  </Typography>
-                </Grid>
-              </Grid>
+              <Stack spacing={2}>
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1}
+                  justifyContent="space-between"
+                  alignItems={{ xs: "flex-start", md: "center" }}
+                >
+                  <Box>
+                    <Typography variant="h6" fontWeight={800}>
+                      Cấu hình BLV AI
+                    </Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.72 }}>
+                      Chỉnh nhanh ngay tại tab realtime, không cần qua Cài đặt hệ thống.
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    onClick={handleSaveAiSettings}
+                    disabled={!aiSettings || isSavingSettings}
+                  >
+                    {isSavingSettings ? "Đang lưu..." : "Lưu cấu hình"}
+                  </Button>
+                </Stack>
+
+                <Alert severity={gatewayOnline ? "success" : "info"}>
+                  {isCommentaryFetching
+                    ? "Đang tải trạng thái gateway/model..."
+                    : `Script: ${commentaryScriptGateway?.message || "-"} | TTS: ${
+                        commentaryTtsGateway?.message || "-"
+                      }`}
+                </Alert>
+
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Box>
+                    <Typography fontWeight={700}>Bật AI lồng tiếng BLV</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Khi tắt, hệ thống sẽ khóa cả auto queue và thao tác render tay.
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={!!aiSettings?.enabled}
+                    onChange={onAiToggle("enabled")}
+                    disabled={!aiSettings}
+                  />
+                </Stack>
+
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Box>
+                    <Typography fontWeight={700}>Tự động chạy sau khi video lên Drive</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Chỉ xếp hàng khi recording đã sẵn sàng và trận đấu đã kết thúc.
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={!!aiSettings?.autoGenerateAfterDriveUpload}
+                    onChange={onAiToggle("autoGenerateAfterDriveUpload")}
+                    disabled={!aiSettings}
+                  />
+                </Stack>
+
+                <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                  <TextField
+                    select
+                    label="Ngôn ngữ mặc định"
+                    value={aiSettings?.defaultLanguage ?? "vi"}
+                    onChange={onAiChange("defaultLanguage")}
+                    fullWidth
+                  >
+                    {AI_COMMENTARY_LANGUAGE_OPTIONS.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Giọng BLV mặc định"
+                    value={aiSettings?.defaultVoicePreset ?? "vi_male_pro"}
+                    onChange={onAiChange("defaultVoicePreset")}
+                    fullWidth
+                  >
+                    {voiceOptions.map((option) => (
+                      <MenuItem key={option.id} value={option.id}>
+                        {option.label || option.id}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Tông giọng mặc định"
+                    value={aiSettings?.defaultTonePreset ?? "professional"}
+                    onChange={onAiChange("defaultTonePreset")}
+                    fullWidth
+                  >
+                    {toneOptions.map((option) => (
+                      <MenuItem key={option.id} value={option.id}>
+                        {option.label || option.id}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+
+                <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                  <TextField
+                    label="Script base URL"
+                    value={aiSettings?.scriptBaseUrl ?? ""}
+                    onChange={onAiChange("scriptBaseUrl")}
+                    placeholder="http://localhost:8080/v1"
+                    helperText="Danh sách model sẽ được lấy từ `/models`."
+                    fullWidth
+                  />
+                  <TextField
+                    label="Script responses URL"
+                    value={buildAiGatewayResponsesUrl(aiSettings?.scriptBaseUrl)}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                  />
+                  <TextField
+                    label="Script models URL"
+                    value={buildAiGatewayModelsUrl(aiSettings?.scriptBaseUrl)}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                  />
+                </Stack>
+
+                <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                  <TextField
+                    select
+                    label="Script model"
+                    value={aiSettings?.scriptModel ?? ""}
+                    onChange={onAiChange("scriptModel")}
+                    helperText={`Effective: ${commentaryScriptGateway?.effectiveModel || "-"}`}
+                    fullWidth
+                  >
+                    <MenuItem value="">Tự động</MenuItem>
+                    {commentaryScriptModels.map((modelId) => (
+                      <MenuItem key={modelId} value={modelId}>
+                        {modelId}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="TTS base URL"
+                    value={aiSettings?.ttsBaseUrl ?? ""}
+                    onChange={onAiChange("ttsBaseUrl")}
+                    placeholder="http://localhost:5000/api/ai-tts/v1"
+                    helperText="Hệ thống sẽ tự suy ra `/audio/speech` và `/models`."
+                    fullWidth
+                  />
+                  <TextField
+                    label="TTS speech URL"
+                    value={buildAiGatewaySpeechUrl(aiSettings?.ttsBaseUrl)}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                  />
+                </Stack>
+
+                <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                  <TextField
+                    label="TTS models URL"
+                    value={buildAiGatewayModelsUrl(aiSettings?.ttsBaseUrl)}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                  />
+                  <TextField
+                    select
+                    label="TTS model"
+                    value={aiSettings?.ttsModel ?? ""}
+                    onChange={onAiChange("ttsModel")}
+                    helperText={`Effective: ${commentaryTtsGateway?.effectiveModel || "-"}`}
+                    fullWidth
+                  >
+                    <MenuItem value="">Tự động</MenuItem>
+                    {commentaryTtsModels.map((modelId) => (
+                      <MenuItem key={modelId} value={modelId}>
+                        {modelId}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Box>
+                    <Typography fontWeight={700}>Giữ tiếng sân làm nền</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Giữ ambience/cổ động ở nền và tự duck xuống khi BLV AI bắt đầu nói.
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={!!aiSettings?.keepOriginalAudioBed}
+                    onChange={onAiToggle("keepOriginalAudioBed")}
+                    disabled={!aiSettings}
+                  />
+                </Stack>
+
+                <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                  <TextField
+                    label="Mức nền gốc (dB)"
+                    type="number"
+                    inputProps={{ min: -40, max: 0 }}
+                    value={aiSettings?.audioBedLevelDb ?? -18}
+                    onChange={onAiNumber("audioBedLevelDb", { min: -40, max: 0 })}
+                    helperText="Mặc định -18 dB."
+                    fullWidth
+                  />
+                  <TextField
+                    label="Mức duck khi BLV nói (dB)"
+                    type="number"
+                    inputProps={{ min: -30, max: 0 }}
+                    value={aiSettings?.duckAmountDb ?? -12}
+                    onChange={onAiNumber("duckAmountDb", { min: -30, max: 0 })}
+                    helperText="Mặc định -12 dB."
+                    fullWidth
+                  />
+                  <TextField
+                    label="Tick worker"
+                    value={formatDuration((commentaryMonitor?.meta?.tickMs || 0) / 1000)}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                  />
+                </Stack>
+              </Stack>
             </CardContent>
           </Card>
 

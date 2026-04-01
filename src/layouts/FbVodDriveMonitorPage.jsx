@@ -49,24 +49,24 @@ dayjs.extend(relativeTime);
 
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS = [
-  { value: "all", label: "T?t c?" },
-  { value: "missing_fallback", label: "Ch?a t?o fallback" },
-  { value: "failed", label: "Th?t b?i" },
-  { value: "waiting_facebook_vod", label: "Ch? Facebook VOD" },
-  { value: "exporting", label: "?ang x? l?" },
-  { value: "ready", label: "S?n s?ng" },
+  { value: "all", label: "Tất cả" },
+  { value: "missing_fallback", label: "Chưa tạo fallback" },
+  { value: "failed", label: "Thất bại" },
+  { value: "waiting_facebook_vod", label: "Chờ Facebook VOD" },
+  { value: "exporting", label: "Đang xử lý" },
+  { value: "ready", label: "Sẵn sàng" },
 ];
 const RANGE_OPTIONS = [
-  { value: "7d", label: "7 ngay" },
-  { value: "30d", label: "30 ngay" },
-  { value: "all", label: "T?t c?" },
+  { value: "7d", label: "7 ngày" },
+  { value: "30d", label: "30 ngày" },
+  { value: "all", label: "Tất cả" },
 ];
 const STATE_META = {
-  missing_fallback: { color: "warning", label: "Ch?a t?o fallback" },
-  failed: { color: "error", label: "Th?t b?i" },
-  waiting_facebook_vod: { color: "secondary", label: "Ch? Facebook VOD" },
-  exporting: { color: "info", label: "?ang x? l?" },
-  ready: { color: "success", label: "S?n s?ng" },
+  missing_fallback: { color: "warning", label: "Chưa tạo fallback" },
+  failed: { color: "error", label: "Thất bại" },
+  waiting_facebook_vod: { color: "secondary", label: "Chờ Facebook VOD" },
+  exporting: { color: "info", label: "Đang xử lý" },
+  ready: { color: "success", label: "Sẵn sàng" },
 };
 
 function formatDateTime(value) {
@@ -125,7 +125,7 @@ function MatchCell({ row }) {
         {[row.tournamentName, row.bracketName].filter(Boolean).join(" - ") || "-"}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.62 }}>
-        Cap nhat: {formatRelative(row.updatedAt)}
+        Cập nhật: {formatRelative(row.updatedAt)}
       </Typography>
     </Stack>
   );
@@ -159,11 +159,11 @@ function FacebookCell({ row }) {
           underline="hover"
           sx={{ fontSize: 12, width: "fit-content" }}
         >
-          Mo Facebook
+          Mở Facebook
         </Link>
       ) : (
         <Typography variant="caption" sx={{ opacity: 0.52 }}>
-          Kh?ng c? link Facebook
+          Không có link Facebook
         </Typography>
       )}
     </Stack>
@@ -176,7 +176,7 @@ function ExportCell({ row }) {
     <Stack spacing={0.45} sx={{ py: 0.75 }}>
       <StateChip row={row} />
       <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: "normal" }}>
-        {statusBits || "Ch?a c? recording fallback"}
+        {statusBits || "Chưa có recording fallback"}
       </Typography>
       {row.lastError ? (
         <Typography variant="caption" color="error" sx={{ whiteSpace: "normal" }}>
@@ -188,7 +188,7 @@ function ExportCell({ row }) {
         </Typography>
       ) : (
         <Typography variant="caption" sx={{ opacity: 0.55 }}>
-          Kh?ng c? l?i g?n ??y
+          Không có lỗi gần đây
         </Typography>
       )}
     </Stack>
@@ -253,7 +253,7 @@ function LinksCell({ row }) {
       ) : null}
       {!row.playbackUrl && !row.drivePreviewUrl && !row.driveRawUrl && !row.rawStreamUrl ? (
         <Typography variant="caption" sx={{ opacity: 0.55 }}>
-          Ch?a c? link Drive
+          Chưa có link Drive
         </Typography>
       ) : null}
     </Stack>
@@ -372,15 +372,15 @@ export default function FbVodDriveMonitorPage() {
       setEnsuringMatchId(matchId);
       const response = await ensureExport(matchId).unwrap();
       if (response?.skipped) {
-        toast.info(response?.message || "Kh?ng th? t?o fallback cho tr?n n?y.");
+        toast.info(response?.message || "Không thể tạo fallback cho trận này.");
       } else if (response?.created) {
-        toast.success("?? t?o fallback recording v? x?p h?ng export.");
+        toast.success("Đã tạo fallback recording và xếp hàng export.");
       } else {
-        toast.success("?? x?p h?ng l?i fallback Facebook VOD.");
+        toast.success("Đã xếp hàng lại fallback Facebook VOD.");
       }
       refetch();
     } catch (apiError) {
-      toast.error(apiError?.data?.message || apiError?.error || "Kh?ng th? bootstrap fallback.");
+      toast.error(apiError?.data?.message || apiError?.error || "Không thể bootstrap fallback.");
     } finally {
       setEnsuringMatchId(null);
     }
@@ -390,10 +390,10 @@ export default function FbVodDriveMonitorPage() {
     try {
       setRetryingRecordingId(recordingId);
       await retryExport(recordingId).unwrap();
-      toast.success("?? ??a recording v?o h?ng ??i retry export.");
+      toast.success("Đã đưa recording vào hàng đợi retry export.");
       refetch();
     } catch (apiError) {
-      toast.error(apiError?.data?.message || apiError?.error || "Kh?ng th? retry export.");
+      toast.error(apiError?.data?.message || apiError?.error || "Không thể retry export.");
     } finally {
       setRetryingRecordingId(null);
     }
@@ -403,10 +403,10 @@ export default function FbVodDriveMonitorPage() {
     try {
       setForcingRecordingId(recordingId);
       await forceExport(recordingId).unwrap();
-      toast.success("?? force export ngay.");
+      toast.success("Đã force export ngay.");
       refetch();
     } catch (apiError) {
-      toast.error(apiError?.data?.message || apiError?.error || "Kh?ng th? force export.");
+      toast.error(apiError?.data?.message || apiError?.error || "Không thể force export.");
     } finally {
       setForcingRecordingId(null);
     }
@@ -416,7 +416,7 @@ export default function FbVodDriveMonitorPage() {
     () => [
       {
         field: "match",
-        headerName: "Tr?n ??u",
+        headerName: "Trận đấu",
         flex: 1.25,
         minWidth: 280,
         sortable: false,
@@ -448,7 +448,7 @@ export default function FbVodDriveMonitorPage() {
       },
       {
         field: "actions",
-        headerName: "Tac vu",
+        headerName: "Tác vụ",
         flex: 1.1,
         minWidth: 290,
         sortable: false,
@@ -475,7 +475,7 @@ export default function FbVodDriveMonitorPage() {
                     )
                   }
                 >
-                  {ensuringThisRow ? "?ang x? l?..." : "T?o + x?p h?ng"}
+                  {ensuringThisRow ? "Đang xử lý..." : "Tạo + xếp hàng"}
                 </Button>
               ) : null}
               {row.canRetryExport ? (
@@ -493,7 +493,7 @@ export default function FbVodDriveMonitorPage() {
                     )
                   }
                 >
-                  {retryingThisRow ? "?ang retry..." : "X?p h?ng l?i"}
+                  {retryingThisRow ? "Đang retry..." : "Xếp hàng lại"}
                 </Button>
               ) : null}
               {row.canForceExport ? (
@@ -511,7 +511,7 @@ export default function FbVodDriveMonitorPage() {
                     )
                   }
                 >
-                  {forcingThisRow ? "?ang force..." : "Xu?t ngay"}
+                  {forcingThisRow ? "Đang force..." : "Xuất ngay"}
                 </Button>
               ) : null}
               {row.facebook?.watchUrl ? (
@@ -552,7 +552,7 @@ export default function FbVodDriveMonitorPage() {
                 FB VOD {"->"} Drive
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                Qu?n l? c?c tr?n ch? c? Facebook VOD v? pipeline ??a video ho?n ch?nh l?n Drive.
+                Quản lý các trận chỉ có Facebook VOD và pipeline đưa video hoàn chỉnh lên Drive.
               </Typography>
             </Stack>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
@@ -568,7 +568,7 @@ export default function FbVodDriveMonitorPage() {
                   isFetching ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />
                 }
               >
-                L?m m?i
+                Làm mới
               </Button>
             </Stack>
           </Stack>
@@ -576,40 +576,40 @@ export default function FbVodDriveMonitorPage() {
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="T?ng row"
+                title="Tổng row"
                 value={summary.total || 0}
-                hint="S? tr?n FB-only trong ph?m vi ?? ch?n"
+                hint="Số trận FB-only trong phạm vi đã chọn"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="Ch?a fallback"
+                title="Chưa fallback"
                 value={summary.missingFallback || 0}
-                hint="C?n t?o ho?c bootstrap fallback"
+                hint="Cần tạo hoặc bootstrap fallback"
                 color="warning.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="Ch? Facebook"
+                title="Chờ Facebook"
                 value={summary.waitingFacebookVod || 0}
-                hint="?ang ??i VOD Facebook ho?n t?t"
+                hint="Đang đợi VOD Facebook hoàn tất"
                 color="secondary.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="?ang x? l?"
+                title="Đang xử lý"
                 value={summary.exporting || 0}
-                hint="?ang export ho?c ch? khung gi? ??m"
+                hint="Đang export hoặc chờ khung giờ đêm"
                 color="info.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="S?n s?ng / Loi"
+                title="Sẵn sàng / Lỗi"
                 value={`${summary.ready || 0} / ${summary.failed || 0}`}
-                hint="Ready v? failed"
+                hint="Ready và failed"
                 color="success.main"
               />
             </Grid>
@@ -625,8 +625,8 @@ export default function FbVodDriveMonitorPage() {
                 >
                   <TextField
                     fullWidth
-                    label="T?m ki?m"
-                    placeholder="M? tr?n, gi?i ??u, videoId, l?i..."
+                    label="Tìm kiếm"
+                    placeholder="Mã trận, giải đấu, videoId, lỗi..."
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     InputProps={{
@@ -667,7 +667,7 @@ export default function FbVodDriveMonitorPage() {
 
                 {isError ? (
                   <Alert severity="error">
-                    {error?.data?.message || error?.error || "Kh?ng t?i ???c FB VOD monitor."}
+                    {error?.data?.message || error?.error || "Không tải được FB VOD monitor."}
                   </Alert>
                 ) : null}
 
