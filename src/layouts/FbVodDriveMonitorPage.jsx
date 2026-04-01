@@ -1,5 +1,12 @@
 /* eslint-disable react/prop-types */
-import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   Box,
@@ -30,6 +37,7 @@ import { toast } from "react-toastify";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+import { useSocket } from "context/SocketContext";
 import {
   useEnsureFbVodDriveExportMutation,
   useForceLiveRecordingExportMutation,
@@ -41,24 +49,24 @@ dayjs.extend(relativeTime);
 
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS = [
-  { value: "all", label: "Tat ca" },
-  { value: "missing_fallback", label: "Chua tao fallback" },
-  { value: "failed", label: "That bai" },
-  { value: "waiting_facebook_vod", label: "Cho Facebook VOD" },
-  { value: "exporting", label: "Dang xu ly" },
-  { value: "ready", label: "San sang" },
+  { value: "all", label: "T?t c?" },
+  { value: "missing_fallback", label: "Ch?a t?o fallback" },
+  { value: "failed", label: "Th?t b?i" },
+  { value: "waiting_facebook_vod", label: "Ch? Facebook VOD" },
+  { value: "exporting", label: "?ang x? l?" },
+  { value: "ready", label: "S?n s?ng" },
 ];
 const RANGE_OPTIONS = [
   { value: "7d", label: "7 ngay" },
   { value: "30d", label: "30 ngay" },
-  { value: "all", label: "Tat ca" },
+  { value: "all", label: "T?t c?" },
 ];
 const STATE_META = {
-  missing_fallback: { color: "warning", label: "Chua tao fallback" },
-  failed: { color: "error", label: "That bai" },
-  waiting_facebook_vod: { color: "secondary", label: "Cho Facebook VOD" },
-  exporting: { color: "info", label: "Dang xu ly" },
-  ready: { color: "success", label: "San sang" },
+  missing_fallback: { color: "warning", label: "Ch?a t?o fallback" },
+  failed: { color: "error", label: "Th?t b?i" },
+  waiting_facebook_vod: { color: "secondary", label: "Ch? Facebook VOD" },
+  exporting: { color: "info", label: "?ang x? l?" },
+  ready: { color: "success", label: "S?n s?ng" },
 };
 
 function formatDateTime(value) {
@@ -155,7 +163,7 @@ function FacebookCell({ row }) {
         </Link>
       ) : (
         <Typography variant="caption" sx={{ opacity: 0.52 }}>
-          Khong co link Facebook
+          Kh?ng c? link Facebook
         </Typography>
       )}
     </Stack>
@@ -168,7 +176,7 @@ function ExportCell({ row }) {
     <Stack spacing={0.45} sx={{ py: 0.75 }}>
       <StateChip row={row} />
       <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: "normal" }}>
-        {statusBits || "Chua co recording fallback"}
+        {statusBits || "Ch?a c? recording fallback"}
       </Typography>
       {row.lastError ? (
         <Typography variant="caption" color="error" sx={{ whiteSpace: "normal" }}>
@@ -180,7 +188,7 @@ function ExportCell({ row }) {
         </Typography>
       ) : (
         <Typography variant="caption" sx={{ opacity: 0.55 }}>
-          Khong co loi gan day
+          Kh?ng c? l?i g?n ??y
         </Typography>
       )}
     </Stack>
@@ -245,7 +253,7 @@ function LinksCell({ row }) {
       ) : null}
       {!row.playbackUrl && !row.drivePreviewUrl && !row.driveRawUrl && !row.rawStreamUrl ? (
         <Typography variant="caption" sx={{ opacity: 0.55 }}>
-          Chua co link Drive
+          Ch?a c? link Drive
         </Typography>
       ) : null}
     </Stack>
@@ -253,6 +261,8 @@ function LinksCell({ row }) {
 }
 
 export default function FbVodDriveMonitorPage() {
+  const socket = useSocket();
+  const [socketOn, setSocketOn] = useState(Boolean(socket?.connected));
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [range, setRange] = useState("7d");
@@ -261,6 +271,8 @@ export default function FbVodDriveMonitorPage() {
   const [ensuringMatchId, setEnsuringMatchId] = useState(null);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
   const [forcingRecordingId, setForcingRecordingId] = useState(null);
+  const realtimeTimerRef = useRef(null);
+  const lastRealtimeRefetchAtRef = useRef(0);
 
   useEffect(() => {
     setPage(1);
@@ -289,6 +301,66 @@ export default function FbVodDriveMonitorPage() {
   const [retryExport] = useRetryLiveRecordingExportMutation();
   const [forceExport] = useForceLiveRecordingExportMutation();
 
+  const scheduleRealtimeRefetch = useCallback(
+    (delayMs = 200) => {
+      const now = Date.now();
+      const gapMs = Math.max(0, 1500 - (now - lastRealtimeRefetchAtRef.current));
+      const waitMs = Math.max(delayMs, gapMs);
+      if (realtimeTimerRef.current) return;
+      realtimeTimerRef.current = setTimeout(() => {
+        realtimeTimerRef.current = null;
+        lastRealtimeRefetchAtRef.current = Date.now();
+        refetch();
+      }, waitMs);
+    },
+    [refetch]
+  );
+
+  useEffect(
+    () => () => {
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = null;
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const handleConnect = () => {
+      setSocketOn(true);
+      try {
+        socket.emit("recordings-v2:watch");
+        socket.emit("fb-vod-monitor:watch");
+      } catch (_) {}
+      scheduleRealtimeRefetch(100);
+    };
+    const handleDisconnect = () => setSocketOn(false);
+    const handleUpdate = () => scheduleRealtimeRefetch();
+
+    setSocketOn(Boolean(socket.connected));
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("recordings-v2:update", handleUpdate);
+    socket.on("fb-vod-monitor:update", handleUpdate);
+    if (socket.connected) {
+      handleConnect();
+    }
+
+    return () => {
+      try {
+        socket.emit("recordings-v2:unwatch");
+        socket.emit("fb-vod-monitor:unwatch");
+      } catch (_) {}
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("recordings-v2:update", handleUpdate);
+      socket.off("fb-vod-monitor:update", handleUpdate);
+    };
+  }, [scheduleRealtimeRefetch, socket]);
+
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const summary = data?.summary || {};
   const pageCount = Math.max(1, Number(data?.pages || 1));
@@ -300,15 +372,15 @@ export default function FbVodDriveMonitorPage() {
       setEnsuringMatchId(matchId);
       const response = await ensureExport(matchId).unwrap();
       if (response?.skipped) {
-        toast.info(response?.message || "Khong the tao fallback cho tran nay.");
+        toast.info(response?.message || "Kh?ng th? t?o fallback cho tr?n n?y.");
       } else if (response?.created) {
-        toast.success("Da tao fallback recording va xep hang export.");
+        toast.success("?? t?o fallback recording v? x?p h?ng export.");
       } else {
-        toast.success("Da xep hang lai fallback Facebook VOD.");
+        toast.success("?? x?p h?ng l?i fallback Facebook VOD.");
       }
       refetch();
     } catch (apiError) {
-      toast.error(apiError?.data?.message || apiError?.error || "Khong the bootstrap fallback.");
+      toast.error(apiError?.data?.message || apiError?.error || "Kh?ng th? bootstrap fallback.");
     } finally {
       setEnsuringMatchId(null);
     }
@@ -318,10 +390,10 @@ export default function FbVodDriveMonitorPage() {
     try {
       setRetryingRecordingId(recordingId);
       await retryExport(recordingId).unwrap();
-      toast.success("Da dua recording vao hang doi retry export.");
+      toast.success("?? ??a recording v?o h?ng ??i retry export.");
       refetch();
     } catch (apiError) {
-      toast.error(apiError?.data?.message || apiError?.error || "Khong the retry export.");
+      toast.error(apiError?.data?.message || apiError?.error || "Kh?ng th? retry export.");
     } finally {
       setRetryingRecordingId(null);
     }
@@ -331,10 +403,10 @@ export default function FbVodDriveMonitorPage() {
     try {
       setForcingRecordingId(recordingId);
       await forceExport(recordingId).unwrap();
-      toast.success("Da force export ngay.");
+      toast.success("?? force export ngay.");
       refetch();
     } catch (apiError) {
-      toast.error(apiError?.data?.message || apiError?.error || "Khong the force export.");
+      toast.error(apiError?.data?.message || apiError?.error || "Kh?ng th? force export.");
     } finally {
       setForcingRecordingId(null);
     }
@@ -344,7 +416,7 @@ export default function FbVodDriveMonitorPage() {
     () => [
       {
         field: "match",
-        headerName: "Tran dau",
+        headerName: "Tr?n ??u",
         flex: 1.25,
         minWidth: 280,
         sortable: false,
@@ -360,7 +432,7 @@ export default function FbVodDriveMonitorPage() {
       },
       {
         field: "exportState",
-        headerName: "Trang thai",
+        headerName: "Trạng thái",
         flex: 0.95,
         minWidth: 230,
         sortable: false,
@@ -403,7 +475,7 @@ export default function FbVodDriveMonitorPage() {
                     )
                   }
                 >
-                  {ensuringThisRow ? "Dang xu ly..." : "Tao + xep hang"}
+                  {ensuringThisRow ? "?ang x? l?..." : "T?o + x?p h?ng"}
                 </Button>
               ) : null}
               {row.canRetryExport ? (
@@ -421,7 +493,7 @@ export default function FbVodDriveMonitorPage() {
                     )
                   }
                 >
-                  {retryingThisRow ? "Dang retry..." : "Xep hang lai"}
+                  {retryingThisRow ? "?ang retry..." : "X?p h?ng l?i"}
                 </Button>
               ) : null}
               {row.canForceExport ? (
@@ -439,7 +511,7 @@ export default function FbVodDriveMonitorPage() {
                     )
                   }
                 >
-                  {forcingThisRow ? "Dang force..." : "Xuat ngay"}
+                  {forcingThisRow ? "?ang force..." : "Xu?t ngay"}
                 </Button>
               ) : null}
               {row.facebook?.watchUrl ? (
@@ -480,58 +552,64 @@ export default function FbVodDriveMonitorPage() {
                 FB VOD {"->"} Drive
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                Quan ly cac tran chi co Facebook VOD va pipeline dua video hoan chinh len Drive.
+                Qu?n l? c?c tr?n ch? c? Facebook VOD v? pipeline ??a video ho?n ch?nh l?n Drive.
               </Typography>
             </Stack>
-            <Button
-              variant="outlined"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              startIcon={
-                isFetching ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />
-              }
-            >
-              Lam moi
-            </Button>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              <Chip
+                color={socketOn ? "success" : "default"}
+                label={socketOn ? "Socket realtime OK" : "Socket mất kết nối"}
+              />
+              <Button
+                variant="outlined"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                startIcon={
+                  isFetching ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />
+                }
+              >
+                L?m m?i
+              </Button>
+            </Stack>
           </Stack>
 
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="Tong row"
+                title="T?ng row"
                 value={summary.total || 0}
-                hint="So tran FB-only trong pham vi da chon"
+                hint="S? tr?n FB-only trong ph?m vi ?? ch?n"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="Chua fallback"
+                title="Ch?a fallback"
                 value={summary.missingFallback || 0}
-                hint="Can tao hoac bootstrap fallback"
+                hint="C?n t?o ho?c bootstrap fallback"
                 color="warning.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="Cho Facebook"
+                title="Ch? Facebook"
                 value={summary.waitingFacebookVod || 0}
-                hint="Dang doi VOD Facebook hoan tat"
+                hint="?ang ??i VOD Facebook ho?n t?t"
                 color="secondary.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="Dang xu ly"
+                title="?ang x? l?"
                 value={summary.exporting || 0}
-                hint="Dang export hoac cho khung gio dem"
+                hint="?ang export ho?c ch? khung gi? ??m"
                 color="info.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={3}>
               <SummaryCard
-                title="San sang / Loi"
+                title="S?n s?ng / Loi"
                 value={`${summary.ready || 0} / ${summary.failed || 0}`}
-                hint="Ready va failed"
+                hint="Ready v? failed"
                 color="success.main"
               />
             </Grid>
@@ -547,8 +625,8 @@ export default function FbVodDriveMonitorPage() {
                 >
                   <TextField
                     fullWidth
-                    label="Tim kiem"
-                    placeholder="Ma tran, giai dau, videoId, loi..."
+                    label="T?m ki?m"
+                    placeholder="M? tr?n, gi?i ??u, videoId, l?i..."
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     InputProps={{
@@ -574,7 +652,7 @@ export default function FbVodDriveMonitorPage() {
                   </TextField>
                   <TextField
                     select
-                    label="Trang thai"
+                    label="Trạng thái"
                     value={statusFilter}
                     onChange={(event) => setStatusFilter(event.target.value)}
                     sx={{ minWidth: 220 }}
@@ -589,7 +667,7 @@ export default function FbVodDriveMonitorPage() {
 
                 {isError ? (
                   <Alert severity="error">
-                    {error?.data?.message || error?.error || "Khong tai duoc FB VOD monitor."}
+                    {error?.data?.message || error?.error || "Kh?ng t?i ???c FB VOD monitor."}
                   </Alert>
                 ) : null}
 

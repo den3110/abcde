@@ -56,6 +56,7 @@ import ConfigManager from "layouts/ConfigManager";
 import YouTubeLiveAdmin from "layouts/YouTubeLiveAdmin";
 import AdminLiveSessionsPage from "layouts/AdminLiveSessionsPage";
 import LiveRecordingMonitorPage from "layouts/LiveRecordingMonitorPage";
+import AiCommentaryMonitorPage from "layouts/AiCommentaryMonitorPage";
 import DriveExportMonitorPage from "layouts/DriveExportMonitorPage";
 import DriveVideoManagerPage from "layouts/DriveVideoManagerPage";
 import FbVodDriveMonitorPage from "layouts/FbVodDriveMonitorPage";
@@ -747,6 +748,18 @@ const routes = [
     icon: <Icon fontSize="small">cloud_upload</Icon>,
     route: "/admin/live-recording-drive-monitor",
     component: <DriveExportMonitorPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "AI Bình Luận Realtime",
+    key: "live-recording-ai-commentary-monitor",
+    icon: <Icon fontSize="small">record_voice_over</Icon>,
+    route: "/admin/live-recording-ai-commentary-monitor",
+    component: <AiCommentaryMonitorPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,

@@ -100,18 +100,18 @@ export default function FbLiveConfigPage() {
         leaseHeartbeatMs: Number(pagePool.leaseHeartbeatMs || 0),
         leaseTimeoutMs: Number(pagePool.leaseTimeoutMs || 0),
       }).unwrap();
-      setToast({ open: true, msg: "Da luu cau hinh.", type: "success" });
+      setToast({ open: true, msg: "?? l?u c?u h?nh.", type: "success" });
     } catch (e) {
       setToast({
         open: true,
-        msg: e?.data?.message || "Loi luu cau hinh",
+        msg: e?.data?.message || "L?i l?u c?u h?nh",
         type: "error",
       });
     }
   };
 
-  if (isLoading) return <Box p={3}>Dang tai...</Box>;
-  if (isError) return <Box p={3}>Loi tai cau hinh</Box>;
+  if (isLoading) return <Box p={3}>?ang t?i...</Box>;
+  if (isError) return <Box p={3}>L?i t?i c?u h?nh</Box>;
 
   return (
     <DashboardLayout>
@@ -120,28 +120,28 @@ export default function FbLiveConfigPage() {
         <Card>
           <CardHeader
             title="Cau hinh Facebook Live"
-            subheader="Quan ly status, visibility luc tao live va timing quay lai pool cua Facebook Page."
+            subheader="Qu?n l? status, visibility l?c t?o live v? timing quay l?i pool c?a Facebook Page."
           />
           <CardContent>
             <Stack spacing={3}>
               <FormControl fullWidth>
-                <InputLabel id="status-label">Trang thai mac dinh</InputLabel>
+                <InputLabel id="status-label">Trạng thái mặc định</InputLabel>
                 <Select
                   labelId="status-label"
-                  label="Trang thai mac dinh"
+                  label="Trạng thái mặc định"
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
                 >
-                  <MenuItem value="LIVE_NOW">LIVE_NOW (phat ngay)</MenuItem>
+                  <MenuItem value="LIVE_NOW">LIVE_NOW (ph?t ngay)</MenuItem>
                   <MenuItem value="SCHEDULED_UNPUBLISHED">SCHEDULED_UNPUBLISHED (hen gio)</MenuItem>
                 </Select>
               </FormControl>
 
               <FormControl fullWidth>
-                <InputLabel id="privacy-label">Pham vi luc tao</InputLabel>
+                <InputLabel id="privacy-label">Ph?m vi l?c t?o</InputLabel>
                 <Select
                   labelId="privacy-label"
-                  label="Pham vi luc tao"
+                  label="Ph?m vi l?c t?o"
                   value={privacyValueOnCreate}
                   onChange={(e) => setPrivacy(e.target.value)}
                 >
@@ -156,14 +156,14 @@ export default function FbLiveConfigPage() {
                 control={
                   <Switch checked={embeddable} onChange={(e) => setEmbeddable(e.target.checked)} />
                 }
-                label="Cho phep nhung (embeddable)"
+                label="Cho ph?p nh?ng (embeddable)"
               />
 
               <FormControl fullWidth>
-                <InputLabel id="after-label">Pham vi sau khi ket thuc</InputLabel>
+                <InputLabel id="after-label">Ph?m vi sau khi k?t th?c</InputLabel>
                 <Select
                   labelId="after-label"
-                  label="Pham vi sau khi ket thuc"
+                  label="Ph?m vi sau khi k?t th?c"
                   value={ensurePrivacyAfterEnd}
                   onChange={(e) => setEnsureAfterEnd(e.target.value)}
                 >
@@ -191,7 +191,7 @@ export default function FbLiveConfigPage() {
                 label="Safe free delay (ms)"
                 value={pagePool.safeFreeDelayMs}
                 onChange={handlePoolChange("safeFreeDelayMs")}
-                helperText={`Dung cho case end fail/skip. Hien tai: ${formatMs(
+                helperText={`D?ng cho case end fail/skip. Hi?n t?i: ${formatMs(
                   pagePool.safeFreeDelayMs
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
@@ -202,7 +202,7 @@ export default function FbLiveConfigPage() {
                 label="Fast free delay (ms)"
                 value={pagePool.fastFreeDelayMs}
                 onChange={handlePoolChange("fastFreeDelayMs")}
-                helperText={`Dung khi Facebook end live thanh cong. Hien tai: ${formatMs(
+                helperText={`D?ng khi Facebook end live th?nh c?ng. Hi?n t?i: ${formatMs(
                   pagePool.fastFreeDelayMs
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
@@ -213,7 +213,7 @@ export default function FbLiveConfigPage() {
                 label="Stale idle free delay (ms)"
                 value={pagePool.staleIdleFreeDelayMs}
                 onChange={handlePoolChange("staleIdleFreeDelayMs")}
-                helperText={`Khi cron thay page stale nhung Facebook da idle, nha sau ${formatMs(
+                helperText={`Khi cron th?y page stale nh?ng Facebook ?? idle, nh? sau ${formatMs(
                   pagePool.staleIdleFreeDelayMs
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
@@ -246,7 +246,7 @@ export default function FbLiveConfigPage() {
                 label="Lease timeout (ms)"
                 value={pagePool.leaseTimeoutMs}
                 onChange={handlePoolChange("leaseTimeoutMs")}
-                helperText={`Qua nguong nay khong co heartbeat thanh cong thi backend se expire lease. Hien tai: ${formatMs(
+                helperText={`Qu? ng??ng n?y kh?ng c? heartbeat th?nh c?ng th? backend s? expire lease. Hi?n t?i: ${formatMs(
                   pagePool.leaseTimeoutMs
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
@@ -254,7 +254,7 @@ export default function FbLiveConfigPage() {
 
               <Box>
                 <Button variant="contained" onClick={handleSave} disabled={saving || !canSave}>
-                  {saving ? "Dang luu..." : "Luu cau hinh"}
+                  {saving ? "?ang l?u..." : "L?u c?u h?nh"}
                 </Button>
               </Box>
             </Stack>

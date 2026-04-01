@@ -1504,7 +1504,7 @@ export default function AdminBracketCourtManagerPage() {
                           <Chip
                             size="small"
                             variant="outlined"
-                            label={`List cÃ²n ${c?.remainingCount || 0} tráº­n`}
+                            label={`List còn ${c?.remainingCount || 0} trận`}
                           />
                         )}
 

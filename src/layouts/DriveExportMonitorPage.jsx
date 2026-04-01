@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -30,6 +30,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { DataGrid } from "@mui/x-data-grid";
 import { toast } from "react-toastify";
+import { Link as RouterLink } from "react-router-dom";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -1031,6 +1032,8 @@ export default function DriveExportMonitorPage() {
   const [forcingRecordingId, setForcingRecordingId] = useState(null);
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
   const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
+  const realtimeTimerRef = useRef(null);
+  const lastRealtimeRefetchAtRef = useRef(0);
 
   const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
   const [retryExport] = useRetryLiveRecordingExportMutation();
@@ -1059,6 +1062,31 @@ export default function DriveExportMonitorPage() {
     if (initialSnapshot) setSnapshot(initialSnapshot);
   }, [initialSnapshot]);
 
+  const scheduleRealtimeRefetch = useCallback(
+    (delayMs = 200) => {
+      const now = Date.now();
+      const gapMs = Math.max(0, 1500 - (now - lastRealtimeRefetchAtRef.current));
+      const waitMs = Math.max(delayMs, gapMs);
+      if (realtimeTimerRef.current) return;
+      realtimeTimerRef.current = setTimeout(() => {
+        realtimeTimerRef.current = null;
+        lastRealtimeRefetchAtRef.current = Date.now();
+        refetchCommentaryMonitor();
+      }, waitMs);
+    },
+    [refetchCommentaryMonitor]
+  );
+
+  useEffect(
+    () => () => {
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = null;
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     if (!socket) return undefined;
 
@@ -1068,10 +1096,14 @@ export default function DriveExportMonitorPage() {
         socket.emit("recordings-v2:watch");
       } catch (_) {}
       void refetch();
+      void refetchWorkerHealth();
       void refetchCommentaryMonitor();
     };
     const handleDisconnect = () => setSocketOn(false);
-    const handleUpdate = (payload) => setSnapshot(payload);
+    const handleUpdate = (payload) => {
+      setSnapshot(payload);
+      scheduleRealtimeRefetch();
+    };
 
     try {
       socket.on("connect", handleConnect);
@@ -1090,7 +1122,13 @@ export default function DriveExportMonitorPage() {
         socket.off("recordings-v2:update", handleUpdate);
       } catch (_) {}
     };
-  }, [socket, refetch, refetchCommentaryMonitor]);
+  }, [
+    socket,
+    refetch,
+    refetchCommentaryMonitor,
+    refetchWorkerHealth,
+    scheduleRealtimeRefetch,
+  ]);
 
   const rows = useMemo(() => {
     const sourceRows = snapshot?.rows || [];
@@ -1145,15 +1183,24 @@ export default function DriveExportMonitorPage() {
       null,
     [filteredRows, rows, selectedRowId]
   );
+  const effectiveWorkerHealth = useMemo(() => {
+    const snapshotWorkerHealth = snapshot?.meta?.workerHealth || null;
+    const snapshotHeartbeatAt = new Date(snapshotWorkerHealth?.lastHeartbeatAt || 0).getTime();
+    const queryHeartbeatAt = new Date(workerHealth?.lastHeartbeatAt || 0).getTime();
+    if (queryHeartbeatAt > snapshotHeartbeatAt) {
+      return workerHealth || snapshotWorkerHealth || null;
+    }
+    return snapshotWorkerHealth || workerHealth || null;
+  }, [snapshot?.meta?.workerHealth, workerHealth]);
 
   const currentExportRow = useMemo(() => {
-    const currentRecordingId = workerHealth?.worker?.currentRecordingId;
+    const currentRecordingId = effectiveWorkerHealth?.worker?.currentRecordingId;
     if (!currentRecordingId) return null;
     return rows.find((row) => row.recordingId === currentRecordingId) || null;
-  }, [rows, workerHealth]);
+  }, [effectiveWorkerHealth, rows]);
 
   const workerAlertVisible =
-    ["stale", "offline"].includes(workerHealth?.status || "offline") &&
+    ["stale", "offline"].includes(effectiveWorkerHealth?.status || "offline") &&
     summary.exporting.length > 0;
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
@@ -1521,7 +1568,15 @@ export default function DriveExportMonitorPage() {
                 color={socketOn ? "success" : "default"}
                 label={socketOn ? "Socket realtime OK" : "Socket mất kết nối"}
               />
-              <WorkerStatusChip health={workerHealth} />
+              <WorkerStatusChip health={effectiveWorkerHealth} />
+              <Button
+                component={RouterLink}
+                to="/admin/live-recording-ai-commentary-monitor"
+                variant="outlined"
+                startIcon={<OpenInNewIcon />}
+              >
+                BLV AI realtime
+              </Button>
               <Button
                 variant="outlined"
                 startIcon={<RefreshIcon />}
@@ -1542,7 +1597,9 @@ export default function DriveExportMonitorPage() {
           {isError ? (
             <Alert severity="error">Không tải được dữ liệu export bản ghi.</Alert>
           ) : null}
-          {workerHealthError ? <Alert severity="error">Không tải được trạng thái worker.</Alert> : null}
+          {workerHealthError && !effectiveWorkerHealth ? (
+            <Alert severity="error">Không tải được trạng thái worker.</Alert>
+          ) : null}
           {commentaryMonitorError ? (
             <Alert severity="error">Không tải được monitor AI commentary.</Alert>
           ) : null}
@@ -1551,14 +1608,14 @@ export default function DriveExportMonitorPage() {
             <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Worker"
-                value={workerHealth?.status || "offline"}
-                hint={`Heartbeat ${formatRelative(workerHealth?.lastHeartbeatAt)}`}
+                value={effectiveWorkerHealth?.status || "offline"}
+                hint={`Heartbeat ${formatRelative(effectiveWorkerHealth?.lastHeartbeatAt)}`}
                 color={
-                  workerHealth?.status === "busy"
+                  effectiveWorkerHealth?.status === "busy"
                     ? "info.main"
-                    : workerHealth?.alive
+                    : effectiveWorkerHealth?.alive
                     ? "success.main"
-                    : workerHealth?.status === "stale"
+                    : effectiveWorkerHealth?.status === "stale"
                     ? "warning.main"
                     : "text.primary"
                 }
@@ -1568,7 +1625,9 @@ export default function DriveExportMonitorPage() {
               <SummaryCard
                 title="Job hiện tại"
                 value={
-                  currentExportRow?.matchCode || workerHealth?.worker?.currentRecordingId || "idle"
+                  currentExportRow?.matchCode ||
+                  effectiveWorkerHealth?.worker?.currentRecordingId ||
+                  "idle"
                 }
                 hint={currentExportRow?.participantsLabel || "Không có job export hiện tại"}
                 color="info.main"
@@ -1608,7 +1667,7 @@ export default function DriveExportMonitorPage() {
             </Grid>
           </Grid>
 
-          <WorkerHealthPanel health={workerHealth} currentExportRow={currentExportRow} />
+          <WorkerHealthPanel health={effectiveWorkerHealth} currentExportRow={currentExportRow} />
           <AiCommentaryPanel monitor={commentaryMonitor} currentRow={commentaryCurrentRow} />
 
           <Card sx={{ borderRadius: 3 }}>

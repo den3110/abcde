@@ -1133,8 +1133,8 @@ export default function TournamentFormPage() {
                             <Tooltip
                               title={
                                 mapGeo.displayName
-                                  ? `Xem trÃªn báº£n Ä‘á»“: ${mapGeo.displayName}`
-                                  : "Xem trÃªn báº£n Ä‘á»“"
+                                  ? `Xem trên bản đồ: ${mapGeo.displayName}`
+                                  : "Xem trên bản đồ"
                               }
                             >
                               <Button
@@ -1147,7 +1147,7 @@ export default function TournamentFormPage() {
                                 }
                                 sx={{ minWidth: "auto", px: 1, whiteSpace: "nowrap" }}
                               >
-                                Báº£n Ä‘á»“
+                                Bản đồ
                               </Button>
                             </Tooltip>
                           </InputAdornment>

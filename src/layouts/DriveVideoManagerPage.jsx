@@ -69,38 +69,38 @@ import {
 dayjs.extend(relativeTime);
 
 const STATUS_OPTIONS = [
-  { value: "ready", label: "Ready tren Drive" },
-  { value: "needs_action", label: "Can xu ly" },
-  { value: "all", label: "Tat ca" },
-  { value: "failed", label: "That bai" },
-  { value: "pending_export_window", label: "Cho khung gio" },
-  { value: "exporting", label: "Dang export" },
-  { value: "recording", label: "Dang ghi" },
-  { value: "uploading", label: "Dang tai segment" },
+  { value: "ready", label: "Ready tr?n Drive" },
+  { value: "needs_action", label: "C?n x? l?" },
+  { value: "all", label: "T?t c?" },
+  { value: "failed", label: "Th?t b?i" },
+  { value: "pending_export_window", label: "Ch? khung gi?" },
+  { value: "exporting", label: "?ang export" },
+  { value: "recording", label: "?ang ghi" },
+  { value: "uploading", label: "?ang t?i segment" },
 ];
 
 const COMMENTARY_OPTIONS = [
-  { value: "all", label: "BLV AI: Tat ca" },
-  { value: "ready", label: "BLV AI: San sang" },
-  { value: "processing", label: "BLV AI: Dang chay" },
-  { value: "missing", label: "BLV AI: Chua co" },
-  { value: "failed", label: "BLV AI: Loi" },
+  { value: "all", label: "BLV AI: T?t c?" },
+  { value: "ready", label: "BLV AI: S?n s?ng" },
+  { value: "processing", label: "BLV AI: ?ang ch?y" },
+  { value: "missing", label: "BLV AI: Ch?a c?" },
+  { value: "failed", label: "BLV AI: L?i" },
 ];
 
 const VIEW_TABS = [
   { value: "ready", label: "Video ready" },
-  { value: "needs_action", label: "Can xu ly" },
+  { value: "needs_action", label: "C?n x? l?" },
   { value: "ai_ready", label: "BLV AI ready" },
-  { value: "all", label: "Tat ca" },
+  { value: "all", label: "T?t c?" },
 ];
 
 const STATUS_META = {
   ready: { color: "success", label: "Ready" },
-  failed: { color: "error", label: "That bai" },
-  pending_export_window: { color: "secondary", label: "Cho khung gio" },
-  exporting: { color: "info", label: "Dang export" },
-  uploading: { color: "info", label: "Dang tai len" },
-  recording: { color: "warning", label: "Dang ghi" },
+  failed: { color: "error", label: "Th?t b?i" },
+  pending_export_window: { color: "secondary", label: "Ch? khung gi?" },
+  exporting: { color: "info", label: "?ang export" },
+  uploading: { color: "info", label: "?ang t?i l?n" },
+  recording: { color: "warning", label: "?ang ghi" },
 };
 
 function formatDateTime(value) {
@@ -138,10 +138,10 @@ function formatDuration(seconds) {
   return `${secs}s`;
 }
 
-async function copyTextToClipboard(value, successMessage = "Da sao chep vao clipboard.") {
+async function copyTextToClipboard(value, successMessage = "?? sao ch?p v?o clipboard.") {
   const normalized = String(value || "").trim();
   if (!normalized) {
-    toast.info("Khong co du lieu de sao chep.");
+    toast.info("Kh?ng c? d? li?u ?? sao ch?p.");
     return false;
   }
 
@@ -150,7 +150,7 @@ async function copyTextToClipboard(value, successMessage = "Da sao chep vao clip
     toast.success(successMessage);
     return true;
   } catch (_) {
-    toast.error("Khong the sao chep vao clipboard.");
+    toast.error("Kh?ng th? sao ch?p v?o clipboard.");
     return false;
   }
 }
@@ -240,7 +240,7 @@ function InfoBox({ label, value, children }) {
 function StatusChip({ row }) {
   const stage = String(row?.exportPipeline?.stage || "").trim();
   if (stage === "stale_no_job" || stage === "worker_offline") {
-    return <Chip size="small" color="warning" label="Can retry export" />;
+    return <Chip size="small" color="warning" label="C?n retry export" />;
   }
   const meta = STATUS_META[row?.status] || {
     color: "default",
@@ -253,11 +253,11 @@ function CommentaryChip({ commentary }) {
   const status = String(commentary?.status || "idle").toLowerCase();
   const meta =
     status === "completed" || commentary?.ready
-      ? { color: "success", label: "BLV AI san sang" }
+      ? { color: "success", label: "BLV AI s?n s?ng" }
       : status === "running"
-      ? { color: "info", label: "BLV AI dang render" }
+      ? { color: "info", label: "BLV AI ?ang render" }
       : status === "queued"
-      ? { color: "secondary", label: "BLV AI dang cho" }
+      ? { color: "secondary", label: "BLV AI ?ang ch?" }
       : status === "failed"
       ? { color: "error", label: "BLV AI loi" }
       : { color: "default", label: "BLV AI chua co" };
@@ -358,7 +358,7 @@ function DriveLinksCell({ row }) {
       ) : null}
       {!canPlay && !rawHref && !row.drivePreviewUrl ? (
         <Typography variant="caption" sx={{ opacity: 0.55 }}>
-          Chua co link video
+          Ch?a c? link video
         </Typography>
       ) : null}
     </Stack>
@@ -384,10 +384,10 @@ function DriveAssetActionDialog({
   const assetLabel = getDriveAssetLabel(target);
   const title =
     mode === "rename"
-      ? `Doi ten ${assetLabel}`
+      ? `Đổi tên ${assetLabel}`
       : mode === "move"
       ? `Chuyen folder ${assetLabel}`
-      : `Dua ${assetLabel} vao thung rac`;
+      : `Đưa ${assetLabel} vào thùng rác`;
   const file = assetQuery?.data?.file || null;
   const fileId = getDriveAssetFileId(row, target);
   const errorMessage =
@@ -400,17 +400,17 @@ function DriveAssetActionDialog({
         <Stack spacing={1.5}>
           <Alert severity={mode === "trash" ? "warning" : "info"}>
             {mode === "rename"
-              ? "Ten file se duoc doi truc tiep tren Google Drive."
+              ? "T?n file s? ???c ??i tr?c ti?p tr?n Google Drive."
               : mode === "move"
-              ? "Nhap folder ID dich. Neu de trong, backend se dung folder Drive recording mac dinh."
-              : "Action nay se dua file vao Google Drive Trash va dong bo lai DB recording."}
+              ? "Nh?p folder ID ??ch. N?u ?? tr?ng, backend s? d?ng folder Drive recording m?c ??nh."
+              : "Action n?y s? ??a file v?o Google Drive Trash v? ??ng b? l?i DB recording."}
           </Alert>
           <InfoBox label="Match" value={row.matchCode || row.matchId || "-"} />
           <InfoBox label="Asset" value={assetLabel} />
           <InfoBox label="Drive fileId" value={fileId || "-"} />
-          <InfoBox label="Ten hien tai" value={file?.name || "-"} />
+          <InfoBox label="Tên hiện tại" value={file?.name || "-"} />
           <InfoBox
-            label="Folder hien tai"
+            label="Folder hiện tại"
             value={Array.isArray(file?.parents) && file.parents.length ? file.parents.join(", ") : "-"}
           />
 
@@ -418,7 +418,7 @@ function DriveAssetActionDialog({
             <Stack direction="row" spacing={1} alignItems="center">
               <CircularProgress size={16} />
               <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                Dang tai metadata Drive...
+                ?ang t?i metadata Drive...
               </Typography>
             </Stack>
           ) : null}
@@ -429,10 +429,10 @@ function DriveAssetActionDialog({
             <TextField
               autoFocus
               fullWidth
-              label="Ten file moi"
+              label="T?n file m?i"
               value={draftName}
               onChange={(event) => onChangeName(event.target.value)}
-              placeholder="Nhap ten file moi..."
+              placeholder="Nh?p t?n file m?i..."
               disabled={submitting}
             />
           ) : null}
@@ -444,14 +444,14 @@ function DriveAssetActionDialog({
               label="Folder ID dich"
               value={draftFolderId}
               onChange={(event) => onChangeFolderId(event.target.value)}
-              placeholder="Folder ID moi, de trong de dung folder mac dinh"
+              placeholder="Folder ID m?i, ?? tr?ng ?? d?ng folder m?c ??nh"
               disabled={submitting}
             />
           ) : null}
 
           {mode === "trash" ? (
             <Typography variant="body2" sx={{ opacity: 0.8 }}>
-              Sau khi trash, {assetLabel} se khong con duoc xem la san sang trong he thong.
+              Sau khi trash, {assetLabel} s? kh?ng c?n ???c xem l? s?n s?ng trong h? th?ng.
             </Typography>
           ) : null}
         </Stack>
@@ -482,12 +482,12 @@ function DriveAssetActionDialog({
           }
         >
           {submitting
-            ? "Dang xu ly..."
+            ? "?ang x? l?..."
             : mode === "rename"
-            ? "Luu ten moi"
+            ? "L?u t?n m?i"
             : mode === "move"
             ? "Chuyen folder"
-            : "Dua vao thung rac"}
+            : "Đưa vào thùng rác"}
         </Button>
       </DialogActions>
     </Dialog>
@@ -547,7 +547,7 @@ function RecordingDetailDialog({ row, open, onClose, onCopyFileId, onOpenDriveAc
 
           {missingDriveLinks ? (
             <Alert severity="warning">
-              Recording da ready trong DB nhung chua co day du link Drive/Playback.
+              Recording ?? ready trong DB nh?ng ch?a c? ??y ?? link Drive/Playback.
             </Alert>
           ) : null}
 
@@ -718,21 +718,21 @@ function RecordingDetailDialog({ row, open, onClose, onCopyFileId, onOpenDriveAc
               <SummaryCard
                 title="Segments"
                 value={row.segmentSummary?.totalSegments || 0}
-                hint={`${row.segmentSummary?.uploadedSegments || 0} da upload`}
+                hint={`${row.segmentSummary?.uploadedSegments || 0} ?? upload`}
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
                 title="Export attempts"
                 value={row.exportAttempts || 0}
-                hint={`Cap nhat ${formatRelative(row.updatedAt)}`}
+                hint={`C?p nh?t ${formatRelative(row.updatedAt)}`}
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <SummaryCard
                 title="Drive auth"
                 value={row.driveAuthMode || "-"}
-                hint={row.driveFileId || "Chua co fileId"}
+                hint={row.driveFileId || "Ch?a c? fileId"}
               />
             </Grid>
           </Grid>
@@ -786,7 +786,7 @@ function RecordingDetailDialog({ row, open, onClose, onCopyFileId, onOpenDriveAc
           </Typography>
           <Grid container spacing={1.5}>
             <Grid item xs={12} md={4}>
-              <InfoBox label="Trang thai" value={ai.status} />
+              <InfoBox label="Trạng thái" value={ai.status} />
             </Grid>
             <Grid item xs={12} md={4}>
               <InfoBox
@@ -816,11 +816,11 @@ function RecordingDetailDialog({ row, open, onClose, onCopyFileId, onOpenDriveAc
           <Divider />
 
           <Typography variant="h6" fontWeight={700}>
-            Danh sach segment
+            Danh s?ch segment
           </Typography>
 
           {segments.length === 0 ? (
-            <Alert severity="info">Chua co segment nao trong DB.</Alert>
+            <Alert severity="info">Ch?a c? segment n?o trong DB.</Alert>
           ) : (
             <Stack spacing={1.25}>
               {segments.map((segment) => (
@@ -1174,6 +1174,9 @@ export default function DriveVideoManagerPage() {
 
     const handleConnect = () => {
       setSocketOn(true);
+      try {
+        socket.emit("recordings-v2:watch");
+      } catch (_) {}
       scheduleRealtimeRefetch(100);
     };
     const handleDisconnect = () => setSocketOn(false);
@@ -1183,8 +1186,14 @@ export default function DriveVideoManagerPage() {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("recordings-v2:update", handleUpdate);
+    if (socket.connected) {
+      handleConnect();
+    }
 
     return () => {
+      try {
+        socket.emit("recordings-v2:unwatch");
+      } catch (_) {}
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("recordings-v2:update", handleUpdate);
@@ -1203,7 +1212,7 @@ export default function DriveVideoManagerPage() {
   const runBulkAction = useCallback(
     async ({ rows: targetRows, label, runner }) => {
       if (!targetRows.length) {
-        toast.info(`Khong co row hop le cho "${label}".`);
+        toast.info(`Kh?ng c? row h?p l? cho "${label}".`);
         return;
       }
 
@@ -1231,11 +1240,11 @@ export default function DriveVideoManagerPage() {
       refreshAll();
 
       if (successCount > 0) {
-        toast.success(`${label}: ${successCount}/${targetRows.length} thanh cong.`);
+        toast.success(`${label}: ${successCount}/${targetRows.length} th?nh c?ng.`);
       }
       if (errorCount > 0) {
         toast.warn(
-          `${label}: ${errorCount}/${targetRows.length} loi.${firstErrorMessage ? ` ${firstErrorMessage}` : ""}`
+          `${label}: ${errorCount}/${targetRows.length} l?i.${firstErrorMessage ? ` ${firstErrorMessage}` : ""}`
         );
       }
     },
@@ -1246,10 +1255,10 @@ export default function DriveVideoManagerPage() {
     try {
       setRetryingRecordingId(recordingId);
       await retryExport(recordingId).unwrap();
-      toast.success("Da dua video vao hang doi retry export.");
+      toast.success("?? ??a video v?o h?ng ??i retry export.");
       refreshAll();
     } catch (apiError) {
-      toast.error(apiError?.data?.message || apiError?.error || "Khong the retry export.");
+      toast.error(apiError?.data?.message || apiError?.error || "Kh?ng th? retry export.");
     } finally {
       setRetryingRecordingId(null);
     }
@@ -1259,10 +1268,10 @@ export default function DriveVideoManagerPage() {
     try {
       setForcingRecordingId(recordingId);
       await forceExport(recordingId).unwrap();
-      toast.success("Da force export ngay.");
+      toast.success("?? force export ngay.");
       refreshAll();
     } catch (apiError) {
-      toast.error(apiError?.data?.message || apiError?.error || "Khong the force export.");
+      toast.error(apiError?.data?.message || apiError?.error || "Kh?ng th? force export.");
     } finally {
       setForcingRecordingId(null);
     }
@@ -1273,18 +1282,18 @@ export default function DriveVideoManagerPage() {
       if (rerender) {
         setRerenderingCommentaryId(recordingId);
         await rerenderAiCommentary(recordingId).unwrap();
-        toast.success("Da dua job render lai BLV AI vao hang doi.");
+        toast.success("?? ??a job render l?i BLV AI v?o h?ng ??i.");
       } else {
         setQueueingCommentaryId(recordingId);
         await queueAiCommentary(recordingId).unwrap();
-        toast.success("Da dua job BLV AI vao hang doi.");
+        toast.success("?? ??a job BLV AI v?o h?ng ??i.");
       }
       refreshAll();
     } catch (apiError) {
       toast.error(
         apiError?.data?.message ||
           apiError?.error ||
-          (rerender ? "Khong the render lai BLV AI." : "Khong the xep hang BLV AI.")
+          (rerender ? "Kh?ng th? render l?i BLV AI." : "Kh?ng th? x?p h?ng BLV AI.")
       );
     } finally {
       setQueueingCommentaryId(null);
@@ -1307,7 +1316,7 @@ export default function DriveVideoManagerPage() {
     (row, target, mode) => {
       const fileId = getDriveAssetFileId(row, target);
       if (!fileId) {
-        toast.info(`Khong co ${getDriveAssetLabel(target)} de thao tac.`);
+        toast.info(`Kh?ng c? ${getDriveAssetLabel(target)} ?? thao t?c.`);
         return;
       }
 
@@ -1329,7 +1338,7 @@ export default function DriveVideoManagerPage() {
           toast.warn(
             apiError?.data?.message ||
               apiError?.error ||
-              `Khong tai duoc metadata cho ${getDriveAssetLabel(target)}.`
+              `Kh?ng t?i ???c metadata cho ${getDriveAssetLabel(target)}.`
           );
         });
     },
@@ -1352,16 +1361,16 @@ export default function DriveVideoManagerPage() {
           ...payload,
           name: String(driveActionName || "").trim(),
         }).unwrap();
-        toast.success(`Da doi ten ${assetLabel}.`);
+        toast.success(`?? ??i t?n ${assetLabel}.`);
       } else if (driveActionDialog.mode === "move") {
         await moveDriveAsset({
           ...payload,
           folderId: String(driveActionFolderId || "").trim(),
         }).unwrap();
-        toast.success(`Da chuyen folder cho ${assetLabel}.`);
+        toast.success(`?? chuy?n folder cho ${assetLabel}.`);
       } else {
         await trashDriveAsset(payload).unwrap();
-        toast.success(`Da dua ${assetLabel} vao thung rac.`);
+        toast.success(`?? ??a ${assetLabel} v?o th?ng r?c.`);
       }
 
       closeDriveActionDialog();
@@ -1370,7 +1379,7 @@ export default function DriveVideoManagerPage() {
       toast.error(
         apiError?.data?.message ||
           apiError?.error ||
-          `Khong the xu ly ${getDriveAssetLabel(driveActionDialog.target)}.`
+          `Kh?ng th? x? l? ${getDriveAssetLabel(driveActionDialog.target)}.`
       );
     } finally {
       setDriveActionSubmitting(false);
@@ -1413,7 +1422,7 @@ export default function DriveVideoManagerPage() {
     () => [
       {
         field: "status",
-        headerName: "Trang thai",
+        headerName: "Trạng thái",
         minWidth: 150,
         sortable: false,
         renderCell: ({ row }) => (
@@ -1427,7 +1436,7 @@ export default function DriveVideoManagerPage() {
       },
       {
         field: "match",
-        headerName: "Tran dau",
+        headerName: "Tr?n ??u",
         minWidth: 320,
         flex: 1.15,
         sortable: false,
@@ -1468,20 +1477,20 @@ export default function DriveVideoManagerPage() {
                   startIcon={<PlayCircleOutlineIcon />}
                   onClick={(event) => event.stopPropagation()}
                 >
-                  Mo AI
+                  M? AI
                 </Button>
               ) : null}
             </Stack>
             <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: "normal" }}>
               {!commentaryGlobalEnabled
-                ? "Global AI dang tat."
+                ? "Global AI ?ang t?t."
                 : row.aiCommentary?.error
                 ? row.aiCommentary.error
                 : row.aiCommentary?.renderedAt
                 ? `Xong ${formatRelative(row.aiCommentary.renderedAt)}`
                 : commentaryAutoEnabled
-                ? "Auto se chay sau khi video len Drive."
-                : "Auto dang tat, co the chay tay."}
+                ? "Auto s? ch?y sau khi video l?n Drive."
+                : "Auto ?ang t?t, c? th? ch?y tay."}
             </Typography>
           </Stack>
         ),
@@ -1517,7 +1526,7 @@ export default function DriveVideoManagerPage() {
                     )
                   }
                 >
-                  {retryingRecordingId === row.recordingId ? "Dang retry..." : "Retry export"}
+                  {retryingRecordingId === row.recordingId ? "?ang retry..." : "Retry export"}
                 </Button>
               ) : null}
               {canForceExport(row) ? (
@@ -1538,7 +1547,7 @@ export default function DriveVideoManagerPage() {
                     )
                   }
                 >
-                  {forcingRecordingId === row.recordingId ? "Dang xuat..." : "Xuat ngay"}
+                  {forcingRecordingId === row.recordingId ? "?ang xu?t..." : "Xu?t ngay"}
                 </Button>
               ) : null}
               <Button
@@ -1557,7 +1566,7 @@ export default function DriveVideoManagerPage() {
                   )
                 }
               >
-                {queueingCommentaryId === row.recordingId ? "Dang xep..." : "Long tieng AI"}
+                {queueingCommentaryId === row.recordingId ? "?ang x?p..." : "L?ng ti?ng AI"}
               </Button>
               <Button
                 size="small"
@@ -1576,7 +1585,7 @@ export default function DriveVideoManagerPage() {
                   )
                 }
               >
-                {rerenderingCommentaryId === row.recordingId ? "Dang render..." : "Render lai"}
+                {rerenderingCommentaryId === row.recordingId ? "?ang render..." : "Render lai"}
               </Button>
               {row.rawStatusUrl ? (
                 <Button
@@ -1598,7 +1607,7 @@ export default function DriveVideoManagerPage() {
                   variant="outlined"
                   onClick={(event) => {
                     stop(event);
-                    copyTextToClipboard(row.driveFileId, "Da sao chep fileId.");
+                    copyTextToClipboard(row.driveFileId, "?? sao ch?p fileId.");
                   }}
                   startIcon={<ContentCopyIcon />}
                 >
@@ -1649,14 +1658,14 @@ export default function DriveVideoManagerPage() {
                 Drive Video Manager
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                Quan ly video da len Drive, playback, file goc, preview va cac tac vu export/BLV AI.
+                Qu?n l? video ?? l?n Drive, playback, file g?c, preview v? c?c t?c v? export/BLV AI.
               </Typography>
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
               <Chip
                 color={socketOn ? "success" : "default"}
-                label={socketOn ? "Socket realtime OK" : "Socket mat ket noi"}
+                label={socketOn ? "Socket realtime OK" : "Socket m?t k?t n?i"}
               />
               <Button
                 variant="outlined"
@@ -1673,50 +1682,50 @@ export default function DriveVideoManagerPage() {
                   )
                 }
               >
-                Lam moi
+                L?m m?i
               </Button>
             </Stack>
           </Stack>
 
           {isError ? (
             <Alert severity="error">
-              {error?.data?.message || error?.error || "Khong tai duoc danh sach video Drive."}
+              {error?.data?.message || error?.error || "Kh?ng t?i ???c danh s?ch video Drive."}
             </Alert>
           ) : null}
 
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6} md={4} lg={2}>
-              <SummaryCard title="Tong video" value={summary.total} hint="Tat ca recording trong monitor" />
+              <SummaryCard title="T?ng video" value={summary.total} hint="T?t c? recording trong monitor" />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={2}>
               <SummaryCard
                 title="Ready"
                 value={summary.ready}
-                hint="Da co video tren Drive"
+                hint="?? c? video tr?n Drive"
                 color="success.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={2}>
               <SummaryCard
-                title="Can xu ly"
+                title="C?n x? l?"
                 value={summary.needsAction}
-                hint="Retry / force / thieu link"
+                hint="Retry / force / thi?u link"
                 color="warning.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={2}>
               <SummaryCard
-                title="Dang xu ly"
+                title="?ang x? l?"
                 value={summary.exporting + summary.pendingWindow}
-                hint="Exporting va cho khung gio"
+                hint="Exporting v? ch? khung gi?"
                 color="info.main"
               />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={2}>
               <SummaryCard
-                title="That bai"
+                title="Th?t b?i"
                 value={summary.failed}
-                hint="Can retry export"
+                hint="C?n retry export"
                 color="error.main"
               />
             </Grid>
@@ -1724,7 +1733,7 @@ export default function DriveVideoManagerPage() {
               <SummaryCard
                 title="BLV AI ready"
                 value={summary.commentaryReady}
-                hint="Da co video long tieng"
+                hint="?? c? video l?ng ti?ng"
                 color="secondary.main"
               />
             </Grid>
@@ -1751,8 +1760,8 @@ export default function DriveVideoManagerPage() {
                 >
                   <TextField
                     fullWidth
-                    label="Tim kiem"
-                    placeholder="Ma tran, cap dau, fileId, link, loi..."
+                    label="T?m ki?m"
+                    placeholder="M? tr?n, c?p ??u, fileId, link, l?i..."
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     InputProps={{
@@ -1765,7 +1774,7 @@ export default function DriveVideoManagerPage() {
                   />
                   <TextField
                     select
-                    label="Trang thai"
+                    label="Trạng thái"
                     value={statusFilter}
                     onChange={(event) => setStatusFilter(event.target.value)}
                     sx={{ minWidth: 220 }}
@@ -1806,7 +1815,7 @@ export default function DriveVideoManagerPage() {
                           alignItems={{ xs: "stretch", lg: "center" }}
                         >
                           <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                            <Chip size="small" color="primary" label={`${selectionModel.length} video da chon`} />
+                            <Chip size="small" color="primary" label={`${selectionModel.length} video ?? ch?n`} />
                             <Chip size="small" variant="outlined" label={`Retry: ${selectedRetryRows.length}`} />
                             <Chip size="small" variant="outlined" label={`Force: ${selectedForceRows.length}`} />
                             <Chip size="small" variant="outlined" label={`AI queue: ${selectedQueueAiRows.length}`} />
@@ -1826,7 +1835,7 @@ export default function DriveVideoManagerPage() {
                               onClick={() =>
                                 copyTextToClipboard(
                                   selectedFileIds,
-                                  "Da sao chep danh sach fileId cua cac video da chon."
+                                  "?? sao ch?p danh s?ch fileId c?a c?c video ?? ch?n."
                                 )
                               }
                             >
@@ -1860,7 +1869,7 @@ export default function DriveVideoManagerPage() {
                                 })
                               }
                             >
-                              Xuat ngay
+                              Xu?t ngay
                             </Button>
                             <Button
                               size="small"
@@ -1874,7 +1883,7 @@ export default function DriveVideoManagerPage() {
                                 })
                               }
                             >
-                              Long tieng AI
+                              L?ng ti?ng AI
                             </Button>
                             <Button
                               size="small"
@@ -1973,7 +1982,7 @@ export default function DriveVideoManagerPage() {
             row={selectedRow}
             open={Boolean(selectedRow)}
             onClose={() => setSelectedRowId(null)}
-            onCopyFileId={(fileId) => copyTextToClipboard(fileId, "Da sao chep fileId.")}
+            onCopyFileId={(fileId) => copyTextToClipboard(fileId, "?? sao ch?p fileId.")}
             onOpenDriveAction={openDriveActionDialog}
             driveActionBusy={driveActionSubmitting}
           />

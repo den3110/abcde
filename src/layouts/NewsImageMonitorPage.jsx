@@ -501,12 +501,12 @@ export default function NewsImageMonitorPage() {
       toast.success(
         nextPaused
           ? activeRegenJob?.state === "processing"
-            ? "Da bat tam dung. Worker se dung sau anh hien tai."
-            : "Da tam dung gen anh AI."
-          : "Da tiep tuc gen anh AI."
+            ? "?? b?t t?m d?ng. Worker s? d?ng sau ?nh hi?n t?i."
+            : "?? t?m d?ng gen ?nh AI."
+          : "?? ti?p t?c gen ?nh AI."
       );
     } catch (err) {
-      toast.error(err?.data?.message || "Cap nhat trang thai gen anh that bai.");
+      toast.error(err?.data?.message || "Cập nhật trạng thái gen ảnh thất bại.");
     }
   }, [activeRegenJob?.state, isRegenPaused, refetch, updateSeoNewsImageSettings]);
 
@@ -605,7 +605,7 @@ export default function NewsImageMonitorPage() {
               onClick={handleToggleRegenerationPause}
               disabled={isSavingModel || (!hasOpenRegenerationJob && !isRegenPaused)}
             >
-              {isSavingModel ? "Dang luu..." : isRegenPaused ? "Tiep tuc gen" : "Tam ngung gen"}
+              {isSavingModel ? "?ang l?u..." : isRegenPaused ? "Ti?p t?c gen" : "T?m ng?ng gen"}
             </Button>
             <Button
               variant="contained"
@@ -871,7 +871,7 @@ export default function NewsImageMonitorPage() {
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {isRegenPaused ? <Chip color="warning" label="Dang tam dung" /> : null}
+                {isRegenPaused ? <Chip color="warning" label="?ang t?m d?ng" /> : null}
                 <Chip
                   color={aiHealth?.status === "online" ? "success" : "warning"}
                   label={
@@ -901,7 +901,7 @@ export default function NewsImageMonitorPage() {
 
             {isRegenPaused ? (
               <Alert severity="info">
-                Hang cho gen anh AI dang tam dung. Bam &quot;Tiep tuc gen&quot; de worker tiep tuc
+                H?ng ch? gen ?nh AI ?ang t?m d?ng. B?m &quot;Ti?p t?c gen&quot; ?? worker ti?p t?c
                 xu ly.
               </Alert>
             ) : null}
@@ -933,7 +933,7 @@ export default function NewsImageMonitorPage() {
                           activeJobDisplayState === "processing"
                             ? "Đang gen ảnh"
                             : activeJobDisplayState === "paused"
-                            ? "Äang táº¡m dá»«ng"
+                            ? "Đang tạm dừng"
                             : activeJobDisplayState === "cooldown"
                             ? "Đang chờ lượt tiếp theo"
                             : "Đang xếp hàng"

@@ -247,7 +247,7 @@ export default function AdminLivePlaybackPage() {
     if (!createTargetValidation.canSubmit) {
       setSnack({
         open: true,
-        message: "Dien du ID, endpoint, access key, secret key, bucket va khong trung ID.",
+        message: "?i?n ?? ID, endpoint, access key, secret key, bucket v? kh?ng tr?ng ID.",
         severity: "error",
       });
       return;
