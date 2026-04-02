@@ -56,15 +56,32 @@ export default function useInfinitePagedQuery({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const requestSeqRef = useRef(0);
+  const triggerRef = useRef(trigger);
+  const baseArgsRef = useRef(baseArgs);
+  const getRowIdRef = useRef(getRowId);
   const fullSnapshotMode = pageSize <= 0;
 
   const argsKey = useMemo(() => JSON.stringify(baseArgs || {}), [baseArgs]);
+
+  useEffect(() => {
+    triggerRef.current = trigger;
+  }, [trigger]);
+
+  useEffect(() => {
+    baseArgsRef.current = baseArgs;
+  }, [baseArgs]);
+
+  useEffect(() => {
+    getRowIdRef.current = getRowId;
+  }, [getRowId]);
 
   const applyResponse = useCallback(
     (response, mode = "replace") => {
       const nextRows = Array.isArray(response?.rows) ? response.rows : [];
       setRows((previousRows) =>
-        mode === "append" ? mergeRows(previousRows, nextRows, getRowId) : nextRows
+        mode === "append"
+          ? mergeRows(previousRows, nextRows, getRowIdRef.current)
+          : nextRows
       );
       setSummary(ensureObject(response?.summary, EMPTY_SUMMARY));
       setMeta(ensureObject(response?.meta, EMPTY_META));
@@ -73,7 +90,7 @@ export default function useInfinitePagedQuery({
       setPages(Math.max(1, Number(response?.pages || 1)));
       setError(null);
     },
-    [getRowId]
+    []
   );
 
   const loadPage = useCallback(
@@ -92,9 +109,9 @@ export default function useInfinitePagedQuery({
       }
 
       try {
-        const response = await trigger(
+        const response = await triggerRef.current(
           {
-            ...baseArgs,
+            ...baseArgsRef.current,
             page: nextPage,
             limit,
           },
@@ -117,7 +134,7 @@ export default function useInfinitePagedQuery({
         }
       }
     },
-    [applyResponse, baseArgs, enabled, pageSize, trigger]
+    [applyResponse, enabled, pageSize]
   );
 
   const refresh = useCallback(async () => {
@@ -185,7 +202,7 @@ export default function useInfinitePagedQuery({
       limit: pageSize,
       mode: "replace",
     });
-  }, [argsKey, enabled, loadPage, pageSize]);
+  }, [argsKey, enabled, pageSize, loadPage]);
 
   useEffect(() => {
     if (!enabled || skipPolling || !pollingInterval || pollingInterval < 1000) {
