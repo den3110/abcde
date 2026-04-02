@@ -90,6 +90,13 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
       providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
     }),
+    getLiveRecordingMonitorRow: builder.query({
+      query: (recordingId) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/monitor-row`,
+        method: "GET",
+      }),
+      keepUnusedDataFor: 0,
+    }),
     getLiveRecordingWorkerHealth: builder.query({
       query: () => ({
         url: "/live/recordings/v2/admin/worker-health",
@@ -180,6 +187,7 @@ export const {
   useLazyGetFbVodDriveMonitorQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
   useLazyGetLiveRecordingMonitorQuery,
+  useLazyGetLiveRecordingMonitorRowQuery,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useMoveLiveRecordingDriveAssetMutation,

@@ -49,7 +49,11 @@ export default function StageStatusCard({ title, stageKey, runtime, config, onOp
               `Draw size: ${config.drawSize || 0} • Max rounds: ${config.maxRounds || 1}`}
             {stageKey === "ko" &&
               `Draw size: ${config.drawSize || 0}${
-                config.thirdPlaceEnabled || config.thirdPlace ? " • Có trận hạng 3–4" : ""
+                String(config.format || "single_elim") === "double_elim"
+                  ? " • Nhánh thắng/nhánh thua"
+                  : config.thirdPlaceEnabled || config.thirdPlace
+                  ? " • Có trận hạng 3–4"
+                  : ""
               }`}
           </Typography>
         )}

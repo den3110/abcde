@@ -60,6 +60,7 @@ import {
   useGetLiveRecordingAiCommentaryMonitorQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
   useLazyGetLiveRecordingMonitorQuery,
+  useLazyGetLiveRecordingMonitorRowQuery,
   useMoveLiveRecordingDriveAssetMutation,
   useQueueLiveRecordingAiCommentaryMutation,
   useRenameLiveRecordingDriveAssetMutation,
@@ -498,7 +499,16 @@ function DriveAssetActionDialog({
   );
 }
 
-function RecordingDetailDialog({ row, open, onClose, onCopyFileId, onOpenDriveAction, driveActionBusy }) {
+function RecordingDetailDialog({
+  row,
+  open,
+  onClose,
+  onCopyFileId,
+  onOpenDriveAction,
+  driveActionBusy,
+  loadingDetail = false,
+  detailError = null,
+}) {
   if (!row) return null;
 
   const segments = Array.isArray(row?.segmentSummary?.segments) ? row.segmentSummary.segments : [];
@@ -823,7 +833,24 @@ function RecordingDetailDialog({ row, open, onClose, onCopyFileId, onOpenDriveAc
             Danh sách segment
           </Typography>
 
-          {segments.length === 0 ? (
+          {loadingDetail ? (
+            <Alert severity="info">Đang tải danh sách segment chi tiết...</Alert>
+          ) : null}
+
+          {detailError ? (
+            <Alert severity="warning">
+              Không tải được chi tiết segment mới nhất. Đang hiển thị dữ liệu tóm tắt hiện có.
+            </Alert>
+          ) : null}
+
+          {segments.length === 0 && loadingDetail ? (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <CircularProgress size={18} />
+              <Typography variant="body2" sx={{ opacity: 0.72 }}>
+                Đang tải segment...
+              </Typography>
+            </Stack>
+          ) : segments.length === 0 ? (
             <Alert severity="info">Chưa có segment nào trong DB.</Alert>
           ) : (
             <Stack spacing={1.25}>
@@ -972,6 +999,8 @@ export default function DriveVideoManagerPage() {
   const [queueAiCommentary] = useQueueLiveRecordingAiCommentaryMutation();
   const [rerenderAiCommentary] = useRerenderLiveRecordingAiCommentaryMutation();
   const [loadDriveAsset, driveAssetQuery] = useLazyGetLiveRecordingDriveAssetQuery();
+  const [loadMonitorRowDetail, monitorRowDetailQuery] =
+    useLazyGetLiveRecordingMonitorRowQuery();
   const [renameDriveAsset] = useRenameLiveRecordingDriveAssetMutation();
   const [moveDriveAsset] = useMoveLiveRecordingDriveAssetMutation();
   const [trashDriveAsset] = useTrashLiveRecordingDriveAssetMutation();
@@ -1021,6 +1050,27 @@ export default function DriveVideoManagerPage() {
     () => rows.find((row) => row.id === selectedRowId) || null,
     [rows, selectedRowId]
   );
+  const selectedRowDetail = useMemo(() => {
+    const requestedRecordingId = String(monitorRowDetailQuery?.originalArgs || "").trim();
+    const detailRow = monitorRowDetailQuery?.data?.row || null;
+    if (!selectedRow?.recordingId || !detailRow) return null;
+    return requestedRecordingId === String(selectedRow.recordingId) ? detailRow : null;
+  }, [
+    monitorRowDetailQuery?.data?.row,
+    monitorRowDetailQuery?.originalArgs,
+    selectedRow?.recordingId,
+  ]);
+  const selectedRowDetailError = useMemo(() => {
+    const requestedRecordingId = String(monitorRowDetailQuery?.originalArgs || "").trim();
+    if (!selectedRow?.recordingId) return null;
+    return requestedRecordingId === String(selectedRow.recordingId)
+      ? monitorRowDetailQuery?.error || null
+      : null;
+  }, [monitorRowDetailQuery?.error, monitorRowDetailQuery?.originalArgs, selectedRow?.recordingId]);
+  const selectedRowForDialog = selectedRowDetail || selectedRow;
+  const selectedRowDetailLoading = Boolean(
+    selectedRow && !selectedRowDetail && monitorRowDetailQuery?.isFetching
+  );
   const driveActionRow = useMemo(
     () => rows.find((row) => row.id === driveActionDialog.rowId) || null,
     [driveActionDialog.rowId, rows]
@@ -1066,6 +1116,11 @@ export default function DriveVideoManagerPage() {
       setDriveActionFolderId(file?.parentId || "");
     }
   }, [activeDriveAssetQuery?.data, driveActionDialog.mode, driveActionDialog.open]);
+
+  useEffect(() => {
+    if (!selectedRow?.recordingId) return;
+    void loadMonitorRowDetail(selectedRow.recordingId, true);
+  }, [loadMonitorRowDetail, selectedRow?.recordingId]);
 
   const refreshAll = useCallback(() => {
     refresh();
@@ -1936,12 +1991,14 @@ export default function DriveVideoManagerPage() {
           </Card>
 
           <RecordingDetailDialog
-            row={selectedRow}
+            row={selectedRowForDialog}
             open={Boolean(selectedRow)}
             onClose={() => setSelectedRowId(null)}
             onCopyFileId={(fileId) => copyTextToClipboard(fileId, "Đã sao chép fileId.")}
             onOpenDriveAction={openDriveActionDialog}
             driveActionBusy={driveActionSubmitting}
+            loadingDetail={selectedRowDetailLoading}
+            detailError={selectedRowDetailError}
           />
           <DriveAssetActionDialog
             open={driveActionDialog.open && Boolean(driveActionRow)}

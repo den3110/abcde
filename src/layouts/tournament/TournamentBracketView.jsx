@@ -148,6 +148,47 @@ function buildRoundsWithPlaceholders(
   });
 }
 
+function normalizeElimBranch(match) {
+  const branch = String(match?.branch || "").trim().toLowerCase();
+  const phase = String(match?.phase || "").trim().toLowerCase();
+  if (branch === "gf" || phase === "grand_final") return "gf";
+  if (branch === "lb" || phase === "losers") return "lb";
+  return "wb";
+}
+
+function buildSparseRoundsWithPlaceholders(
+  brMatches,
+  {
+    matchSideLabelFn = () => "—",
+    emptyLabel = "Chưa có đội/VDV",
+    labelBuilder = (_roundIndex, seedsCount) => roundTitleByCount(seedsCount),
+  } = {}
+) {
+  const real = (brMatches || [])
+    .slice()
+    .sort((a, b) => (a.round || 1) - (b.round || 1) || (a.order || 0) - (b.order || 0));
+
+  const uniqueRounds = Array.from(new Set(real.map((m) => Number(m?.round || 1)))).sort(
+    (a, b) => a - b
+  );
+  const roundMap = new Map(uniqueRounds.map((roundNo, index) => [roundNo, index + 1]));
+  const localizedMatches = real.map((match) => ({
+    ...match,
+    round: roundMap.get(Number(match?.round || 1)) || 1,
+  }));
+
+  const rounds = buildRoundsWithPlaceholders(localizedMatches, {
+    minRounds: Math.max(1, uniqueRounds.length),
+    matchSideLabelFn,
+    emptyLabel,
+  });
+
+  return rounds.map((round, index) => ({
+    ...round,
+    title: labelBuilder(index + 1, round.seeds.length, uniqueRounds[index] || index + 1),
+  }));
+}
+
 /* ======== Dựng “khung dự kiến” cho KO thường (Top1/Top2) ======== */
 function pairIndicesStandard(N) {
   const half = N / 2;
@@ -383,7 +424,10 @@ export default function TournamentBracketView() {
   // ===== group / elim buckets
   const groupStage = useMemo(() => (brackets || []).filter((b) => b.type === "group"), [brackets]);
   const elimination = useMemo(
-    () => (brackets || []).filter((b) => b.type === "knockout" || b.type === "roundElim"),
+    () =>
+      (brackets || []).filter(
+        (b) => b.type === "knockout" || b.type === "roundElim" || b.type === "double_elim"
+      ),
     [brackets]
   );
 
@@ -637,6 +681,97 @@ export default function TournamentBracketView() {
           const brMatches = byBracket[b._id] || [];
           const hasReal = brMatches.length > 0;
           const isRoundElim = b.type === "roundElim";
+          const isDoubleElim = b.type === "double_elim";
+
+          if (isDoubleElim) {
+            const winnersMatches = brMatches.filter((m) => normalizeElimBranch(m) === "wb");
+            const losersMatches = brMatches.filter((m) => normalizeElimBranch(m) === "lb");
+            const grandFinalMatches = brMatches.filter((m) => normalizeElimBranch(m) === "gf");
+            const grandFinal =
+              grandFinalMatches
+                .slice()
+                .sort((a, c) => (c.round || 1) - (a.round || 1) || (c.order || 0) - (a.order || 0))[0] ||
+              null;
+            const champion = winnerPair(grandFinal);
+            const winnersRounds = hasReal
+              ? buildSparseRoundsWithPlaceholders(winnersMatches, {
+                  matchSideLabelFn: matchSideLabel,
+                  emptyLabel,
+                  labelBuilder: (_roundIndex, seedsCount) => `WB • ${roundTitleByCount(seedsCount)}`,
+                })
+              : [];
+            const losersRounds = hasReal
+              ? buildSparseRoundsWithPlaceholders(losersMatches, {
+                  matchSideLabelFn: matchSideLabel,
+                  emptyLabel,
+                  labelBuilder: (roundIndex) => `LB • Vòng ${roundIndex}`,
+                })
+              : [];
+            const grandFinalRounds = hasReal
+              ? buildSparseRoundsWithPlaceholders(grandFinalMatches, {
+                  matchSideLabelFn: matchSideLabel,
+                  emptyLabel,
+                  labelBuilder: () => "GF • Chung kết tổng",
+                })
+              : [];
+
+            return (
+              <Box key={b._id} mb={4}>
+                <Typography variant="h6" gutterBottom>
+                  Nhánh thắng / nhánh thua: {b.name}
+                </Typography>
+
+                {champion && (
+                  <Alert severity="success" sx={{ mb: 1 }}>
+                    Vô địch: <b>{safeRegName(champion, evType, displayMode)}</b>
+                  </Alert>
+                )}
+
+                {!hasReal ? (
+                  <Alert severity="info">Chưa có trận double elimination nào.</Alert>
+                ) : (
+                  <Card sx={{ p: 2 }}>
+                    <Box sx={{ overflowX: "auto" }}>
+                      <Box sx={{ minWidth: "fit-content" }}>
+                        <Box mb={3}>
+                          <Typography variant="subtitle1" gutterBottom>
+                            Nhánh thắng
+                          </Typography>
+                          <Bracket
+                            rounds={winnersRounds}
+                            renderSeedComponent={CustomSeedLocal}
+                            mobileBreakpoint={0}
+                          />
+                        </Box>
+
+                        <Box mb={3}>
+                          <Typography variant="subtitle1" gutterBottom>
+                            Nhánh thua
+                          </Typography>
+                          <Bracket
+                            rounds={losersRounds}
+                            renderSeedComponent={CustomSeedLocal}
+                            mobileBreakpoint={0}
+                          />
+                        </Box>
+
+                        <Box>
+                          <Typography variant="subtitle1" gutterBottom>
+                            Chung kết tổng
+                          </Typography>
+                          <Bracket
+                            rounds={grandFinalRounds}
+                            renderSeedComponent={CustomSeedLocal}
+                            mobileBreakpoint={0}
+                          />
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Card>
+                )}
+              </Box>
+            );
+          }
 
           // rounds:
           // - có trận thật: dựng từ matches (label đã resolve từ prev nếu có)

@@ -60,6 +60,49 @@ const nextPow2 = ceilPow2;
 const RR_MATCHES = (size) => (size >= 2 ? (size * (size - 1)) / 2 : 0);
 const makeStageId = (idx) => `V${idx + 1}`; // V1, V2,...
 const BYE = { type: "bye", ref: null, label: "BYE" };
+const KO_FORMAT_SINGLE = "single_elim";
+const KO_FORMAT_DOUBLE = "double_elim";
+const normalizeKoFormat = (value) =>
+  String(value || KO_FORMAT_SINGLE).trim().toLowerCase() === KO_FORMAT_DOUBLE
+    ? KO_FORMAT_DOUBLE
+    : KO_FORMAT_SINGLE;
+const getKoMinDrawSize = (format) =>
+  normalizeKoFormat(format) === KO_FORMAT_DOUBLE ? 4 : 2;
+const getKoDrawSize = (plan = {}) => {
+  const format = normalizeKoFormat(plan?.format);
+  const min = getKoMinDrawSize(format);
+  return Math.max(min, nextPow2(Number(plan?.drawSize || min)));
+};
+const buildKoPlanState = (plan = {}, fallback = {}) => {
+  const format = normalizeKoFormat(plan.format ?? fallback.format);
+  const rawDrawSize =
+    Number(plan.drawSize ?? fallback.drawSize ?? getKoMinDrawSize(format)) ||
+    getKoMinDrawSize(format);
+  return {
+    ...fallback,
+    ...plan,
+    drawSize: Math.max(getKoMinDrawSize(format), rawDrawSize),
+    seeds: Array.isArray(plan.seeds)
+      ? plan.seeds
+      : Array.isArray(fallback.seeds)
+        ? fallback.seeds
+        : [],
+    format,
+    ...(format === KO_FORMAT_DOUBLE
+      ? {
+          doubleElim: {
+            hasGrandFinalReset:
+              !!(
+                plan?.doubleElim?.hasGrandFinalReset ??
+                fallback?.doubleElim?.hasGrandFinalReset
+              ),
+          },
+        }
+      : {
+          doubleElim: undefined,
+        }),
+  };
+};
 
 /* ===== PO (non-2^n) helpers ===== */
 const maxPoRoundsFor = (n) => {
@@ -302,7 +345,7 @@ RulesEditor.propTypes = {
 /** Build KO rounds (R editable; R>=2 winners auto) với baseRound
  *  — dùng mã winner theo V hiển thị (đã offset) */
 function buildRoundsFromPlan(planKO, stageIndex = 1, baseRound = 1) {
-  const drawSize = Math.max(2, nextPow2(planKO?.drawSize || 2));
+  const drawSize = getKoDrawSize(planKO);
   const firstPairs = drawSize / 2;
 
   // Vòng hiển thị đầu
@@ -358,6 +401,120 @@ function buildRoundsFromPlan(planKO, stageIndex = 1, baseRound = 1) {
   }
 
   return rounds;
+}
+
+function buildDoubleElimPreviewFromPlan(planKO) {
+  const drawSize = getKoDrawSize({ ...planKO, format: KO_FORMAT_DOUBLE });
+  const winnersRounds = Math.round(Math.log2(drawSize));
+  const firstPairs = drawSize / 2;
+
+  const winnersBracket = [];
+  const r1 = Array.from({ length: firstPairs }, (_, i) => {
+    const found = (planKO?.seeds || []).find((seed) => Number(seed.pair) === i + 1);
+    const A = found?.A || { type: "registration", label: "—" };
+    const B = found?.B || { type: "registration", label: "—" };
+    return {
+      id: `WB1-${i + 1}`,
+      pairIndex: i + 1,
+      teams: [
+        { name: seedLabel(A), __seed: A, __pair: i + 1, __slot: "A" },
+        { name: seedLabel(B), __seed: B, __pair: i + 1, __slot: "B" },
+      ],
+    };
+  });
+  winnersBracket.push({
+    title: `WB • ${roundTitleByPairs(firstPairs)}`,
+    seeds: r1,
+  });
+
+  let prevPairs = firstPairs;
+  for (let roundIndex = 2; roundIndex <= winnersRounds; roundIndex += 1) {
+    const pairs = Math.ceil(prevPairs / 2);
+    winnersBracket.push({
+      title: `WB • ${roundTitleByPairs(pairs)}`,
+      seeds: Array.from({ length: pairs }, (_, idx) => ({
+        id: `WB${roundIndex}-${idx + 1}`,
+        teams: [
+          { name: `W-WB${roundIndex - 1}-T${idx * 2 + 1}` },
+          { name: `W-WB${roundIndex - 1}-T${idx * 2 + 2}` },
+        ],
+      })),
+    });
+    prevPairs = pairs;
+  }
+
+  const losersBracket = [
+    {
+      title: "LB • Round 1",
+      seeds: Array.from({ length: Math.max(1, firstPairs / 2) }, (_, idx) => ({
+        id: `LB1-${idx + 1}`,
+        teams: [
+          { name: `L-WB1-T${idx * 2 + 1}` },
+          { name: `L-WB1-T${idx * 2 + 2}` },
+        ],
+      })),
+    },
+  ];
+
+  for (let winnersRound = 2; winnersRound < winnersRounds; winnersRound += 1) {
+    const entryRoundIndex = winnersRound * 2 - 2;
+    const consolidateRoundIndex = winnersRound * 2 - 1;
+    const entryCount = Math.max(1, drawSize / 2 ** winnersRound);
+
+    losersBracket.push({
+      title: `LB • Round ${entryRoundIndex}`,
+      seeds: Array.from({ length: entryCount }, (_, idx) => ({
+        id: `LB${entryRoundIndex}-${idx + 1}`,
+        teams: [
+          { name: `W-LB${entryRoundIndex - 1}-T${idx + 1}` },
+          { name: `L-WB${winnersRound}-T${idx + 1}` },
+        ],
+      })),
+    });
+
+    losersBracket.push({
+      title: `LB • Round ${consolidateRoundIndex}`,
+      seeds: Array.from({ length: Math.ceil(entryCount / 2) }, (_, idx) => ({
+        id: `LB${consolidateRoundIndex}-${idx + 1}`,
+        teams: [
+          { name: `W-LB${entryRoundIndex}-T${idx * 2 + 1}` },
+          { name: `W-LB${entryRoundIndex}-T${idx * 2 + 2}` },
+        ],
+      })),
+    });
+  }
+
+  const finalLbRoundIndex = winnersRounds * 2 - 2;
+  const finalLbSourceRoundIndex = winnersRounds === 2 ? 1 : finalLbRoundIndex - 1;
+  losersBracket.push({
+    title: `LB • Round ${finalLbRoundIndex}`,
+    seeds: [
+      {
+        id: `LB${finalLbRoundIndex}-1`,
+        teams: [
+          { name: `W-LB${finalLbSourceRoundIndex}-T1` },
+          { name: `L-WB${winnersRounds}-T1` },
+        ],
+      },
+    ],
+  });
+
+  const grandFinal = [
+    {
+      title: "GF • Grand Final",
+      seeds: [
+        {
+          id: "GF-1",
+          teams: [
+            { name: `W-WB${winnersRounds}-T1` },
+            { name: `W-LB${finalLbRoundIndex}-T1` },
+          ],
+        },
+      ],
+    },
+  ];
+
+  return { winnersBracket, losersBracket, grandFinal };
 }
 
 /* ========================= PO (losers-cascade) builder (non-2^n) với baseRound ========================= */
@@ -1031,7 +1188,19 @@ export default function TournamentBlueprintPage() {
   });
 
   // KO defaults
-  const [koPlan, setKoPlan] = useState({ drawSize: 16, seeds: [] });
+  const [koPlan, setKoPlan] = useState(() =>
+    buildKoPlanState({ drawSize: 16, seeds: [], format: KO_FORMAT_SINGLE })
+  );
+  const setKoPlanState = (nextOrUpdater) => {
+    setKoPlan((prev) => {
+      const next =
+        typeof nextOrUpdater === "function" ? nextOrUpdater(prev) : nextOrUpdater;
+      return buildKoPlanState(next, prev);
+    });
+  };
+  const koIsDoubleElim = normalizeKoFormat(koPlan?.format) === KO_FORMAT_DOUBLE;
+  const koDrawSize = getKoDrawSize(koPlan);
+  const koFirstRoundPairs = Math.max(1, koDrawSize / 2);
 
   // ===== Rules per stage (có CAP) =====
   const [groupRules, setGroupRules] = useState(DEFAULT_RULES);
@@ -1153,17 +1322,29 @@ export default function TournamentBlueprintPage() {
     // KO
     // KO
     if (plan.ko) {
-      setKoPlan({
+      const nextKoPlan = buildKoPlanState(
+        {
+          drawSize: Number(plan.ko.drawSize || 2),
+          seeds: Array.isArray(plan.ko.seeds) ? plan.ko.seeds : [],
+          format: plan.ko.format,
+          doubleElim: plan.ko.doubleElim,
+        },
+        koPlan
+      );
+      const isDoubleKo = normalizeKoFormat(nextKoPlan.format) === KO_FORMAT_DOUBLE;
+      setKoPlanState({
         drawSize: Number(plan.ko.drawSize || 2),
         seeds: Array.isArray(plan.ko.seeds) ? plan.ko.seeds : [],
+        format: nextKoPlan.format,
+        doubleElim: nextKoPlan.doubleElim,
       });
       if (plan.ko.rules) setKoRules(normalizeRulesForState(plan.ko.rules, DEFAULT_RULES));
 
       // ✅ NEW: third-place flag
-      setKoThirdPlace(!!plan.ko.thirdPlace);
+      setKoThirdPlace(!isDoubleKo && !!plan.ko.thirdPlace);
 
       // NEW: semi-final rules
-      if (plan.ko.semiRules) {
+      if (!isDoubleKo && plan.ko.semiRules) {
         setKoSemiOverride(true);
         setKoSemiRules(normalizeRulesForState(plan.ko.semiRules, DEFAULT_RULES));
       } else {
@@ -1308,10 +1489,10 @@ export default function TournamentBlueprintPage() {
       id: makeStageId(arr.length),
       type: "ko",
       title: "Knockout",
-      config: { ...koPlan, thirdPlace: koThirdPlace },
+      config: { ...buildKoPlanState(koPlan), thirdPlace: koIsDoubleElim ? false : koThirdPlace },
     });
     return arr;
-  }, [includeGroup, includePO, groupCount, groupSize, groupSizes, poPlan, koPlan]);
+  }, [includeGroup, includePO, groupCount, groupSize, groupSizes, poPlan, koPlan, koThirdPlace, koIsDoubleElim]);
 
   // seed picker state
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1325,7 +1506,7 @@ export default function TournamentBlueprintPage() {
   const putSeed = (stageIdx, pair, slot, seedObj) => {
     const stage = stages[stageIdx];
     if (!stage || (stage.type !== "po" && stage.type !== "ko")) return;
-    const setPlan = stage.type === "po" ? setPoPlan : setKoPlan;
+    const setPlan = stage.type === "po" ? setPoPlan : setKoPlanState;
 
     setPlan((prev) => {
       const cur = { ...prev };
@@ -1333,7 +1514,7 @@ export default function TournamentBlueprintPage() {
       if (stage.type === "po") {
         firstPairs = Math.max(1, Math.ceil((cur.drawSize || 0) / 2));
       } else {
-        const size = Math.max(2, nextPow2(cur.drawSize || 2));
+        const size = getKoDrawSize(cur);
         firstPairs = size / 2;
       }
       const list = [...(cur.seeds || [])];
@@ -1356,6 +1537,41 @@ export default function TournamentBlueprintPage() {
 
   const renderEditableBracket = (stageIdx) => {
     const stage = stages[stageIdx];
+    const renderSeedComponent = ({ seed }) => {
+      const A = seed?.teams?.[0];
+      const B = seed?.teams?.[1];
+      const pair = A?.__pair || B?.__pair;
+      if (!pair) {
+        return (
+          <Seed>
+            <SeedItem>
+              <div style={{ display: "grid", gap: 4 }}>
+                <SeedTeam>{A?.name || "—"}</SeedTeam>
+                <SeedTeam>{B?.name || "—"}</SeedTeam>
+              </div>
+            </SeedItem>
+          </Seed>
+        );
+      }
+      return (
+        <Seed>
+          <SeedItem>
+            <div style={{ display: "grid", gap: 4 }}>
+              <SeedTeam>
+                <Button size="small" variant="text" onClick={() => openPicker(stageIdx, pair, "A")}>
+                  {A?.name || "—"}
+                </Button>
+              </SeedTeam>
+              <SeedTeam>
+                <Button size="small" variant="text" onClick={() => openPicker(stageIdx, pair, "B")}>
+                  {B?.name || "—"}
+                </Button>
+              </SeedTeam>
+            </div>
+          </SeedItem>
+        </Seed>
+      );
+    };
 
     // Đếm số "vòng hiển thị" trước stage hiện tại
     const roundsBefore = (() => {
@@ -1383,102 +1599,58 @@ export default function TournamentBlueprintPage() {
       return (
         <Bracket
           rounds={rounds}
-          renderSeedComponent={({ seed }) => {
-            const A = seed?.teams?.[0];
-            const B = seed?.teams?.[1];
-            const pair = A?.__pair || B?.__pair; // chỉ có ở R đầu của stage
-            if (!pair) {
-              return (
-                <Seed>
-                  <SeedItem>
-                    <div style={{ display: "grid", gap: 4 }}>
-                      <SeedTeam>{A?.name || "—"}</SeedTeam>
-                      <SeedTeam>{B?.name || "—"}</SeedTeam>
-                    </div>
-                  </SeedItem>
-                </Seed>
-              );
-            }
-            return (
-              <Seed>
-                <SeedItem>
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <SeedTeam>
-                      <Button
-                        size="small"
-                        variant="text"
-                        onClick={() => openPicker(stageIdx, pair, "A")}
-                      >
-                        {A?.name || "—"}
-                      </Button>
-                    </SeedTeam>
-                    <SeedTeam>
-                      <Button
-                        size="small"
-                        variant="text"
-                        onClick={() => openPicker(stageIdx, pair, "B")}
-                      >
-                        {B?.name || "—"}
-                      </Button>
-                    </SeedTeam>
-                  </div>
-                </SeedItem>
-              </Seed>
-            );
-          }}
+          renderSeedComponent={renderSeedComponent}
           mobileBreakpoint={0}
         />
       );
     }
 
     // KO
+    if (normalizeKoFormat(koPlan?.format) === KO_FORMAT_DOUBLE) {
+      const preview = buildDoubleElimPreviewFromPlan(koPlan);
+      return (
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+              Nhánh thắng
+            </Typography>
+            <Bracket
+              rounds={preview.winnersBracket}
+              renderSeedComponent={renderSeedComponent}
+              mobileBreakpoint={0}
+            />
+          </Box>
+
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+              Nhánh thua
+            </Typography>
+            <Bracket
+              rounds={preview.losersBracket}
+              renderSeedComponent={renderSeedComponent}
+              mobileBreakpoint={0}
+            />
+          </Box>
+
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+              Chung kết tổng
+            </Typography>
+            <Bracket
+              rounds={preview.grandFinal}
+              renderSeedComponent={renderSeedComponent}
+              mobileBreakpoint={0}
+            />
+          </Box>
+        </Stack>
+      );
+    }
+
     const rounds = buildRoundsFromPlan(koPlan, stageIdx + 1, baseRound);
     return (
       <Bracket
         rounds={rounds}
-        renderSeedComponent={({ seed }) => {
-          const A = seed?.teams?.[0];
-          const B = seed?.teams?.[1];
-          const pair = A?.__pair || B?.__pair; // chỉ có ở R đầu của stage
-          if (!pair) {
-            return (
-              <Seed>
-                <SeedItem>
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <SeedTeam>{A?.name || "—"}</SeedTeam>
-                    <SeedTeam>{B?.name || "—"}</SeedTeam>
-                  </div>
-                </SeedItem>
-              </Seed>
-            );
-          }
-          return (
-            <Seed>
-              <SeedItem>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <SeedTeam>
-                    <Button
-                      size="small"
-                      variant="text"
-                      onClick={() => openPicker(stageIdx, pair, "A")}
-                    >
-                      {A?.name || "—"}
-                    </Button>
-                  </SeedTeam>
-                  <SeedTeam>
-                    <Button
-                      size="small"
-                      variant="text"
-                      onClick={() => openPicker(stageIdx, pair, "B")}
-                    >
-                      {B?.name || "—"}
-                    </Button>
-                  </SeedTeam>
-                </div>
-              </SeedItem>
-            </Seed>
-          );
-        }}
+        renderSeedComponent={renderSeedComponent}
         mobileBreakpoint={0}
       />
     );
@@ -1611,8 +1783,8 @@ export default function TournamentBlueprintPage() {
     }
     const roundsAsc = [...byRound.keys()].sort((a, b) => a - b);
 
-    setKoPlan((prev) => {
-      const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
+    setKoPlanState((prev) => {
+      const size = getKoDrawSize(prev);
       const firstPairs = size / 2;
       const capacity = firstPairs * 2;
       const poN = Number(poPlan?.drawSize || 0);
@@ -1631,7 +1803,7 @@ export default function TournamentBlueprintPage() {
 
         const pairs = buildPairsStrongWeakNoRematch(strong, weak, firstPairs, poN);
         toast.success("Đã đổ seed: V1 vs V2+ (đầu–cuối, tránh tái đấu)");
-        return { drawSize: size, seeds: pairs };
+        return { ...prev, drawSize: size, seeds: pairs };
       }
 
       // ====== Option: Ladder (giữ dáng + tránh tái đấu) ======
@@ -1897,7 +2069,7 @@ export default function TournamentBlueprintPage() {
       );
       const used = Math.min(capacity, linear.length);
       toast.success(`Đã đổ ${used}/${capacity} seed từ PO sang KO • Kiểu: ${method.toUpperCase()}`);
-      return { drawSize: size, seeds: pairs };
+      return { ...prev, drawSize: size, seeds: pairs };
     });
   };
 
@@ -1911,8 +2083,8 @@ export default function TournamentBlueprintPage() {
     const N = Math.max(1, Math.min(Number(groupTopN) || 1, minGroupSize || 1)); // topN/bảng
     const { groups, ranks } = buildGroupQualMatrix(groupStage, gIdx, N);
 
-    setKoPlan((prev) => {
-      const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
+    setKoPlanState((prev) => {
+      const size = getKoDrawSize(prev);
       const firstPairs = size / 2;
       const capacity = firstPairs * 2;
 
@@ -1966,9 +2138,9 @@ export default function TournamentBlueprintPage() {
         const rows = ranks.map((row, idx) => (idx % 2 === 0 ? row : row.slice().reverse()));
         linear = rows.flat();
       } else if (method === "pot") {
-        const size = Math.max(2, nextPow2(Number(koPlan?.drawSize || 2)));
-        const firstPairs = size / 2;
-        const capacity = firstPairs * 2;
+          const size = getKoDrawSize(koPlan);
+          const firstPairs = size / 2;
+          const capacity = firstPairs * 2;
 
         const W = seededShuffle(Array.isArray(winners) ? winners : [], seedKey + "_potW");
         const R = seededShuffle(Array.isArray(runners) ? runners : [], seedKey + "_potR");
@@ -1978,7 +2150,7 @@ export default function TournamentBlueprintPage() {
           const linearDefault = ranks.flat();
           const pairs = arrangeLinearIntoKO(linearDefault, firstPairs, "default", seedKey);
           startTransition(() => {
-            setKoPlan({ drawSize: size, seeds: pairs });
+            setKoPlanState((prev) => ({ ...prev, drawSize: size, seeds: pairs }));
           });
           toast.info("‘Rút pot’ cần tối thiểu Top 2/bảng. Đã dùng cách mặc định theo thứ hạng.");
           return;
@@ -2028,11 +2200,11 @@ export default function TournamentBlueprintPage() {
 
         const pairs = arrangeLinearIntoKO(linear, firstPairs, "default", seedKey);
         startTransition(() => {
-          setKoPlan({ drawSize: size, seeds: pairs });
+          setKoPlanState((prev) => ({ ...prev, drawSize: size, seeds: pairs }));
         });
         toast.success("Đã đổ seed: Rút pot (1 vs 2, tránh cùng bảng)");
       } else if (method === "strongWeak") {
-        const size = Math.max(2, nextPow2(Number(prev.drawSize || 2)));
+        const size = getKoDrawSize(prev);
         const firstPairs = size / 2;
         const capacity = firstPairs * 2;
 
@@ -2401,16 +2573,25 @@ export default function TournamentBlueprintPage() {
     // KO
     if (bKO) {
       const cfg = bKO.config || {};
-      const drawSize = Number(cfg.drawSize || 2);
-      const seeds = Array.isArray(cfg.seeds) ? cfg.seeds : [];
-      setKoPlan({ drawSize, seeds });
+      const blueprintCfg = cfg.blueprint || {};
+      const drawSize = Number(cfg.drawSize || blueprintCfg.drawSize || 2);
+      const seeds = Array.isArray(cfg.seeds)
+        ? cfg.seeds
+        : Array.isArray(blueprintCfg.seeds)
+          ? blueprintCfg.seeds
+          : [];
+      const format = normalizeKoFormat(
+        bKO.type === "double_elim" ? KO_FORMAT_DOUBLE : cfg.format || blueprintCfg.format
+      );
+      const doubleElim = cfg.doubleElim || blueprintCfg.doubleElim;
+      setKoPlanState({ drawSize, seeds, format, doubleElim });
 
       const rules = normalizeRulesForState(bKO.rules || cfg.rules || DEFAULT_RULES, DEFAULT_RULES);
       setKoRules(rules);
 
       // ✅ NEW: third-place từ bracket/config
-      const thirdPlace = bKO.thirdPlace ?? cfg.thirdPlace ?? false;
-      setKoThirdPlace(!!thirdPlace);
+      const thirdPlace = bKO.thirdPlace ?? cfg.thirdPlace ?? blueprintCfg.thirdPlace ?? false;
+      setKoThirdPlace(format !== KO_FORMAT_DOUBLE && !!thirdPlace);
 
       const finalRules = bKO.finalRules || cfg.finalRules || null;
       if (finalRules) {
@@ -2421,8 +2602,8 @@ export default function TournamentBlueprintPage() {
       }
 
       // ✅ NEW: semiRules
-      const semiRules = bKO.semiRules || cfg.semiRules || null;
-      if (semiRules) {
+      const semiRules = bKO.semiRules || cfg.semiRules || blueprintCfg.semiRules || null;
+      if (format !== KO_FORMAT_DOUBLE && semiRules) {
         setKoSemiOverride(true);
         setKoSemiRules(normalizeRulesForState(semiRules, DEFAULT_RULES));
       } else {
@@ -2763,12 +2944,20 @@ export default function TournamentBlueprintPage() {
             ) : null}
             {stage.type === "ko" ? (
               <Stack direction="row" spacing={1}>
+                {koIsDoubleElim ? (
+                  <Chip
+                    size="small"
+                    color="info"
+                    variant="outlined"
+                    label="Nhánh thắng / nhánh thua"
+                  />
+                ) : null}
                 <Chip
                   size="small"
                   variant="outlined"
                   label={`Rule: ${ruleSummary(normalizeRulesForState(koRules, DEFAULT_RULES))}`}
                 />
-                {koSemiOverride ? (
+                {!koIsDoubleElim && koSemiOverride ? (
                   <Chip
                     size="small"
                     color="secondary"
@@ -2783,12 +2972,12 @@ export default function TournamentBlueprintPage() {
                     size="small"
                     color="secondary"
                     variant="outlined"
-                    label={`Chung kết: ${ruleSummary(
+                    label={`${koIsDoubleElim ? "Chung kết tổng" : "Chung kết"}: ${ruleSummary(
                       normalizeRulesForState(koFinalRules, DEFAULT_RULES)
                     )}`}
                   />
                 ) : null}
-                {koThirdPlace ? (
+                {!koIsDoubleElim && koThirdPlace ? (
                   <Chip size="small" color="secondary" label="Có trận tranh hạng 3–4" />
                 ) : null}
               </Stack>
@@ -3180,27 +3369,74 @@ export default function TournamentBlueprintPage() {
         <>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
             <TextField
+              select
+              size="small"
+              label="Kiểu knockout"
+              value={normalizeKoFormat(koPlan?.format)}
+              sx={{ minWidth: 240 }}
+              onChange={(e) => {
+                const nextFormat = normalizeKoFormat(e.target.value);
+                setKoPlanState((prev) => ({
+                  ...prev,
+                  format: nextFormat,
+                  drawSize: Math.max(
+                    getKoMinDrawSize(nextFormat),
+                    Number(prev?.drawSize || getKoMinDrawSize(nextFormat))
+                  ),
+                }));
+                if (nextFormat === KO_FORMAT_DOUBLE) {
+                  setKoThirdPlace(false);
+                  setKoSemiOverride(false);
+                }
+              }}
+            >
+              <MenuItem value={KO_FORMAT_SINGLE}>Loại trực tiếp</MenuItem>
+              <MenuItem value={KO_FORMAT_DOUBLE}>Nhánh thắng / nhánh thua</MenuItem>
+            </TextField>
+            <TextField
               size="small"
               type="number"
               label="KO drawSize"
               value={koPlan.drawSize}
               onChange={(e) =>
-                setKoPlan((p) => ({
+                setKoPlanState((p) => ({
                   ...p,
-                  drawSize: parseInt(e.target.value || "2", 10),
+                  drawSize: Math.max(
+                    getKoMinDrawSize(p?.format),
+                    parseInt(e.target.value || String(getKoMinDrawSize(p?.format)), 10)
+                  ),
                 }))
               }
             />
-            <Chip size="small" label={`KO R1: ${Math.max(1, nextPow2(koPlan.drawSize) / 2)} cặp`} />
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={koThirdPlace}
-                  onChange={(e) => setKoThirdPlace(e.target.checked)}
-                />
+            <Chip
+              size="small"
+              label={
+                koIsDoubleElim
+                  ? `WB R1: ${koFirstRoundPairs} cặp • LB mở đầu: ${Math.max(
+                      1,
+                      koFirstRoundPairs / 2
+                    )} cặp`
+                  : `KO R1: ${koFirstRoundPairs} cặp`
               }
-              label="Có trận tranh hạng 3–4 (hai đội thua Bán kết)"
             />
+            {!koIsDoubleElim ? (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={koThirdPlace}
+                    onChange={(e) => setKoThirdPlace(e.target.checked)}
+                  />
+                }
+                label="Có trận tranh hạng 3–4 (hai đội thua Bán kết)"
+              />
+            ) : (
+              <Chip
+                size="small"
+                color="info"
+                variant="outlined"
+                label="Chung kết tổng giữa nhánh thắng và nhánh thua"
+              />
+            )}
           </Stack>
 
         </>
@@ -3210,27 +3446,29 @@ export default function TournamentBlueprintPage() {
         <RulesEditor label="Luật (KO)" value={koRules} onChange={setKoRules} />
 
         <Stack spacing={2} sx={{ mt: 1 }}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={koSemiOverride}
-                  onChange={(e) => setKoSemiOverride(e.target.checked)}
-                />
-              }
-              label="Dùng Rule riêng cho trận Bán kết (KO)"
-              sx={{ minWidth: 240 }}
-            />
-            {koSemiOverride ? (
-              <Box sx={{ flexGrow: 1 }}>
-                <RulesEditor
-                  label="Luật Bán kết (KO)"
-                  value={koSemiRules}
-                  onChange={setKoSemiRules}
-                />
-              </Box>
-            ) : null}
-          </Stack>
+          {!koIsDoubleElim ? (
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={koSemiOverride}
+                    onChange={(e) => setKoSemiOverride(e.target.checked)}
+                  />
+                }
+                label="Dùng Rule riêng cho trận Bán kết (KO)"
+                sx={{ minWidth: 240 }}
+              />
+              {koSemiOverride ? (
+                <Box sx={{ flexGrow: 1 }}>
+                  <RulesEditor
+                    label="Luật Bán kết (KO)"
+                    value={koSemiRules}
+                    onChange={setKoSemiRules}
+                  />
+                </Box>
+              ) : null}
+            </Stack>
+          ) : null}
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="flex-start">
             <FormControlLabel
@@ -3240,13 +3478,17 @@ export default function TournamentBlueprintPage() {
                   onChange={(e) => setKoFinalOverride(e.target.checked)}
                 />
               }
-              label="Dùng Rule riêng cho trận Chung kết (KO)"
+              label={
+                koIsDoubleElim
+                  ? "Dùng Rule riêng cho trận Chung kết tổng"
+                  : "Dùng Rule riêng cho trận Chung kết (KO)"
+              }
               sx={{ minWidth: 240 }}
             />
             {koFinalOverride ? (
               <Box sx={{ flexGrow: 1 }}>
                 <RulesEditor
-                  label="Luật Chung kết (KO)"
+                  label={koIsDoubleElim ? "Luật Chung kết tổng" : "Luật Chung kết (KO)"}
                   value={koFinalRules}
                   onChange={setKoFinalRules}
                 />
@@ -4044,7 +4286,8 @@ export default function TournamentBlueprintPage() {
 
 /* ===== Normalizers for payload ===== */
 function normalizeSeedsKO(plan) {
-  const size = Math.max(2, nextPow2(Number(plan?.drawSize || 2)));
+  const format = normalizeKoFormat(plan?.format);
+  const size = getKoDrawSize({ ...plan, format });
   const firstPairs = size / 2;
   const map = new Map((plan?.seeds || []).map((s) => [Number(s.pair), s]));
   const placeholder = () => ({ type: "registration", ref: {}, label: "" });
@@ -4057,7 +4300,18 @@ function normalizeSeedsKO(plan) {
       B: cur.B && cur.B.type ? cur.B : placeholder(),
     };
   });
-  return { drawSize: size, seeds };
+  return {
+    drawSize: size,
+    seeds,
+    format,
+    ...(format === KO_FORMAT_DOUBLE
+      ? {
+          doubleElim: {
+            hasGrandFinalReset: !!plan?.doubleElim?.hasGrandFinalReset,
+          },
+        }
+      : {}),
+  };
 }
 function normalizeSeedsPO(plan) {
   const N = Math.max(0, Number(plan?.drawSize || 0));

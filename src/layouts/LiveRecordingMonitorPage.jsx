@@ -40,6 +40,7 @@ import {
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingWorkerHealthQuery,
   useLazyGetLiveRecordingMonitorQuery,
+  useLazyGetLiveRecordingMonitorRowQuery,
 } from "slices/liveApiSlice";
 
 dayjs.extend(relativeTime);
@@ -582,7 +583,13 @@ function ActionsCell({ row, onForceExport, forceExportingId }) {
   );
 }
 
-function RecordingDetailDialog({ row, open, onClose }) {
+function RecordingDetailDialog({
+  row,
+  open,
+  onClose,
+  loadingDetail = false,
+  detailError = null,
+}) {
   const segments = row?.segmentSummary?.segments || [];
   const rawHref = row?.rawStreamAvailable
     ? row?.rawStreamUrl || row?.driveRawUrl
@@ -719,7 +726,24 @@ function RecordingDetailDialog({ row, open, onClose }) {
             </Alert>
           ) : null}
 
-          {segments.length === 0 ? (
+          {loadingDetail ? (
+            <Alert severity="info">Đang tải danh sách segment chi tiết...</Alert>
+          ) : null}
+
+          {detailError ? (
+            <Alert severity="warning">
+              Không tải được chi tiết segment mới nhất. Đang hiển thị dữ liệu tóm tắt hiện có.
+            </Alert>
+          ) : null}
+
+          {segments.length === 0 && loadingDetail ? (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <CircularProgress size={18} />
+              <Typography variant="body2" sx={{ opacity: 0.72 }}>
+                Đang tải segment...
+              </Typography>
+            </Stack>
+          ) : segments.length === 0 ? (
             <Alert severity="info">Chưa có đoạn cắt nào được lưu vào DB.</Alert>
           ) : (
             <Stack spacing={1.25}>
@@ -865,6 +889,8 @@ export default function LiveRecordingMonitorPage() {
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
   const [triggerMonitorQuery] = useLazyGetLiveRecordingMonitorQuery();
+  const [loadMonitorRowDetail, monitorRowDetailQuery] =
+    useLazyGetLiveRecordingMonitorRowQuery();
 
   const queryArgs = useMemo(
     () => ({
@@ -976,6 +1002,32 @@ export default function LiveRecordingMonitorPage() {
     () => rows.find((row) => row.id === selectedRowId) || null,
     [rows, selectedRowId]
   );
+  const selectedRowDetail = useMemo(() => {
+    const requestedRecordingId = String(monitorRowDetailQuery?.originalArgs || "").trim();
+    const detailRow = monitorRowDetailQuery?.data?.row || null;
+    if (!selectedRow?.recordingId || !detailRow) return null;
+    return requestedRecordingId === String(selectedRow.recordingId) ? detailRow : null;
+  }, [
+    monitorRowDetailQuery?.data?.row,
+    monitorRowDetailQuery?.originalArgs,
+    selectedRow?.recordingId,
+  ]);
+  const selectedRowDetailError = useMemo(() => {
+    const requestedRecordingId = String(monitorRowDetailQuery?.originalArgs || "").trim();
+    if (!selectedRow?.recordingId) return null;
+    return requestedRecordingId === String(selectedRow.recordingId)
+      ? monitorRowDetailQuery?.error || null
+      : null;
+  }, [monitorRowDetailQuery?.error, monitorRowDetailQuery?.originalArgs, selectedRow?.recordingId]);
+  const selectedRowForDialog = selectedRowDetail || selectedRow;
+  const selectedRowDetailLoading = Boolean(
+    selectedRow && !selectedRowDetail && monitorRowDetailQuery?.isFetching
+  );
+
+  useEffect(() => {
+    if (!selectedRow?.recordingId) return;
+    void loadMonitorRowDetail(selectedRow.recordingId, true);
+  }, [loadMonitorRowDetail, selectedRow?.recordingId]);
 
   const handleForceExport = useCallback(
     async (row) => {
@@ -1374,9 +1426,11 @@ export default function LiveRecordingMonitorPage() {
       </Box>
 
       <RecordingDetailDialog
-        row={selectedRow}
+        row={selectedRowForDialog}
         open={Boolean(selectedRow)}
         onClose={() => setSelectedRowId(null)}
+        loadingDetail={selectedRowDetailLoading}
+        detailError={selectedRowDetailError}
       />
     </DashboardLayout>
   );

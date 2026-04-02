@@ -41,6 +41,11 @@ export default function useBlueprintDraft({
       1,
       Math.min(Number(groupTopN) || 1, Math.max(1, minGroupSize || 1))
     );
+    const koFormat =
+      String(koPlan?.format || "single_elim").trim().toLowerCase() === "double_elim"
+        ? "double_elim"
+        : "single_elim";
+    const isDoubleElim = koFormat === "double_elim";
 
     return {
       groups: hasGroup
@@ -70,10 +75,22 @@ export default function useBlueprintDraft({
         : null,
       ko: {
         ...normalizeSeedsKO(koPlan),
+        format: koFormat,
+        ...(isDoubleElim
+          ? {
+              doubleElim: {
+                hasGrandFinalReset:
+                  !!koPlan?.doubleElim?.hasGrandFinalReset,
+              },
+            }
+          : {}),
         rules: normalizeRulesForState(koRules, defaultRules),
-        semiRules: koSemiOverride ? normalizeRulesForState(koSemiRules, defaultRules) : null,
+        semiRules:
+          !isDoubleElim && koSemiOverride
+            ? normalizeRulesForState(koSemiRules, defaultRules)
+            : null,
         finalRules: koFinalOverride ? normalizeRulesForState(koFinalRules, defaultRules) : null,
-        thirdPlace: !!koThirdPlace,
+        thirdPlace: !isDoubleElim && !!koThirdPlace,
       },
     };
   }, [
@@ -87,9 +104,9 @@ export default function useBlueprintDraft({
     groupTotal,
     includeGroup,
     includePO,
+    koPlan,
     koFinalOverride,
     koFinalRules,
-    koPlan,
     koRules,
     koSemiOverride,
     koSemiRules,
