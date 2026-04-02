@@ -431,34 +431,50 @@ export default function SystemSettingsPage() {
     await Promise.all([refetch(), refetchRecordingDriveStatus(), refetchCommentaryMonitor()]);
   };
 
+  const updateFormPathValue = (source, path, value) => {
+    const next = structuredClone(source || {});
+    const segments = path.split(".");
+    let cursor = next;
+
+    for (let i = 0; i < segments.length - 1; i += 1) {
+      if (!cursor[segments[i]]) cursor[segments[i]] = {};
+      cursor = cursor[segments[i]];
+    }
+
+    cursor[segments.at(-1)] = value;
+    return next;
+  };
+
   const onToggle = (path) => (event) => {
     const checked = event.target.checked;
-    setForm((prev) => {
-      const next = structuredClone(prev);
-      const segments = path.split(".");
-      let cursor = next;
-      for (let i = 0; i < segments.length - 1; i += 1) {
-        if (!cursor[segments[i]]) cursor[segments[i]] = {};
-        cursor = cursor[segments[i]];
-      }
-      cursor[segments.at(-1)] = checked;
-      return next;
-    });
+    if (path === "maintenance.enabled") {
+      const previousForm = structuredClone(form || {});
+      const nextForm = updateFormPathValue(previousForm, path, checked);
+
+      setForm(nextForm);
+
+      persistSettings(nextForm, { showSuccessToast: false })
+        .then(() => {
+          toast.success(checked ? "Đã bật chế độ bảo trì" : "Đã tắt chế độ bảo trì");
+        })
+        .catch((error) => {
+          setForm(previousForm);
+          console.error(error);
+          toast.error(
+            error?.data?.message ||
+              error?.message ||
+              "Không thể cập nhật trạng thái bảo trì"
+          );
+        });
+      return;
+    }
+
+    setForm((prev) => updateFormPathValue(prev, path, checked));
   };
 
   const onChange = (path) => (event) => {
     const value = event.target.value;
-    setForm((prev) => {
-      const next = structuredClone(prev);
-      const segments = path.split(".");
-      let cursor = next;
-      for (let i = 0; i < segments.length - 1; i += 1) {
-        if (!cursor[segments[i]]) cursor[segments[i]] = {};
-        cursor = cursor[segments[i]];
-      }
-      cursor[segments.at(-1)] = value;
-      return next;
-    });
+    setForm((prev) => updateFormPathValue(prev, path, value));
   };
 
   const onNumber =
@@ -473,15 +489,7 @@ export default function SystemSettingsPage() {
       value = Math.round(value / step) * step;
 
       setForm((prev) => {
-        const next = structuredClone(prev);
-        const segments = path.split(".");
-        let cursor = next;
-        for (let i = 0; i < segments.length - 1; i += 1) {
-          if (!cursor[segments[i]]) cursor[segments[i]] = {};
-          cursor = cursor[segments[i]];
-        }
-        cursor[segments.at(-1)] = value;
-        return next;
+        return updateFormPathValue(prev, path, value);
       });
     };
 
@@ -815,6 +823,7 @@ export default function SystemSettingsPage() {
               label="Thông báo bảo trì"
               value={form.maintenance?.message ?? ""}
               onChange={onChange("maintenance.message")}
+              helperText="Bật hoặc tắt bảo trì sẽ lưu ngay. Nếu chỉ đổi nội dung thông báo, hãy bấm Lưu thay đổi."
               placeholder="Ví dụ: Hệ thống bảo trì lúc 23:00-01:00."
               fullWidth
             />
