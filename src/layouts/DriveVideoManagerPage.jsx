@@ -53,11 +53,13 @@ import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
+import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
+import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingAiCommentaryMonitorQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
-  useGetLiveRecordingMonitorQuery,
+  useLazyGetLiveRecordingMonitorQuery,
   useMoveLiveRecordingDriveAssetMutation,
   useQueueLiveRecordingAiCommentaryMutation,
   useRenameLiveRecordingDriveAssetMutation,
@@ -67,6 +69,8 @@ import {
 } from "slices/liveApiSlice";
 
 dayjs.extend(relativeTime);
+
+const PAGE_SIZE = 40;
 
 const STATUS_OPTIONS = [
   { value: "ready", label: "Ready trên Drive" },
@@ -876,53 +880,6 @@ function RecordingDetailDialog({ row, open, onClose, onCopyFileId, onOpenDriveAc
   );
 }
 
-function buildSearchText(row) {
-  return [
-    row.matchCode,
-    row.matchId,
-    row.recordingId,
-    row.participantsLabel,
-    row.competitionLabel,
-    row.courtLabel,
-    row.status,
-    row.driveFileId,
-    row.driveRawUrl,
-    row.drivePreviewUrl,
-    row.playbackUrl,
-    row.rawStatusUrl,
-    row.aiCommentary?.status,
-    row.aiCommentary?.latestJobId,
-    row.aiCommentary?.language,
-    row.aiCommentary?.voicePreset,
-    row.aiCommentary?.sourceFingerprint,
-    row.source?.videoId,
-    row.source?.pageId,
-    row.error,
-    row.exportPipeline?.stage,
-    row.exportPipeline?.detail,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
-
-function matchesStatusFilter(row, statusFilter) {
-  if (statusFilter === "all") return true;
-  if (statusFilter === "needs_action") return rowNeedsAction(row);
-  return row.status === statusFilter;
-}
-
-function matchesCommentaryFilter(row, commentaryFilter) {
-  if (commentaryFilter === "all") return true;
-  const status = String(row?.aiCommentary?.status || "idle").toLowerCase();
-  const ready = Boolean(row?.aiCommentary?.ready);
-  if (commentaryFilter === "ready") return ready;
-  if (commentaryFilter === "processing") return ["queued", "running"].includes(status);
-  if (commentaryFilter === "failed") return status === "failed";
-  if (commentaryFilter === "missing") return !ready && !["queued", "running"].includes(status);
-  return true;
-}
-
 function canRetryExport(row) {
   const stage = String(row?.exportPipeline?.stage || "").toLowerCase();
   const staleReason = String(row?.exportPipeline?.staleReason || "").toLowerCase();
@@ -936,13 +893,6 @@ function canRetryExport(row) {
 
 function canForceExport(row) {
   return row?.status === "pending_export_window";
-}
-
-function matchesViewMode(row, viewMode) {
-  if (viewMode === "ready") return row?.status === "ready";
-  if (viewMode === "needs_action") return rowNeedsAction(row);
-  if (viewMode === "ai_ready") return Boolean(row?.aiCommentary?.ready);
-  return true;
 }
 
 export default function DriveVideoManagerPage() {
@@ -971,14 +921,43 @@ export default function DriveVideoManagerPage() {
   const deferredSearch = useDeferredValue(search);
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
+  const [triggerMonitorQuery] = useLazyGetLiveRecordingMonitorQuery();
 
-  const { data, isLoading, isFetching, isError, error, refetch } = useGetLiveRecordingMonitorQuery(
-    undefined,
-    {
-      pollingInterval: 15000,
-      refetchOnMountOrArgChange: true,
-    }
+  const queryArgs = useMemo(
+    () => ({
+      section: "all",
+      status: statusFilter,
+      commentary: commentaryFilter,
+      view: viewMode,
+      q: deferredSearch.trim(),
+    }),
+    [commentaryFilter, deferredSearch, statusFilter, viewMode]
   );
+
+  const {
+    rows,
+    summary,
+    count,
+    error: queryError,
+    hasMore,
+    isInitialLoading,
+    isLoadingMore,
+    isRefreshing,
+    loadMore,
+    refresh,
+  } = useInfinitePagedQuery({
+    trigger: triggerMonitorQuery,
+    baseArgs: queryArgs,
+    pageSize: PAGE_SIZE,
+    getRowId: (row) => row?.id,
+    pollingInterval: socketOn ? 0 : 15000,
+  });
+  const sentinelRef = useInfiniteScrollSentinel({
+    enabled: true,
+    hasMore,
+    loading: isInitialLoading || isLoadingMore || isRefreshing,
+    onLoadMore: loadMore,
+  });
   const {
     data: commentaryMonitor,
     isFetching: commentaryFetching,
@@ -996,8 +975,6 @@ export default function DriveVideoManagerPage() {
   const [renameDriveAsset] = useRenameLiveRecordingDriveAssetMutation();
   const [moveDriveAsset] = useMoveLiveRecordingDriveAssetMutation();
   const [trashDriveAsset] = useTrashLiveRecordingDriveAssetMutation();
-
-  const rows = Array.isArray(data?.rows) ? data.rows : [];
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
 
@@ -1010,23 +987,6 @@ export default function DriveVideoManagerPage() {
   useEffect(() => {
     setSelectionModel([]);
   }, [commentaryFilter, deferredSearch, statusFilter, viewMode]);
-
-  const filteredRows = useMemo(() => {
-    const keyword = deferredSearch.trim().toLowerCase();
-    return rows
-      .filter((row) => matchesViewMode(row, viewMode))
-      .filter((row) => {
-        if (!matchesStatusFilter(row, statusFilter)) return false;
-        if (!matchesCommentaryFilter(row, commentaryFilter)) return false;
-        if (!keyword) return true;
-        return buildSearchText(row).includes(keyword);
-      })
-      .sort(
-        (a, b) =>
-          new Date(b?.updatedAt || 0).getTime() -
-          new Date(a?.updatedAt || 0).getTime()
-      );
-  }, [commentaryFilter, deferredSearch, rows, statusFilter, viewMode]);
 
   const selectedRows = useMemo(
     () => rows.filter((row) => selectionModel.includes(row.id)),
@@ -1058,18 +1018,12 @@ export default function DriveVideoManagerPage() {
   );
 
   const selectedRow = useMemo(
-    () =>
-      filteredRows.find((row) => row.id === selectedRowId) ||
-      rows.find((row) => row.id === selectedRowId) ||
-      null,
-    [filteredRows, rows, selectedRowId]
+    () => rows.find((row) => row.id === selectedRowId) || null,
+    [rows, selectedRowId]
   );
   const driveActionRow = useMemo(
-    () =>
-      rows.find((row) => row.id === driveActionDialog.rowId) ||
-      filteredRows.find((row) => row.id === driveActionDialog.rowId) ||
-      null,
-    [driveActionDialog.rowId, filteredRows, rows]
+    () => rows.find((row) => row.id === driveActionDialog.rowId) || null,
+    [driveActionDialog.rowId, rows]
   );
   const activeDriveAssetQuery = useMemo(() => {
     const queryArgs = driveAssetQuery?.originalArgs || {};
@@ -1101,32 +1055,6 @@ export default function DriveVideoManagerPage() {
     driveAssetQuery?.originalArgs,
   ]);
 
-  const summary = useMemo(
-    () =>
-      rows.reduce(
-        (acc, row) => {
-          acc.total += 1;
-          if (row.status === "ready") acc.ready += 1;
-          if (row.status === "failed") acc.failed += 1;
-          if (row.status === "exporting") acc.exporting += 1;
-          if (row.status === "pending_export_window") acc.pendingWindow += 1;
-          if (row.aiCommentary?.ready) acc.commentaryReady += 1;
-          if (rowNeedsAction(row)) acc.needsAction += 1;
-          return acc;
-        },
-        {
-          total: 0,
-          ready: 0,
-          failed: 0,
-          exporting: 0,
-          pendingWindow: 0,
-          commentaryReady: 0,
-          needsAction: 0,
-        }
-      ),
-    [rows]
-  );
-
   useEffect(() => {
     if (!driveActionDialog.open) return;
     const file = activeDriveAssetQuery?.data?.file || null;
@@ -1140,9 +1068,9 @@ export default function DriveVideoManagerPage() {
   }, [activeDriveAssetQuery?.data, driveActionDialog.mode, driveActionDialog.open]);
 
   const refreshAll = useCallback(() => {
-    refetch();
+    refresh();
     refetchCommentaryMonitor();
-  }, [refetch, refetchCommentaryMonitor]);
+  }, [refresh, refetchCommentaryMonitor]);
 
   const scheduleRealtimeRefetch = useCallback(
     (delayMs = 200) => {
@@ -1669,13 +1597,10 @@ export default function DriveVideoManagerPage() {
               />
               <Button
                 variant="outlined"
-                onClick={() => {
-                  refetch();
-                  refetchCommentaryMonitor();
-                }}
-                disabled={isFetching || commentaryFetching}
+                onClick={refreshAll}
+                disabled={isInitialLoading || isLoadingMore || isRefreshing || commentaryFetching}
                 startIcon={
-                  isFetching || commentaryFetching ? (
+                  isInitialLoading || isLoadingMore || isRefreshing || commentaryFetching ? (
                     <CircularProgress size={16} color="inherit" />
                   ) : (
                     <RefreshIcon />
@@ -1687,9 +1612,11 @@ export default function DriveVideoManagerPage() {
             </Stack>
           </Stack>
 
-          {isError ? (
+          {queryError ? (
             <Alert severity="error">
-              {error?.data?.message || error?.error || "Không tải được danh sách video Drive."}
+              {queryError?.data?.message ||
+                queryError?.error ||
+                "Không tải được danh sách video Drive."}
             </Alert>
           ) : null}
 
@@ -1716,7 +1643,7 @@ export default function DriveVideoManagerPage() {
             <Grid item xs={12} sm={6} md={4} lg={2}>
               <SummaryCard
                 title="Đang xử lý"
-                value={summary.exporting + summary.pendingWindow}
+                value={(summary.exporting || 0) + (summary.pendingExportWindow || 0)}
                 hint="Exporting và chờ khung giờ"
                 color="info.main"
               />
@@ -1801,7 +1728,7 @@ export default function DriveVideoManagerPage() {
                 </Stack>
 
                 <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                  Hiển thị {filteredRows.length}/{rows.length} video. Tab đầu tiên tập trung vào video ready trên Drive để thao tác nhanh.
+                  Hiển thị {rows.length}/{count} video. Tab đầu tiên tập trung vào video ready trên Drive để thao tác nhanh.
                 </Typography>
 
                 {selectionModel.length > 0 ? (
@@ -1949,18 +1876,15 @@ export default function DriveVideoManagerPage() {
                   checkboxSelection
                   disableColumnMenu
                   disableRowSelectionOnClick
-                  rows={filteredRows}
+                  rows={rows}
                   columns={columns}
-                  loading={isLoading || isFetching}
+                  loading={isInitialLoading && rows.length === 0}
                   getRowHeight={() => "auto"}
                   selectionModel={selectionModel}
                   onSelectionModelChange={(nextModel) =>
                     setSelectionModel(Array.isArray(nextModel) ? nextModel : [])
                   }
-                  initialState={{
-                    pagination: { paginationModel: { pageSize: 10, page: 0 } },
-                  }}
-                  pageSizeOptions={[10, 25, 50]}
+                  hideFooter
                   onRowClick={(params) => setSelectedRowId(params.row.id)}
                   sx={{
                     border: 0,
@@ -1974,6 +1898,39 @@ export default function DriveVideoManagerPage() {
                     },
                   }}
                 />
+
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1.25}
+                  alignItems={{ xs: "flex-start", md: "center" }}
+                  justifyContent="space-between"
+                >
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    {hasMore ? "Kéo xuống để tải thêm" : "Đã tải hết dữ liệu"}
+                  </Typography>
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    Chọn hàng chỉ áp dụng trên các video đã tải xuống bảng hiện tại.
+                  </Typography>
+                </Stack>
+
+                <Box
+                  ref={sentinelRef}
+                  sx={{
+                    minHeight: 28,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isLoadingMore ? (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" sx={{ opacity: 0.72 }}>
+                        Đang tải thêm dữ liệu...
+                      </Typography>
+                    </Stack>
+                  ) : null}
+                </Box>
               </Stack>
             </CardContent>
           </Card>

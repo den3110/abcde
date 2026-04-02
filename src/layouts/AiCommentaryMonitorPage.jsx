@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -31,9 +31,11 @@ import { Link as RouterLink } from "react-router-dom";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
+import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
+import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
   useGetLiveRecordingAiCommentaryMonitorQuery,
-  useGetLiveRecordingMonitorQuery,
+  useLazyGetLiveRecordingMonitorQuery,
   useQueueLiveRecordingAiCommentaryMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
 } from "slices/liveApiSlice";
@@ -43,6 +45,8 @@ import {
 } from "slices/settingsApiSlice";
 
 dayjs.extend(relativeTime);
+
+const PAGE_SIZE = 40;
 
 const FILTER_OPTIONS = [
   { value: "all", label: "Tất cả" },
@@ -87,6 +91,12 @@ function buildAiGatewayResponsesUrl(value = "") {
 function buildAiGatewaySpeechUrl(value = "") {
   const baseUrl = normalizeAiGatewayBaseUrl(value);
   return baseUrl ? `${baseUrl}/audio/speech` : "";
+}
+
+function buildLocalEdgeTtsBaseUrl() {
+  if (typeof window === "undefined") return "";
+  const origin = String(window.location?.origin || "").trim();
+  return origin ? `${origin}/api/ai-tts/v1` : "";
 }
 
 function hydrateAiSettings(source) {
@@ -193,22 +203,49 @@ export default function AiCommentaryMonitorPage() {
   const [socketOn, setSocketOn] = useState(Boolean(socket?.connected));
   const [search, setSearch] = useState("");
   const [commentaryFilter, setCommentaryFilter] = useState("all");
-  const [snapshot, setSnapshot] = useState(null);
   const [aiSettings, setAiSettings] = useState(null);
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
   const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
+  const deferredSearch = useDeferredValue(search);
+  const realtimeTimerRef = useRef(null);
+  const lastRealtimeRefetchAtRef = useRef(0);
+  const [triggerMonitorQuery] = useLazyGetLiveRecordingMonitorQuery();
 
   const { data: systemSettingsData } = useGetSystemSettingsQuery();
   const [updateSystemSettings, { isLoading: isSavingSettings }] = useUpdateSystemSettingsMutation();
 
+  const queryArgs = useMemo(
+    () => ({
+      section: "commentary",
+      commentary: commentaryFilter,
+      q: deferredSearch.trim(),
+    }),
+    [commentaryFilter, deferredSearch]
+  );
+
   const {
-    data: initialSnapshot,
-    isFetching: isRecordingFetching,
-    isError: isRecordingError,
-    refetch: refetchRecordingMonitor,
-  } = useGetLiveRecordingMonitorQuery(undefined, {
-    pollingInterval: 30000,
-    refetchOnMountOrArgChange: true,
+    rows: recordingRows,
+    summary,
+    count,
+    error: recordingError,
+    hasMore,
+    isInitialLoading,
+    isLoadingMore,
+    isRefreshing,
+    loadMore,
+    refresh: refreshRecordingMonitor,
+  } = useInfinitePagedQuery({
+    trigger: triggerMonitorQuery,
+    baseArgs: queryArgs,
+    pageSize: PAGE_SIZE,
+    getRowId: (row) => row?.id,
+    pollingInterval: socketOn ? 0 : 30000,
+  });
+  const sentinelRef = useInfiniteScrollSentinel({
+    enabled: true,
+    hasMore,
+    loading: isInitialLoading || isLoadingMore || isRefreshing,
+    onLoadMore: loadMore,
   });
   const {
     data: commentaryMonitor,
@@ -224,14 +261,36 @@ export default function AiCommentaryMonitorPage() {
   const [rerenderAiCommentary] = useRerenderLiveRecordingAiCommentaryMutation();
 
   useEffect(() => {
-    if (initialSnapshot) setSnapshot(initialSnapshot);
-  }, [initialSnapshot]);
-
-  useEffect(() => {
     if (systemSettingsData) {
       setAiSettings(hydrateAiSettings(systemSettingsData));
     }
   }, [systemSettingsData]);
+
+  const scheduleRealtimeRefetch = useCallback(
+    (delayMs = 200) => {
+      const now = Date.now();
+      const gapMs = Math.max(0, 1500 - (now - lastRealtimeRefetchAtRef.current));
+      const waitMs = Math.max(delayMs, gapMs);
+      if (realtimeTimerRef.current) return;
+      realtimeTimerRef.current = setTimeout(() => {
+        realtimeTimerRef.current = null;
+        lastRealtimeRefetchAtRef.current = Date.now();
+        void refreshRecordingMonitor();
+        void refetchCommentaryMonitor();
+      }, waitMs);
+    },
+    [refreshRecordingMonitor, refetchCommentaryMonitor]
+  );
+
+  useEffect(
+    () => () => {
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -241,11 +300,11 @@ export default function AiCommentaryMonitorPage() {
       try {
         socket.emit("recordings-v2:watch");
       } catch (_) {}
-      void refetchRecordingMonitor();
+      void refreshRecordingMonitor();
       void refetchCommentaryMonitor();
     };
     const handleDisconnect = () => setSocketOn(false);
-    const handleUpdate = (payload) => setSnapshot(payload);
+    const handleUpdate = () => scheduleRealtimeRefetch();
 
     try {
       socket.on("connect", handleConnect);
@@ -264,7 +323,7 @@ export default function AiCommentaryMonitorPage() {
         socket.off("recordings-v2:update", handleUpdate);
       } catch (_) {}
     };
-  }, [socket, refetchCommentaryMonitor, refetchRecordingMonitor]);
+  }, [refreshRecordingMonitor, refetchCommentaryMonitor, scheduleRealtimeRefetch, socket]);
 
   const recentJobs = Array.isArray(commentaryMonitor?.recentJobs) ? commentaryMonitor.recentJobs : [];
   const activeJob = commentaryMonitor?.activeJob || null;
@@ -281,8 +340,7 @@ export default function AiCommentaryMonitorPage() {
   }, [activeJob, recentJobs]);
 
   const rows = useMemo(() => {
-    const sourceRows = Array.isArray(snapshot?.rows) ? snapshot.rows : [];
-    return sourceRows
+    return recordingRows
       .filter((row) => {
         const commentaryStatus = String(row?.aiCommentary?.status || "").toLowerCase();
         return (
@@ -295,34 +353,7 @@ export default function AiCommentaryMonitorPage() {
         ...row,
         commentaryJob: latestJobByRecordingId.get(row.recordingId) || null,
       }));
-  }, [latestJobByRecordingId, snapshot]);
-
-  const filteredRows = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-
-    return rows.filter((row) => {
-      if (!matchesCommentaryFilter(row, commentaryFilter)) return false;
-      if (!keyword) return true;
-
-      const job = row.commentaryJob || {};
-      const haystack = [
-        row.recordingId,
-        row.matchCode,
-        row.participantsLabel,
-        row.competitionLabel,
-        row.status,
-        row.aiCommentary?.status,
-        row.aiCommentary?.error,
-        job.currentStepLabel,
-        job.lastError,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(keyword);
-    });
-  }, [commentaryFilter, rows, search]);
+  }, [latestJobByRecordingId, recordingRows]);
 
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
@@ -347,16 +378,8 @@ export default function AiCommentaryMonitorPage() {
     ? commentaryMonitor.presets.tone
     : [];
 
-  const summary = useMemo(() => {
-    const readyRows = rows.filter((row) => row?.status === "ready");
-    return {
-      readyRows,
-      missingAi: readyRows.filter((row) => matchesCommentaryFilter(row, "missing")),
-    };
-  }, [rows]);
-
   const refreshAll = () => {
-    refetchRecordingMonitor();
+    refreshRecordingMonitor();
     refetchCommentaryMonitor();
   };
 
@@ -408,6 +431,16 @@ export default function AiCommentaryMonitorPage() {
     } catch (error) {
       toast.error(error?.data?.message || error?.message || "Không thể lưu cấu hình BLV AI.");
     }
+  };
+
+  const applyFreeTtsPreset = () => {
+    const localBaseUrl = buildLocalEdgeTtsBaseUrl();
+    setAiSettings((prev) => ({
+      ...(prev || {}),
+      ttsBaseUrl: localBaseUrl || prev?.ttsBaseUrl || "",
+      ttsModel: "edge-tts-free",
+    }));
+    toast.success("Đã điền sẵn preset Edge TTS miễn phí. Nhớ bấm Lưu cấu hình.");
   };
 
   const handleQueueCommentary = async (recordingId, forceRerender = false) => {
@@ -660,7 +693,7 @@ export default function AiCommentaryMonitorPage() {
                 variant="outlined"
                 startIcon={<RefreshIcon />}
                 onClick={refreshAll}
-                disabled={isRecordingFetching || isCommentaryFetching}
+                disabled={isInitialLoading || isLoadingMore || isRefreshing || isCommentaryFetching}
               >
                 Làm mới
               </Button>
@@ -690,7 +723,7 @@ export default function AiCommentaryMonitorPage() {
             />
           </Stack>
 
-          {isRecordingError ? (
+          {recordingError ? (
             <Alert severity="error">Không tải được dữ liệu recording để ghép với BLV AI.</Alert>
           ) : null}
           {isCommentaryError ? (
@@ -739,7 +772,7 @@ export default function AiCommentaryMonitorPage() {
             <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Recording ready"
-                value={summary.readyRows.length}
+                value={summary.ready || 0}
                 hint="Nguồn đã sẵn sàng trên Drive"
                 color="text.primary"
               />
@@ -747,7 +780,7 @@ export default function AiCommentaryMonitorPage() {
             <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Chưa có BLV"
-                value={summary.missingAi.length}
+                value={summary.commentaryMissing || 0}
                 hint="Ready nhưng chưa render"
                 color="warning.main"
               />
@@ -897,14 +930,28 @@ export default function AiCommentaryMonitorPage() {
                       </MenuItem>
                     ))}
                   </TextField>
-                  <TextField
-                    label="TTS base URL"
-                    value={aiSettings?.ttsBaseUrl ?? ""}
-                    onChange={onAiChange("ttsBaseUrl")}
-                    placeholder="http://localhost:5000/api/ai-tts/v1"
-                    helperText="Hệ thống sẽ tự suy ra `/audio/speech` và `/models`."
-                    fullWidth
-                  />
+                  <Stack spacing={1.25} sx={{ width: "100%" }}>
+                    <Alert severity="info">
+                      Nếu chưa có model TTS trả phí, bạn có thể dùng preset miễn phí `Edge TTS`.
+                      Máy chạy backend cần có Python package `edge-tts`.
+                    </Alert>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                      <Button variant="outlined" onClick={applyFreeTtsPreset}>
+                        Điền nhanh Edge TTS miễn phí
+                      </Button>
+                      <Typography variant="caption" sx={{ alignSelf: "center", opacity: 0.72 }}>
+                        Preset sẽ điền `TTS model = edge-tts-free` và URL local adapter.
+                      </Typography>
+                    </Stack>
+                    <TextField
+                      label="TTS base URL"
+                      value={aiSettings?.ttsBaseUrl ?? ""}
+                      onChange={onAiChange("ttsBaseUrl")}
+                      placeholder="http://localhost:5000/api/ai-tts/v1"
+                      helperText="Nếu dùng adapter free local, trỏ vào `/api/ai-tts/v1`. Hệ thống sẽ tự suy ra `/audio/speech` và `/models`."
+                      fullWidth
+                    />
+                  </Stack>
                   <TextField
                     label="TTS speech URL"
                     value={buildAiGatewaySpeechUrl(aiSettings?.ttsBaseUrl)}
@@ -925,7 +972,7 @@ export default function AiCommentaryMonitorPage() {
                     label="TTS model"
                     value={aiSettings?.ttsModel ?? ""}
                     onChange={onAiChange("ttsModel")}
-                    helperText={`Effective: ${commentaryTtsGateway?.effectiveModel || "-"}`}
+                    helperText={`Effective: ${commentaryTtsGateway?.effectiveModel || "-"}${commentaryTtsModels.includes("edge-tts-free") ? " • Có sẵn Edge TTS miễn phí" : ""}`}
                     fullWidth
                   >
                     <MenuItem value="">Tự động</MenuItem>
@@ -1171,12 +1218,12 @@ export default function AiCommentaryMonitorPage() {
                 <DataGrid
                   getRowHeight={() => "auto"}
                   autoHeight
-                  rows={filteredRows}
+                  rows={rows}
                   columns={columns}
+                  loading={isInitialLoading && rows.length === 0}
                   disableRowSelectionOnClick
-                  pageSizeOptions={[10, 25, 50]}
+                  hideFooter
                   initialState={{
-                    pagination: { paginationModel: { pageSize: 10, page: 0 } },
                     sorting: { sortModel: [{ field: "updatedAt", sort: "desc" }] },
                   }}
                   sx={{
@@ -1190,6 +1237,39 @@ export default function AiCommentaryMonitorPage() {
                     },
                   }}
                 />
+
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1.25}
+                  alignItems={{ xs: "flex-start", md: "center" }}
+                  justifyContent="space-between"
+                >
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    Hiển thị {rows.length}/{count} recording
+                  </Typography>
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    {hasMore ? "Kéo xuống để tải thêm" : "Đã tải hết dữ liệu"}
+                  </Typography>
+                </Stack>
+
+                <Box
+                  ref={sentinelRef}
+                  sx={{
+                    minHeight: 28,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isLoadingMore ? (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" sx={{ opacity: 0.72 }}>
+                        Đang tải thêm dữ liệu...
+                      </Typography>
+                    </Stack>
+                  ) : null}
+                </Box>
               </Stack>
             </CardContent>
           </Card>

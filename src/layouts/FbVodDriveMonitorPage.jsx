@@ -19,7 +19,6 @@ import {
   InputAdornment,
   Link,
   MenuItem,
-  Pagination,
   Stack,
   TextField,
   Typography,
@@ -38,10 +37,12 @@ import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
+import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
+import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
   useEnsureFbVodDriveExportMutation,
   useForceLiveRecordingExportMutation,
-  useGetFbVodDriveMonitorQuery,
+  useLazyGetFbVodDriveMonitorQuery,
   useRetryLiveRecordingExportMutation,
 } from "slices/liveApiSlice";
 
@@ -266,36 +267,47 @@ export default function FbVodDriveMonitorPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [range, setRange] = useState("7d");
-  const [page, setPage] = useState(1);
   const deferredSearch = useDeferredValue(search);
   const [ensuringMatchId, setEnsuringMatchId] = useState(null);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
   const [forcingRecordingId, setForcingRecordingId] = useState(null);
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
-
-  useEffect(() => {
-    setPage(1);
-  }, [deferredSearch, range, statusFilter]);
+  const [triggerMonitorQuery] = useLazyGetFbVodDriveMonitorQuery();
 
   const queryArgs = useMemo(
     () => ({
       range,
       status: statusFilter,
       q: deferredSearch.trim(),
-      page,
-      limit: PAGE_SIZE,
     }),
-    [deferredSearch, page, range, statusFilter]
+    [deferredSearch, range, statusFilter]
   );
 
-  const { data, isLoading, isFetching, isError, error, refetch } = useGetFbVodDriveMonitorQuery(
-    queryArgs,
-    {
-      pollingInterval: 15000,
-      refetchOnMountOrArgChange: true,
-    }
-  );
+  const {
+    rows,
+    summary,
+    count: total,
+    error: queryError,
+    hasMore,
+    isInitialLoading,
+    isLoadingMore,
+    isRefreshing,
+    loadMore,
+    refresh,
+  } = useInfinitePagedQuery({
+    trigger: triggerMonitorQuery,
+    baseArgs: queryArgs,
+    pageSize: PAGE_SIZE,
+    getRowId: (row) => row?.id,
+    pollingInterval: socketOn ? 0 : 15000,
+  });
+  const sentinelRef = useInfiniteScrollSentinel({
+    enabled: true,
+    hasMore,
+    loading: isInitialLoading || isLoadingMore || isRefreshing,
+    onLoadMore: loadMore,
+  });
 
   const [ensureExport] = useEnsureFbVodDriveExportMutation();
   const [retryExport] = useRetryLiveRecordingExportMutation();
@@ -310,10 +322,10 @@ export default function FbVodDriveMonitorPage() {
       realtimeTimerRef.current = setTimeout(() => {
         realtimeTimerRef.current = null;
         lastRealtimeRefetchAtRef.current = Date.now();
-        refetch();
+        void refresh();
       }, waitMs);
     },
-    [refetch]
+    [refresh]
   );
 
   useEffect(
@@ -361,10 +373,6 @@ export default function FbVodDriveMonitorPage() {
     };
   }, [scheduleRealtimeRefetch, socket]);
 
-  const rows = Array.isArray(data?.rows) ? data.rows : [];
-  const summary = data?.summary || {};
-  const pageCount = Math.max(1, Number(data?.pages || 1));
-  const total = Number(data?.count || 0);
   const busy = Boolean(ensuringMatchId || retryingRecordingId || forcingRecordingId);
 
   const handleEnsureExport = async (matchId) => {
@@ -378,7 +386,7 @@ export default function FbVodDriveMonitorPage() {
       } else {
         toast.success("Đã xếp hàng lại fallback Facebook VOD.");
       }
-      refetch();
+      await refresh();
     } catch (apiError) {
       toast.error(apiError?.data?.message || apiError?.error || "Không thể bootstrap fallback.");
     } finally {
@@ -391,7 +399,7 @@ export default function FbVodDriveMonitorPage() {
       setRetryingRecordingId(recordingId);
       await retryExport(recordingId).unwrap();
       toast.success("Đã đưa recording vào hàng đợi retry export.");
-      refetch();
+      await refresh();
     } catch (apiError) {
       toast.error(apiError?.data?.message || apiError?.error || "Không thể retry export.");
     } finally {
@@ -404,7 +412,7 @@ export default function FbVodDriveMonitorPage() {
       setForcingRecordingId(recordingId);
       await forceExport(recordingId).unwrap();
       toast.success("Đã force export ngay.");
-      refetch();
+      await refresh();
     } catch (apiError) {
       toast.error(apiError?.data?.message || apiError?.error || "Không thể force export.");
     } finally {
@@ -562,10 +570,14 @@ export default function FbVodDriveMonitorPage() {
               />
               <Button
                 variant="outlined"
-                onClick={() => refetch()}
-                disabled={isFetching}
+                onClick={() => void refresh()}
+                disabled={isInitialLoading || isLoadingMore || isRefreshing}
                 startIcon={
-                  isFetching ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />
+                  isInitialLoading || isLoadingMore || isRefreshing ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <RefreshIcon />
+                  )
                 }
               >
                 Làm mới
@@ -665,9 +677,11 @@ export default function FbVodDriveMonitorPage() {
                   </TextField>
                 </Stack>
 
-                {isError ? (
+                {queryError ? (
                   <Alert severity="error">
-                    {error?.data?.message || error?.error || "Không tải được FB VOD monitor."}
+                    {queryError?.data?.message ||
+                      queryError?.error ||
+                      "Không tải được FB VOD monitor."}
                   </Alert>
                 ) : null}
 
@@ -678,7 +692,7 @@ export default function FbVodDriveMonitorPage() {
                     disableSelectionOnClick
                     rows={rows}
                     columns={columns}
-                    loading={isLoading || isFetching}
+                    loading={isInitialLoading && rows.length === 0}
                     hideFooter
                     getRowHeight={() => "auto"}
                     sx={{
@@ -701,15 +715,31 @@ export default function FbVodDriveMonitorPage() {
                   justifyContent="space-between"
                 >
                   <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                    {total} row - page {page}/{pageCount}
+                    Hiển thị {rows.length}/{total} dòng
                   </Typography>
-                  <Pagination
-                    color="primary"
-                    page={page}
-                    count={pageCount}
-                    onChange={(_, nextPage) => setPage(nextPage)}
-                  />
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    {hasMore ? "Kéo xuống để tải thêm" : "Đã tải hết dữ liệu"}
+                  </Typography>
                 </Stack>
+
+                <Box
+                  ref={sentinelRef}
+                  sx={{
+                    minHeight: 28,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isLoadingMore ? (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" sx={{ opacity: 0.72 }}>
+                        Đang tải thêm dữ liệu...
+                      </Typography>
+                    </Stack>
+                  ) : null}
+                </Box>
               </Stack>
             </CardContent>
           </Card>

@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -35,17 +35,21 @@ import { Link as RouterLink } from "react-router-dom";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
+import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
+import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingAiCommentaryMonitorQuery,
-  useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
+  useLazyGetLiveRecordingMonitorQuery,
   useQueueLiveRecordingAiCommentaryMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
 } from "slices/liveApiSlice";
 
 dayjs.extend(relativeTime);
+
+const PAGE_SIZE = 40;
 
 const STATUS_META = {
   pending_export_window: { color: "secondary", label: "Chờ khung giờ đêm" },
@@ -1026,16 +1030,50 @@ export default function DriveExportMonitorPage() {
   const [socketOn, setSocketOn] = useState(Boolean(socket?.connected));
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [snapshot, setSnapshot] = useState(null);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
   const [forcingRecordingId, setForcingRecordingId] = useState(null);
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
   const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
+  const deferredSearch = useDeferredValue(search);
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
+  const [triggerMonitorQuery] = useLazyGetLiveRecordingMonitorQuery();
 
-  const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery();
+  const queryArgs = useMemo(
+    () => ({
+      section: "export",
+      status: statusFilter,
+      q: deferredSearch.trim(),
+    }),
+    [deferredSearch, statusFilter]
+  );
+
+  const {
+    rows,
+    summary,
+    meta,
+    count,
+    error: queryError,
+    hasMore,
+    isInitialLoading,
+    isLoadingMore,
+    isRefreshing,
+    loadMore,
+    refresh,
+  } = useInfinitePagedQuery({
+    trigger: triggerMonitorQuery,
+    baseArgs: queryArgs,
+    pageSize: PAGE_SIZE,
+    getRowId: (row) => row?.id,
+    pollingInterval: socketOn ? 0 : 15000,
+  });
+  const sentinelRef = useInfiniteScrollSentinel({
+    enabled: true,
+    hasMore,
+    loading: isInitialLoading || isLoadingMore || isRefreshing,
+    onLoadMore: loadMore,
+  });
   const [retryExport] = useRetryLiveRecordingExportMutation();
   const [forceExport] = useForceLiveRecordingExportMutation();
   const [queueAiCommentary] = useQueueLiveRecordingAiCommentaryMutation();
@@ -1058,10 +1096,6 @@ export default function DriveExportMonitorPage() {
     refetchOnMountOrArgChange: true,
   });
 
-  useEffect(() => {
-    if (initialSnapshot) setSnapshot(initialSnapshot);
-  }, [initialSnapshot]);
-
   const scheduleRealtimeRefetch = useCallback(
     (delayMs = 200) => {
       const now = Date.now();
@@ -1071,10 +1105,11 @@ export default function DriveExportMonitorPage() {
       realtimeTimerRef.current = setTimeout(() => {
         realtimeTimerRef.current = null;
         lastRealtimeRefetchAtRef.current = Date.now();
-        refetchCommentaryMonitor();
+        void refresh();
+        void refetchCommentaryMonitor();
       }, waitMs);
     },
-    [refetchCommentaryMonitor]
+    [refresh, refetchCommentaryMonitor]
   );
 
   useEffect(
@@ -1095,15 +1130,12 @@ export default function DriveExportMonitorPage() {
       try {
         socket.emit("recordings-v2:watch");
       } catch (_) {}
-      void refetch();
+      void refresh();
       void refetchWorkerHealth();
       void refetchCommentaryMonitor();
     };
     const handleDisconnect = () => setSocketOn(false);
-    const handleUpdate = (payload) => {
-      setSnapshot(payload);
-      scheduleRealtimeRefetch();
-    };
+    const handleUpdate = () => scheduleRealtimeRefetch();
 
     try {
       socket.on("connect", handleConnect);
@@ -1124,74 +1156,25 @@ export default function DriveExportMonitorPage() {
     };
   }, [
     socket,
-    refetch,
+    refresh,
     refetchCommentaryMonitor,
     refetchWorkerHealth,
     scheduleRealtimeRefetch,
   ]);
 
-  const rows = useMemo(() => {
-    const sourceRows = snapshot?.rows || [];
-    return sourceRows.filter((row) =>
-      ["pending_export_window", "exporting", "ready", "failed"].includes(row.status)
-    );
-  }, [snapshot]);
-
-  const summary = useMemo(() => {
-    const pendingWindow = rows.filter((row) => row.status === "pending_export_window");
-    const exporting = rows.filter((row) => row.status === "exporting");
-    const ready = rows.filter((row) => row.status === "ready");
-    const failed = rows.filter((row) => row.status === "failed");
-    return {
-      pendingWindow,
-      exporting,
-      ready,
-      failed,
-    };
-  }, [rows]);
-
-  const filteredRows = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return rows.filter((row) => {
-      if (statusFilter !== "ALL" && row.status !== statusFilter) return false;
-      if (!keyword) return true;
-      const haystack = [
-        row.recordingId,
-        row.matchId,
-        row.matchCode,
-        row.participantsLabel,
-        row.competitionLabel,
-        row.status,
-        row.exportPipeline?.label,
-        row.exportPipeline?.detail,
-        row.error,
-        row.driveFileId,
-        row.aiCommentary?.status,
-        row.aiCommentary?.error,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(keyword);
-    });
-  }, [rows, search, statusFilter]);
-
   const selectedRow = useMemo(
-    () =>
-      filteredRows.find((row) => row.id === selectedRowId) ||
-      rows.find((row) => row.id === selectedRowId) ||
-      null,
-    [filteredRows, rows, selectedRowId]
+    () => rows.find((row) => row.id === selectedRowId) || null,
+    [rows, selectedRowId]
   );
   const effectiveWorkerHealth = useMemo(() => {
-    const snapshotWorkerHealth = snapshot?.meta?.workerHealth || null;
+    const snapshotWorkerHealth = meta?.workerHealth || null;
     const snapshotHeartbeatAt = new Date(snapshotWorkerHealth?.lastHeartbeatAt || 0).getTime();
     const queryHeartbeatAt = new Date(workerHealth?.lastHeartbeatAt || 0).getTime();
     if (queryHeartbeatAt > snapshotHeartbeatAt) {
       return workerHealth || snapshotWorkerHealth || null;
     }
     return snapshotWorkerHealth || workerHealth || null;
-  }, [snapshot?.meta?.workerHealth, workerHealth]);
+  }, [meta?.workerHealth, workerHealth]);
 
   const currentExportRow = useMemo(() => {
     const currentRecordingId = effectiveWorkerHealth?.worker?.currentRecordingId;
@@ -1201,7 +1184,7 @@ export default function DriveExportMonitorPage() {
 
   const workerAlertVisible =
     ["stale", "offline"].includes(effectiveWorkerHealth?.status || "offline") &&
-    summary.exporting.length > 0;
+    Number(summary.exporting || 0) > 0;
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
   const commentaryCurrentRow = useMemo(() => {
@@ -1214,7 +1197,7 @@ export default function DriveExportMonitorPage() {
     try {
       setRetryingRecordingId(recordingId);
       await retryExport(recordingId).unwrap();
-      refetch();
+      refresh();
       refetchWorkerHealth();
     } catch (_) {
     } finally {
@@ -1226,7 +1209,7 @@ export default function DriveExportMonitorPage() {
     try {
       setForcingRecordingId(recordingId);
       await forceExport(recordingId).unwrap();
-      refetch();
+      refresh();
       refetchWorkerHealth();
     } catch (_) {
     } finally {
@@ -1235,7 +1218,7 @@ export default function DriveExportMonitorPage() {
   };
 
   const refreshAll = () => {
-    refetch();
+    refresh();
     refetchWorkerHealth();
     refetchCommentaryMonitor();
   };
@@ -1581,7 +1564,9 @@ export default function DriveExportMonitorPage() {
                 variant="outlined"
                 startIcon={<RefreshIcon />}
                 onClick={refreshAll}
-                disabled={isFetching || isCommentaryMonitorFetching}
+                disabled={
+                  isInitialLoading || isLoadingMore || isRefreshing || isCommentaryMonitorFetching
+                }
               >
                 Làm mới
               </Button>
@@ -1594,7 +1579,7 @@ export default function DriveExportMonitorPage() {
             </Alert>
           ) : null}
 
-          {isError ? (
+          {queryError ? (
             <Alert severity="error">Không tải được dữ liệu export bản ghi.</Alert>
           ) : null}
           {workerHealthError && !effectiveWorkerHealth ? (
@@ -1636,7 +1621,7 @@ export default function DriveExportMonitorPage() {
             <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Hàng đợi đêm"
-                value={summary.pendingWindow.length}
+                value={summary.pendingExportWindow || 0}
                 hint="Đang đợi khung giờ export đêm"
                 color="secondary.main"
               />
@@ -1644,7 +1629,7 @@ export default function DriveExportMonitorPage() {
             <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Đang xuất"
-                value={summary.exporting.length}
+                value={summary.exporting || 0}
                 hint="Đang ghép và đẩy lên Drive"
                 color="info.main"
               />
@@ -1652,7 +1637,7 @@ export default function DriveExportMonitorPage() {
             <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Sẵn sàng"
-                value={summary.ready.length}
+                value={summary.ready || 0}
                 hint="Đã có file trên Drive"
                 color="success.main"
               />
@@ -1660,7 +1645,7 @@ export default function DriveExportMonitorPage() {
             <Grid item xs={12} md={2}>
               <SummaryCard
                 title="Thất bại"
-                value={summary.failed.length}
+                value={summary.failed || 0}
                 hint="Cần kiểm tra lỗi export"
                 color="error.main"
               />
@@ -1706,12 +1691,12 @@ export default function DriveExportMonitorPage() {
                 <DataGrid
                   getRowHeight={() => "auto"}
                   autoHeight
-                  rows={filteredRows}
+                  rows={rows}
                   columns={columns}
+                  loading={isInitialLoading && rows.length === 0}
                   disableRowSelectionOnClick
-                  pageSizeOptions={[10, 25, 50]}
+                  hideFooter
                   initialState={{
-                    pagination: { paginationModel: { pageSize: 10, page: 0 } },
                     sorting: { sortModel: [{ field: "updatedAt", sort: "desc" }] },
                   }}
                   onRowClick={(params) => setSelectedRowId(params.row.id)}
@@ -1727,6 +1712,39 @@ export default function DriveExportMonitorPage() {
                     },
                   }}
                 />
+
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1.25}
+                  alignItems={{ xs: "flex-start", md: "center" }}
+                  justifyContent="space-between"
+                >
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    Hiển thị {rows.length}/{count} bản ghi
+                  </Typography>
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    {hasMore ? "Kéo xuống để tải thêm" : "Đã tải hết dữ liệu"}
+                  </Typography>
+                </Stack>
+
+                <Box
+                  ref={sentinelRef}
+                  sx={{
+                    minHeight: 28,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isLoadingMore ? (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" sx={{ opacity: 0.72 }}>
+                        Đang tải thêm dữ liệu...
+                      </Typography>
+                    </Stack>
+                  ) : null}
+                </Box>
               </Stack>
             </CardContent>
           </Card>

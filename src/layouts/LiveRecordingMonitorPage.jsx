@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Autocomplete,
@@ -8,6 +8,7 @@ import {
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -33,13 +34,17 @@ import { DataGrid, GridToolbar } from "@mui/x-data-grid";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
+import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
+import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
   useForceLiveRecordingExportMutation,
-  useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
+  useLazyGetLiveRecordingMonitorQuery,
 } from "slices/liveApiSlice";
 
 dayjs.extend(relativeTime);
+
+const PAGE_SIZE = 50;
 
 const STATUS_META = {
   recording: { color: "error", label: "Đang ghi" },
@@ -852,22 +857,50 @@ export default function LiveRecordingMonitorPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [tournamentFilter, setTournamentFilter] = useState(null);
-  const [snapshot, setSnapshot] = useState(null);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [forceExportingId, setForceExportingId] = useState(null);
   const [actionError, setActionError] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const monitorPollingInterval = socketOn ? 0 : 15000;
+  const realtimeTimerRef = useRef(null);
+  const lastRealtimeRefetchAtRef = useRef(0);
+  const [triggerMonitorQuery] = useLazyGetLiveRecordingMonitorQuery();
 
-  const { data: initialSnapshot, isFetching, isError, refetch } = useGetLiveRecordingMonitorQuery(
-    undefined,
-    {
-      pollingInterval: monitorPollingInterval,
-      skipPollingIfUnfocused: true,
-      refetchOnFocus: true,
-      refetchOnReconnect: true,
-      refetchOnMountOrArgChange: true,
-    }
+  const queryArgs = useMemo(
+    () => ({
+      section: "all",
+      status: statusFilter,
+      q: deferredSearch.trim(),
+      tournament: tournamentFilter || "",
+    }),
+    [deferredSearch, statusFilter, tournamentFilter]
   );
+
+  const {
+    rows,
+    summary,
+    meta,
+    count,
+    error: queryError,
+    hasMore,
+    isInitialLoading,
+    isLoadingMore,
+    isRefreshing,
+    loadMore,
+    refresh,
+  } = useInfinitePagedQuery({
+    trigger: triggerMonitorQuery,
+    baseArgs: queryArgs,
+    pageSize: PAGE_SIZE,
+    getRowId: (row) => row?.id,
+    pollingInterval: monitorPollingInterval,
+  });
+  const sentinelRef = useInfiniteScrollSentinel({
+    enabled: true,
+    hasMore,
+    loading: isInitialLoading || isLoadingMore || isRefreshing,
+    onLoadMore: loadMore,
+  });
   const [forceLiveRecordingExport] = useForceLiveRecordingExportMutation();
   const { data: workerHealthPoll } = useGetLiveRecordingWorkerHealthQuery(undefined, {
     pollingInterval: 30000,
@@ -875,9 +908,30 @@ export default function LiveRecordingMonitorPage() {
     refetchOnReconnect: true,
   });
 
-  useEffect(() => {
-    if (initialSnapshot) setSnapshot(initialSnapshot);
-  }, [initialSnapshot]);
+  const scheduleRealtimeRefetch = useCallback(
+    (delayMs = 200) => {
+      const now = Date.now();
+      const gapMs = Math.max(0, 1500 - (now - lastRealtimeRefetchAtRef.current));
+      const waitMs = Math.max(delayMs, gapMs);
+      if (realtimeTimerRef.current) return;
+      realtimeTimerRef.current = setTimeout(() => {
+        realtimeTimerRef.current = null;
+        lastRealtimeRefetchAtRef.current = Date.now();
+        void refresh();
+      }, waitMs);
+    },
+    [refresh]
+  );
+
+  useEffect(
+    () => () => {
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -887,10 +941,10 @@ export default function LiveRecordingMonitorPage() {
       try {
         socket.emit("recordings-v2:watch");
       } catch (_) {}
-      void refetch();
+      scheduleRealtimeRefetch(100);
     };
     const handleDisconnect = () => setSocketOn(false);
-    const handleUpdate = (payload) => setSnapshot(payload);
+    const handleUpdate = () => scheduleRealtimeRefetch();
 
     try {
       socket.on("connect", handleConnect);
@@ -909,56 +963,14 @@ export default function LiveRecordingMonitorPage() {
         socket.off("recordings-v2:update", handleUpdate);
       } catch (_) {}
     };
-  }, [socket, refetch]);
+  }, [scheduleRealtimeRefetch, socket]);
 
-  const rows = snapshot?.rows || [];
-  const summary = snapshot?.summary || {};
-  const meta = snapshot?.meta || {};
   const r2Storage = summary?.r2Storage || {};
   const workerHealth = workerHealthPoll || meta?.workerHealth || null;
-  const exportingRows = rows.filter((row) => row.status === "exporting");
 
   const tournamentOptions = useMemo(() => {
-    const map = new Map();
-    for (const row of rows) {
-      const name = row.tournamentName;
-      if (!name) continue;
-      if (!map.has(name)) {
-        map.set(name, { name, status: row.tournamentStatus || "", count: 0 });
-      }
-      map.get(name).count += 1;
-    }
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [rows]);
-
-  const filteredRows = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return rows.filter((row) => {
-      if (statusFilter !== "ALL" && row.status !== statusFilter) return false;
-      if (tournamentFilter && row.tournamentName !== tournamentFilter) return false;
-      if (!keyword) return true;
-      const haystack = [
-        row.recordingId,
-        row.recordingSessionId,
-        row.matchId,
-        row.matchCode,
-        row.participantsLabel,
-        row.competitionLabel,
-        row.tournamentName,
-        row.bracketName,
-        row.courtLabel,
-        row.modeLabel,
-        row.status,
-        row.exportPipeline?.label,
-        row.exportPipeline?.detail,
-        row.error,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(keyword);
-    });
-  }, [rows, search, statusFilter, tournamentFilter]);
+    return Array.isArray(meta?.tournaments) ? meta.tournaments : [];
+  }, [meta?.tournaments]);
 
   const selectedRow = useMemo(
     () => rows.find((row) => row.id === selectedRowId) || null,
@@ -975,7 +987,7 @@ export default function LiveRecordingMonitorPage() {
       setForceExportingId(row.recordingId);
       try {
         await forceLiveRecordingExport(row.recordingId).unwrap();
-        await refetch();
+        await refresh();
       } catch (error) {
         setActionError(
           error?.data?.message ||
@@ -986,7 +998,7 @@ export default function LiveRecordingMonitorPage() {
         setForceExportingId(null);
       }
     },
-    [forceExportingId, forceLiveRecordingExport, refetch]
+    [forceExportingId, forceLiveRecordingExport, refresh]
   );
 
   const columns = useMemo(
@@ -1140,8 +1152,8 @@ export default function LiveRecordingMonitorPage() {
               <Button
                 variant="outlined"
                 startIcon={<RefreshIcon />}
-                onClick={() => refetch()}
-                disabled={isFetching}
+                onClick={() => void refresh()}
+                disabled={isInitialLoading || isLoadingMore || isRefreshing}
               >
                 Làm mới
               </Button>
@@ -1153,15 +1165,15 @@ export default function LiveRecordingMonitorPage() {
             {formatRelative(meta.lastEventAt)} - publish cuối {formatRelative(meta.lastPublishAt)}
           </Alert>
 
-          {isError ? (
+          {queryError ? (
             <Alert severity="error">Không tải được dữ liệu monitor bản ghi.</Alert>
           ) : null}
 
           {actionError ? <Alert severity="error">{actionError}</Alert> : null}
 
-          {workerHealth && !workerHealth.alive && exportingRows.length > 0 ? (
+          {workerHealth && !workerHealth.alive && Number(summary.exporting || 0) > 0 ? (
             <Alert severity="warning">
-              Worker export không còn heartbeat nhưng vẫn còn {exportingRows.length} recording đang
+              Worker export không còn heartbeat nhưng vẫn còn {summary.exporting || 0} recording đang
               xuất.
             </Alert>
           ) : null}
@@ -1296,22 +1308,20 @@ export default function LiveRecordingMonitorPage() {
 
                 <Divider />
 
-                <Box sx={{ height: 720, width: "100%" }}>
+                <Box sx={{ width: "100%" }}>
                   <DataGrid
-                    rows={filteredRows}
+                    autoHeight
+                    rows={rows}
                     columns={columns}
-                    loading={isFetching && !snapshot}
+                    loading={isInitialLoading && rows.length === 0}
                     disableRowSelectionOnClick
                     onRowClick={(params) => setSelectedRowId(params.row.id)}
                     getRowHeight={() => 112}
                     slots={{ toolbar: GridToolbar }}
-                    pageSizeOptions={[25, 50, 100]}
+                    hideFooter
                     initialState={{
                       sorting: {
                         sortModel: [{ field: "updatedAt", sort: "desc" }],
-                      },
-                      pagination: {
-                        paginationModel: { pageSize: 25, page: 0 },
                       },
                     }}
                     sx={{
@@ -1323,6 +1333,39 @@ export default function LiveRecordingMonitorPage() {
                       },
                     }}
                   />
+                </Box>
+
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1.25}
+                  alignItems={{ xs: "flex-start", md: "center" }}
+                  justifyContent="space-between"
+                >
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    Hiển thị {rows.length}/{count} bản ghi
+                  </Typography>
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    {hasMore ? "Kéo xuống để tải thêm" : "Đã tải hết dữ liệu"}
+                  </Typography>
+                </Stack>
+
+                <Box
+                  ref={sentinelRef}
+                  sx={{
+                    minHeight: 28,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isLoadingMore ? (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" sx={{ opacity: 0.72 }}>
+                        Đang tải thêm dữ liệu...
+                      </Typography>
+                    </Stack>
+                  ) : null}
                 </Box>
               </Stack>
             </CardContent>

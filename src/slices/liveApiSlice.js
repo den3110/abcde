@@ -53,10 +53,32 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: [{ type: "FbVodMonitor", id: "LIST" }],
     }),
     getLiveRecordingMonitor: builder.query({
-      query: () => ({
-        url: "/live/recordings/v2/admin/monitor",
-        method: "GET",
-      }),
+      query: ({
+        section = "all",
+        status = "ALL",
+        commentary = "all",
+        view = "all",
+        q = "",
+        tournament = "",
+        page = 1,
+        limit = 40,
+        forceRefresh = false,
+      } = {}) => {
+        const params = new URLSearchParams();
+        if (section) params.set("section", String(section));
+        if (status) params.set("status", String(status));
+        if (commentary) params.set("commentary", String(commentary));
+        if (view) params.set("view", String(view));
+        if (q) params.set("q", q);
+        if (tournament) params.set("tournament", tournament);
+        if (page) params.set("page", String(page));
+        if (limit) params.set("limit", String(limit));
+        if (forceRefresh) params.set("forceRefresh", "true");
+        return {
+          url: `/live/recordings/v2/admin/monitor?${params.toString()}`,
+          method: "GET",
+        };
+      },
       keepUnusedDataFor: 5,
       providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
     }),
@@ -147,7 +169,9 @@ export const {
   useForceLiveRecordingExportMutation,
   useGetFbVodDriveMonitorQuery,
   useGetLiveRecordingAiCommentaryMonitorQuery,
+  useLazyGetFbVodDriveMonitorQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
+  useLazyGetLiveRecordingMonitorQuery,
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useMoveLiveRecordingDriveAssetMutation,

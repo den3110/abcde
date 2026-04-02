@@ -163,6 +163,12 @@ const buildAiGatewaySpeechUrl = (value = "") => {
   return baseUrl ? `${baseUrl}/audio/speech` : "";
 };
 
+const buildLocalEdgeTtsBaseUrl = () => {
+  if (typeof window === "undefined") return "";
+  const origin = String(window.location?.origin || "").trim();
+  return origin ? `${origin}/api/ai-tts/v1` : "";
+};
+
 let googlePickerLoaderPromise = null;
 
 const loadGooglePickerSdk = () => {
@@ -588,6 +594,23 @@ export default function SystemSettingsPage() {
     }));
   };
 
+  const applyFreeAiTtsPreset = () => {
+    const localBaseUrl = buildLocalEdgeTtsBaseUrl();
+    setForm((prev) => ({
+      ...prev,
+      liveRecording: {
+        ...(prev.liveRecording || {}),
+        aiCommentary: {
+          ...(prev.liveRecording?.aiCommentary || {}),
+          ttsBaseUrl:
+            localBaseUrl || prev.liveRecording?.aiCommentary?.ttsBaseUrl || "",
+          ttsModel: "edge-tts-free",
+        },
+      },
+    }));
+    toast.success("Đã điền sẵn preset Edge TTS miễn phí. Nhớ bấm Lưu thay đổi.");
+  };
+
   const recordingDriveAlertSeverityValue = (() => {
     if (recordingDriveStatus?.ready) return "success";
     if (recordingDriveStatus?.configured || recordingDriveStatus?.connected) return "warning";
@@ -704,14 +727,28 @@ export default function SystemSettingsPage() {
                   </MenuItem>
                 ))}
               </TextField>
-              <TextField
-                label="TTS base URL"
-                value={form.liveRecording?.aiCommentary?.ttsBaseUrl ?? ""}
-                onChange={onChange("liveRecording.aiCommentary.ttsBaseUrl")}
-                placeholder="http://localhost:5000/api/ai-tts/v1"
-                helperText="Nếu dùng adapter free local, trỏ vào `/api/ai-tts/v1`. Hệ thống sẽ tự suy ra `/audio/speech` và `/models`."
-                fullWidth
-              />
+              <Stack spacing={1.25} sx={{ width: "100%" }}>
+                <Alert severity="info">
+                  Nếu chưa có model TTS trả phí, có thể dùng preset miễn phí `Edge TTS`. Máy
+                  chạy backend cần có Python package `edge-tts`.
+                </Alert>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                  <Button variant="outlined" onClick={applyFreeAiTtsPreset}>
+                    Điền nhanh Edge TTS miễn phí
+                  </Button>
+                  <Typography variant="caption" sx={{ alignSelf: "center", opacity: 0.72 }}>
+                    Preset sẽ điền `TTS model = edge-tts-free` và URL local adapter.
+                  </Typography>
+                </Stack>
+                <TextField
+                  label="TTS base URL"
+                  value={form.liveRecording?.aiCommentary?.ttsBaseUrl ?? ""}
+                  onChange={onChange("liveRecording.aiCommentary.ttsBaseUrl")}
+                  placeholder="http://localhost:5000/api/ai-tts/v1"
+                  helperText="Nếu dùng adapter free local, trỏ vào `/api/ai-tts/v1`. Hệ thống sẽ tự suy ra `/audio/speech` và `/models`."
+                  fullWidth
+                />
+              </Stack>
               <TextField
                 label="TTS speech URL"
                 value={buildAiGatewaySpeechUrl(form.liveRecording?.aiCommentary?.ttsBaseUrl)}
@@ -732,7 +769,7 @@ export default function SystemSettingsPage() {
                 label="TTS model"
                 value={form.liveRecording?.aiCommentary?.ttsModel ?? ""}
                 onChange={onChange("liveRecording.aiCommentary.ttsModel")}
-                helperText={`Effective: ${commentaryTtsGateway?.effectiveModel || "-"}`}
+                helperText={`Effective: ${commentaryTtsGateway?.effectiveModel || "-"}${commentaryTtsModels.includes("edge-tts-free") ? " • Có sẵn Edge TTS miễn phí" : ""}`}
                 fullWidth
               >
                 <MenuItem value="">Tự động (model đầu tiên từ `/models`)</MenuItem>
