@@ -49,7 +49,7 @@ import {
 
 dayjs.extend(relativeTime);
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 0;
 
 const STATUS_META = {
   pending_export_window: { color: "secondary", label: "Chờ khung giờ đêm" },

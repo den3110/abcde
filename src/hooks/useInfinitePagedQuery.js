@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+const EMPTY_SUMMARY = Object.freeze({});
+const EMPTY_META = Object.freeze({});
+
 function resolveRowKey(row, index, getRowId) {
   const key = getRowId ? getRowId(row) : row?.id;
   if (key != null && key !== "") return String(key);
@@ -26,6 +29,13 @@ function mergeRows(previousRows, nextRows, getRowId) {
   return merged;
 }
 
+function ensureObject(value, fallback) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  return fallback;
+}
+
 export default function useInfinitePagedQuery({
   trigger,
   baseArgs = {},
@@ -36,8 +46,8 @@ export default function useInfinitePagedQuery({
   skipPolling = false,
 }) {
   const [rows, setRows] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [meta, setMeta] = useState(null);
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
+  const [meta, setMeta] = useState(EMPTY_META);
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(0);
   const [pages, setPages] = useState(1);
@@ -46,6 +56,7 @@ export default function useInfinitePagedQuery({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const requestSeqRef = useRef(0);
+  const fullSnapshotMode = pageSize <= 0;
 
   const argsKey = useMemo(() => JSON.stringify(baseArgs || {}), [baseArgs]);
 
@@ -55,8 +66,8 @@ export default function useInfinitePagedQuery({
       setRows((previousRows) =>
         mode === "append" ? mergeRows(previousRows, nextRows, getRowId) : nextRows
       );
-      setSummary(response?.summary || null);
-      setMeta(response?.meta || null);
+      setSummary(ensureObject(response?.summary, EMPTY_SUMMARY));
+      setMeta(ensureObject(response?.meta, EMPTY_META));
       setCount(Number(response?.count || 0));
       setPage(Number(response?.page || 1));
       setPages(Math.max(1, Number(response?.pages || 1)));
@@ -110,17 +121,25 @@ export default function useInfinitePagedQuery({
   );
 
   const refresh = useCallback(async () => {
-    const limit = Math.max(pageSize, rows.length || pageSize);
+    const limit = fullSnapshotMode ? 0 : Math.max(pageSize, rows.length || pageSize);
     return loadPage({
       nextPage: 1,
       limit,
       mode: "replace",
       refresh: true,
     });
-  }, [loadPage, pageSize, rows.length]);
+  }, [fullSnapshotMode, loadPage, pageSize, rows.length]);
 
   const loadMore = useCallback(async () => {
-    if (!enabled || isInitialLoading || isLoadingMore || isRefreshing) return null;
+    if (
+      !enabled ||
+      fullSnapshotMode ||
+      isInitialLoading ||
+      isLoadingMore ||
+      isRefreshing
+    ) {
+      return null;
+    }
     const hasMore = rows.length < count && page < pages;
     if (!hasMore) return null;
     return loadPage({
@@ -131,6 +150,7 @@ export default function useInfinitePagedQuery({
   }, [
     count,
     enabled,
+    fullSnapshotMode,
     isInitialLoading,
     isLoadingMore,
     isRefreshing,
@@ -144,8 +164,8 @@ export default function useInfinitePagedQuery({
   useEffect(() => {
     if (!enabled) {
       setRows([]);
-      setSummary(null);
-      setMeta(null);
+      setSummary(EMPTY_SUMMARY);
+      setMeta(EMPTY_META);
       setCount(0);
       setPage(0);
       setPages(1);
@@ -154,8 +174,8 @@ export default function useInfinitePagedQuery({
     }
 
     setRows([]);
-    setSummary(null);
-    setMeta(null);
+    setSummary(EMPTY_SUMMARY);
+    setMeta(EMPTY_META);
     setCount(0);
     setPage(0);
     setPages(1);
@@ -186,7 +206,7 @@ export default function useInfinitePagedQuery({
     count,
     page,
     pages,
-    hasMore: rows.length < count && page < pages,
+    hasMore: !fullSnapshotMode && rows.length < count && page < pages,
     error,
     isInitialLoading,
     isLoadingMore,

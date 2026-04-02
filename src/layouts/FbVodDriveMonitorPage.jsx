@@ -48,7 +48,7 @@ import {
 
 dayjs.extend(relativeTime);
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 0;
 const STATUS_OPTIONS = [
   { value: "all", label: "Tất cả" },
   { value: "missing_fallback", label: "Chưa tạo fallback" },

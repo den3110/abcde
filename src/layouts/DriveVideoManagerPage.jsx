@@ -70,7 +70,7 @@ import {
 
 dayjs.extend(relativeTime);
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 0;
 
 const STATUS_OPTIONS = [
   { value: "ready", label: "Ready trên Drive" },

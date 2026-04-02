@@ -46,7 +46,7 @@ import {
 
 dayjs.extend(relativeTime);
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 0;
 
 const FILTER_OPTIONS = [
   { value: "all", label: "Tất cả" },

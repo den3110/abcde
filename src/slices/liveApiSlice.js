@@ -34,8 +34,12 @@ export const liveApiSlice = apiSlice.injectEndpoints({
         if (range) params.set("range", String(range));
         if (status) params.set("status", String(status));
         if (q) params.set("q", q);
-        if (page) params.set("page", String(page));
-        if (limit) params.set("limit", String(limit));
+        if (page !== undefined && page !== null && page !== "") {
+          params.set("page", String(page));
+        }
+        if (limit !== undefined && limit !== null && limit !== "") {
+          params.set("limit", String(limit));
+        }
 
         return {
           url: `/admin/fb-vod-monitor?${params.toString()}`,
@@ -71,8 +75,12 @@ export const liveApiSlice = apiSlice.injectEndpoints({
         if (view) params.set("view", String(view));
         if (q) params.set("q", q);
         if (tournament) params.set("tournament", tournament);
-        if (page) params.set("page", String(page));
-        if (limit) params.set("limit", String(limit));
+        if (page !== undefined && page !== null && page !== "") {
+          params.set("page", String(page));
+        }
+        if (limit !== undefined && limit !== null && limit !== "") {
+          params.set("limit", String(limit));
+        }
         if (forceRefresh) params.set("forceRefresh", "true");
         return {
           url: `/live/recordings/v2/admin/monitor?${params.toString()}`,

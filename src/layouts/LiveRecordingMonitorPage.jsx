@@ -44,7 +44,7 @@ import {
 
 dayjs.extend(relativeTime);
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 0;
 
 const STATUS_META = {
   recording: { color: "error", label: "Đang ghi" },
