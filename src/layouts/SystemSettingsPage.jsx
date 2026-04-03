@@ -93,6 +93,9 @@ const getInitialRecordingDriveMode = (value) =>
 
 const hydrateFormState = (source) => ({
   ...structuredClone(source || {}),
+  referee: {
+    matchControlLockEnabled: source?.referee?.matchControlLockEnabled ?? true,
+  },
   recordingDrive: {
     enabled: source?.recordingDrive?.enabled ?? true,
     mode: getInitialRecordingDriveMode(source?.recordingDrive?.mode),
@@ -350,6 +353,9 @@ export default function SystemSettingsPage() {
     ota: {
       forceUpdateEnabled: !!source.ota?.forceUpdateEnabled,
     },
+    referee: {
+      matchControlLockEnabled: source.referee?.matchControlLockEnabled ?? true,
+    },
     recordingDrive: {
       enabled: !!source.recordingDrive?.enabled,
       mode: getInitialRecordingDriveMode(source.recordingDrive?.mode),
@@ -447,7 +453,20 @@ export default function SystemSettingsPage() {
 
   const onToggle = (path) => (event) => {
     const checked = event.target.checked;
-    if (path === "maintenance.enabled") {
+    const instantToggleMeta = {
+      "maintenance.enabled": {
+        successOn: "Đã bật chế độ bảo trì",
+        successOff: "Đã tắt chế độ bảo trì",
+        error: "Không thể cập nhật trạng thái bảo trì",
+      },
+      "referee.matchControlLockEnabled": {
+        successOn: "Đã bật khóa trọng tài bắt trận",
+        successOff: "Đã tắt khóa trọng tài bắt trận",
+        error: "Không thể cập nhật khóa trọng tài bắt trận",
+      },
+    };
+
+    if (instantToggleMeta[path]) {
       const previousForm = structuredClone(form || {});
       const nextForm = updateFormPathValue(previousForm, path, checked);
 
@@ -470,6 +489,36 @@ export default function SystemSettingsPage() {
     }
 
     setForm((prev) => updateFormPathValue(prev, path, checked));
+  };
+
+  const handleRefereeMatchControlLockToggle = (event) => {
+    const checked = event.target.checked;
+    const previousForm = structuredClone(form || {});
+    const nextForm = updateFormPathValue(
+      previousForm,
+      "referee.matchControlLockEnabled",
+      checked
+    );
+
+    setForm(nextForm);
+
+    persistSettings(nextForm, { showSuccessToast: false })
+      .then(() => {
+        toast.success(
+          checked
+            ? "Đã bật khóa trọng tài bắt trận"
+            : "Đã tắt khóa trọng tài bắt trận"
+        );
+      })
+      .catch((error) => {
+        setForm(previousForm);
+        console.error(error);
+        toast.error(
+          error?.data?.message ||
+            error?.message ||
+            "Không thể cập nhật khóa trọng tài bắt trận"
+        );
+      });
   };
 
   const onChange = (path) => (event) => {
@@ -860,6 +909,24 @@ export default function SystemSettingsPage() {
               <Switch
                 checked={!!form.registration?.requireOptionalProfileFields}
                 onChange={onToggle("registration.requireOptionalProfileFields")}
+              />
+            </Stack>
+          </Section>
+
+          <Section
+            title="Trọng tài bắt trận"
+            desc="Khóa quyền điều khiển trận giữa các trọng tài. Tắt đi thì app quay về chế độ realtime cũ, không còn ownership lock."
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Bật khóa trọng tài bắt trận</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Khi bật, mỗi trận chỉ có một thiết bị trọng tài giữ quyền điều khiển tại một thời điểm.
+                </Typography>
+              </Box>
+              <Switch
+                checked={!!form.referee?.matchControlLockEnabled}
+                onChange={handleRefereeMatchControlLockToggle}
               />
             </Stack>
           </Section>
