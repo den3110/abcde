@@ -76,6 +76,21 @@ function stationStatusMeta(status) {
   return { label: "Rảnh", color: "success" };
 }
 
+function teamName(match, side) {
+  const sideKey = String(side || "A").toUpperCase() === "B" ? "B" : "A";
+  return (
+    match?.[`team${sideKey}Name`] ||
+    match?.teams?.[sideKey]?.name ||
+    match?.[`pair${sideKey}`]?.displayName ||
+    match?.[`pair${sideKey}`]?.name ||
+    `Đội ${sideKey}`
+  );
+}
+
+function teamLine(match) {
+  return `${teamName(match, "A")} vs ${teamName(match, "B")}`;
+}
+
 function buildStationSearchText(tournament, cluster, station) {
   return normalizeText(
     [
@@ -87,8 +102,8 @@ function buildStationSearchText(tournament, cluster, station) {
       station?.code,
       station?.currentMatch?.displayCode,
       station?.currentMatch?.code,
-      station?.currentMatch?.pairA?.name,
-      station?.currentMatch?.pairB?.name,
+      teamName(station?.currentMatch, "A"),
+      teamName(station?.currentMatch, "B"),
       station?.currentTournament?.name,
       station?.presence?.screenState,
     ].join(" ")
@@ -117,7 +132,23 @@ function CourtStationCard({ station, onForceFree, onReleasePresence, busy }) {
           <Typography variant="h6" fontWeight={700}>
             {station?.name || "Sân chưa rõ"}
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ display: "none" }}>
+            {station?.nextQueuedMatch
+              ? `${station.nextQueuedMatch?.displayCode || station.nextQueuedMatch?.code || "Trận kế"} · ${teamLine(station.nextQueuedMatch)}`
+              : "Không có trận chờ"}
+          </Typography>
           <Typography variant="body2" color="text.secondary">
+            {station?.code || "—"} · {clusterName}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ display: "none" }}>
+            {station?.code || "—"} · {clusterName}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ display: "none" }}>
+            {station?.nextQueuedMatch
+              ? `${station.nextQueuedMatch?.displayCode || station.nextQueuedMatch?.code || "Tráº­n káº¿"} Â· ${teamLine(station.nextQueuedMatch)}`
+              : "KhÃ´ng cÃ³ tráº­n chá»"}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ display: "none" }}>
             {station?.code || "—"} · {clusterName}
           </Typography>
         </Box>
@@ -142,7 +173,8 @@ function CourtStationCard({ station, onForceFree, onReleasePresence, busy }) {
               <Typography variant="body2" fontWeight={700}>
                 {currentMatch?.displayCode || currentMatch?.code || "Trận hiện tại"}
               </Typography>
-              <Typography variant="body2">
+              <Typography variant="body2">{teamLine(currentMatch)}</Typography>
+              <Typography variant="body2" sx={{ display: "none" }}>
                 {currentMatch?.pairA?.name || "Đội A"} vs {currentMatch?.pairB?.name || "Đội B"}
               </Typography>
             </>
@@ -162,7 +194,7 @@ function CourtStationCard({ station, onForceFree, onReleasePresence, busy }) {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {station?.nextQueuedMatch
-              ? `${station.nextQueuedMatch?.displayCode || station.nextQueuedMatch?.code || "Trận kế"} · ${station.nextQueuedMatch?.pairA?.name || "Đội A"} vs ${station.nextQueuedMatch?.pairB?.name || "Đội B"}`
+              ? `${station.nextQueuedMatch?.displayCode || station.nextQueuedMatch?.code || "Trận kế"} · ${teamLine(station.nextQueuedMatch)}`
               : "Không có trận chờ"}
           </Typography>
         </Box>
@@ -651,9 +683,18 @@ function CourtFreeManagerPage() {
           </Typography>
           {actionDialog?.station?.currentMatch ? (
             <Alert severity="warning" sx={{ mt: 2 }}>
+              <span>
+                {`Trận hiện tại: ${
+                  actionDialog.station.currentMatch.displayCode ||
+                  actionDialog.station.currentMatch.code ||
+                  ""
+                } · ${teamLine(actionDialog.station.currentMatch)}`}
+              </span>
+              <span style={{ display: "none" }}>
               Trận hiện tại: {actionDialog.station.currentMatch.displayCode || actionDialog.station.currentMatch.code} ·{" "}
               {actionDialog.station.currentMatch.pairA?.name || "Đội A"} vs{" "}
               {actionDialog.station.currentMatch.pairB?.name || "Đội B"}
+              </span>
             </Alert>
           ) : null}
         </DialogContent>

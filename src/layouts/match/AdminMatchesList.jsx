@@ -108,22 +108,105 @@ const sideLabel = (pair, singles) => {
 
 const isGroupType = (t) => {
   const s = String(t || "").toLowerCase();
-  return s === "group" || s === "roundrobin";
+  return s === "group" || s === "roundrobin" || s === "round_robin" || s === "gsl";
 };
 
 // Tính mã hiển thị V…-T… (ưu tiên global*)
-const matchCodeV = (m) => {
-  const isGroup = isGroupType(m?.bracket?.type);
-  const v = Number.isFinite(m?.globalRound)
-    ? Number(m.globalRound)
-    : isGroup
-    ? 1
-    : Number.isFinite(m?.round)
-    ? Number(m.round)
-    : 1;
-  const tIdx = Number.isFinite(m?.order) ? m.order + 1 : null;
-  return m?.globalCode || `V${v}${tIdx ? `-T${tIdx}` : ""}`;
+const NORMALIZED_MATCH_CODE_RE = /^V\d+(?:-B\d+)?-T\d+$/i;
+
+const normalizeDisplayCode = (value) => {
+  const text = String(value || "").trim().toUpperCase();
+  return NORMALIZED_MATCH_CODE_RE.test(text) ? text : "";
 };
+
+const letterToIndex = (value) => {
+  const text = String(value || "").trim().toUpperCase();
+  if (!/^[A-Z]$/.test(text)) return null;
+  return text.charCodeAt(0) - 64;
+};
+
+const resolvePoolIndex = (match) => {
+  const candidates = [
+    match?.pool?.index,
+    match?.pool?.idx,
+    match?.pool?.no,
+    match?.pool?.order,
+    match?.pool?.code,
+    match?.pool?.name,
+    match?.poolName,
+    match?.poolKey,
+    match?.group,
+    match?.groupCode,
+    match?.groupNo,
+  ];
+
+  for (const candidate of candidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) return Math.trunc(numeric);
+
+    const text = String(candidate || "").trim();
+    if (!text) continue;
+
+    const byBCode = /^B(\d+)$/i.exec(text);
+    if (byBCode) return Number(byBCode[1]);
+
+    const byLetter = letterToIndex(text);
+    if (byLetter) return byLetter;
+  }
+
+  if (Number.isFinite(Number(match?.groupIndex))) {
+    return Number(match.groupIndex) + 1;
+  }
+
+  return null;
+};
+
+const isGroupLikeMatch = (match) => {
+  const type = String(match?.bracket?.type || match?.format || match?.phase || "").toLowerCase();
+  return Boolean(
+    match?.pool ||
+      match?.poolName ||
+      match?.poolKey ||
+      match?.group ||
+      match?.groupCode ||
+      match?.groupNo ||
+      Number.isFinite(Number(match?.groupIndex)) ||
+      isGroupType(type) ||
+      type.includes("group") ||
+      type.includes("roundrobin") ||
+      type.includes("round-robin") ||
+      type.includes("rr")
+  );
+};
+
+const resolveDisplayCode = (match, groupsBaseMaps = null) => {
+  if (!match) return "";
+
+  const explicit =
+    normalizeDisplayCode(match?.displayCode) ||
+    normalizeDisplayCode(match?.codeResolved) ||
+    normalizeDisplayCode(match?.code) ||
+    normalizeDisplayCode(match?.globalCode);
+  if (explicit) return explicit;
+
+  const orderIndex = Number(match?.order);
+  const tIdx = Number.isFinite(orderIndex) ? Math.trunc(orderIndex) + 1 : null;
+  if (!tIdx) return "";
+
+  if (isGroupLikeMatch(match)) {
+    const poolIndex = resolvePoolIndex(match);
+    return poolIndex ? `V1-B${poolIndex}-T${tIdx}` : `V1-T${tIdx}`;
+  }
+
+  const v =
+    (Number.isFinite(match?.globalRound) ? Number(match.globalRound) : null) ??
+    (groupsBaseMaps ? globalRoundFromDetail(match, groupsBaseMaps) : null) ??
+    (Number.isFinite(match?.round) ? Number(match.round) : 1);
+
+  return `V${v}-T${tIdx}`;
+};
+
+const matchCodeV = (m) => resolveDisplayCode(m);
 
 /* ====== Base V theo groups (fallback khi dialog không có global*) ====== */
 const roundsCountFromGroupBracket = (b) => {
@@ -185,18 +268,17 @@ const globalRoundFromDetail = (detail, groupsBaseMaps) => {
 
 const codeFromDetail = (detail, groupsBaseMaps, hint) => {
   if (!detail) return "";
-  if (detail?.globalCode) return detail.globalCode;
+  const explicit =
+    normalizeDisplayCode(detail?.displayCode) ||
+    normalizeDisplayCode(detail?.codeResolved) ||
+    normalizeDisplayCode(detail?.code) ||
+    normalizeDisplayCode(detail?.globalCode);
+  if (explicit) return explicit;
 
   // hint từ list (khi click card)
   if (hint?.code) return hint.code;
 
-  const v =
-    (Number.isFinite(detail?.globalRound) ? Number(detail.globalRound) : null) ??
-    globalRoundFromDetail(detail, groupsBaseMaps) ??
-    1;
-
-  const ord = Number.isFinite(detail?.order) ? Number(detail.order) + 1 : null;
-  return `V${v}${ord ? `-T${ord}` : ""}`;
+  return resolveDisplayCode(detail, groupsBaseMaps);
 };
 
 /* -------- BracketSection: gọi API theo trang ở BE -------- */

@@ -14,6 +14,7 @@ import {
   useListMatchesQuery,
 } from "slices/adminCourtApiSlice";
 import { skipToken } from "@reduxjs/toolkit/query";
+import { getTournamentNameDisplayMode, getTournamentPairName } from "utils/tournamentName";
 
 // MUI
 import {
@@ -241,8 +242,21 @@ const personName = (p) => {
   return "";
 };
 
-const pairName = (pair) => {
+const pairName = (pair, source) => {
   if (!pair) return "";
+  const eventType = String(
+    source?.tournament?.eventType || source?.eventType || "double"
+  )
+    .toLowerCase()
+    .includes("single")
+    ? "single"
+    : "double";
+  const displayMode = getTournamentNameDisplayMode(source);
+  const resolved = getTournamentPairName(pair, eventType, displayMode, {
+    separator: " & ",
+    fallback: "",
+  });
+  if (resolved) return resolved;
   // Với đôi, vẫn ưu tiên nickname người chơi hơn là displayName/name ghép sẵn
   const names = [];
   if (pair.player1) names.push(personName(pair.player1));
@@ -509,8 +523,8 @@ export default function AdminBracketCourtManagerPage() {
     if (!m) return "";
     const code = buildMatchCode(m);
     // Ưu tiên tên đôi từ người chơi (nickname) -> rồi mới tới pairAName/pairBName
-    const A = (m.pairA ? pairName(m.pairA) : "") || m.pairAName || "Đội A";
-    const B = (m.pairB ? pairName(m.pairB) : "") || m.pairBName || "Đội B";
+    const A = (m.pairA ? pairName(m.pairA, m) : "") || m.pairAName || "Đội A";
+    const B = (m.pairB ? pairName(m.pairB, m) : "") || m.pairBName || "Đội B";
     const st = viMatchStatus(m.status);
     return `${code} · ${A} vs ${B} · ${st}`;
   };
@@ -878,8 +892,8 @@ export default function AdminBracketCourtManagerPage() {
   const getTeamsForCourt = (c) => {
     const m = getMatchForCourt(c);
     if (!m) return { A: "", B: "" };
-    const A = (m.pairA ? pairName(m.pairA) : "") || m.pairAName || "";
-    const B = (m.pairB ? pairName(m.pairB) : "") || m.pairBName || "";
+    const A = (m.pairA ? pairName(m.pairA, m) : "") || m.pairAName || "";
+    const B = (m.pairB ? pairName(m.pairB, m) : "") || m.pairBName || "";
     return { A, B };
   };
 
@@ -1001,14 +1015,20 @@ export default function AdminBracketCourtManagerPage() {
         flex: 1,
         minWidth: 140,
         // Ưu tiên lấy từ pair (nickname), rồi mới fallback pairAName
-        valueGetter: (p) => (p.row?.pairA ? pairName(p.row.pairA) : "") || p.row?.pairAName || "",
+        valueGetter: (p) =>
+          (p.row?.pairA ? pairName(p.row.pairA, p.row) : "") ||
+          p.row?.pairAName ||
+          "",
       },
       {
         field: "pairBName",
         headerName: "Đội B",
         flex: 1,
         minWidth: 140,
-        valueGetter: (p) => (p.row?.pairB ? pairName(p.row.pairB) : "") || p.row?.pairBName || "",
+        valueGetter: (p) =>
+          (p.row?.pairB ? pairName(p.row.pairB, p.row) : "") ||
+          p.row?.pairBName ||
+          "",
       },
       {
         field: "status",
@@ -1044,14 +1064,20 @@ export default function AdminBracketCourtManagerPage() {
         headerName: "Đội A",
         flex: 1,
         minWidth: 160,
-        valueGetter: (p) => (p.row?.pairA ? pairName(p.row.pairA) : "") || p.row?.pairAName || "",
+        valueGetter: (p) =>
+          (p.row?.pairA ? pairName(p.row.pairA, p.row) : "") ||
+          p.row?.pairAName ||
+          "",
       },
       {
         field: "pairBName",
         headerName: "Đội B",
         flex: 1,
         minWidth: 160,
-        valueGetter: (p) => (p.row?.pairB ? pairName(p.row.pairB) : "") || p.row?.pairBName || "",
+        valueGetter: (p) =>
+          (p.row?.pairB ? pairName(p.row.pairB, p.row) : "") ||
+          p.row?.pairBName ||
+          "",
       },
       { field: "court", headerName: "Sân", width: 140, valueGetter: (p) => courtLabelOf(p.row) },
       { field: "round", headerName: "Vòng", width: 100, valueGetter: (p) => roundTag(p.row) },

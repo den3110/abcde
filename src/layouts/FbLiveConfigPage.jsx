@@ -41,11 +41,11 @@ function formatMs(ms) {
   if (n < 1000) return `${n} ms`;
 
   const sec = n / 1000;
-  if (sec < 60) return `${sec} giay`;
+  if (sec < 60) return `${sec} giây`;
 
   const min = sec / 60;
-  if (Number.isInteger(min)) return `${min} phut`;
-  return `${min.toFixed(1)} phut`;
+  if (Number.isInteger(min)) return `${min} phút`;
+  return `${min.toFixed(1)} phút`;
 }
 
 export default function FbLiveConfigPage() {
@@ -71,7 +71,7 @@ export default function FbLiveConfigPage() {
       safeFreeDelayMs: String(data.safeFreeDelayMs ?? DEFAULT_PAGE_POOL_FORM.safeFreeDelayMs),
       fastFreeDelayMs: String(data.fastFreeDelayMs ?? DEFAULT_PAGE_POOL_FORM.fastFreeDelayMs),
       staleIdleFreeDelayMs: String(
-        data.staleIdleFreeDelayMs ?? DEFAULT_PAGE_POOL_FORM.staleIdleFreeDelayMs
+        data.staleIdleFreeDelayMs ?? DEFAULT_PAGE_POOL_FORM.staleIdleFreeDelayMs,
       ),
       staleBusyMs: String(data.staleBusyMs ?? DEFAULT_PAGE_POOL_FORM.staleBusyMs),
       leaseHeartbeatMs: String(data.leaseHeartbeatMs ?? DEFAULT_PAGE_POOL_FORM.leaseHeartbeatMs),
@@ -100,18 +100,18 @@ export default function FbLiveConfigPage() {
         leaseHeartbeatMs: Number(pagePool.leaseHeartbeatMs || 0),
         leaseTimeoutMs: Number(pagePool.leaseTimeoutMs || 0),
       }).unwrap();
-      setToast({ open: true, msg: "?? l?u c?u h?nh.", type: "success" });
+      setToast({ open: true, msg: "Đã lưu cấu hình.", type: "success" });
     } catch (e) {
       setToast({
         open: true,
-        msg: e?.data?.message || "L?i l?u c?u h?nh",
+        msg: e?.data?.message || "Lỗi lưu cấu hình",
         type: "error",
       });
     }
   };
 
-  if (isLoading) return <Box p={3}>?ang t?i...</Box>;
-  if (isError) return <Box p={3}>L?i t?i c?u h?nh</Box>;
+  if (isLoading) return <Box p={3}>Đang tải...</Box>;
+  if (isError) return <Box p={3}>Lỗi tải cấu hình</Box>;
 
   return (
     <DashboardLayout>
@@ -119,8 +119,8 @@ export default function FbLiveConfigPage() {
       <Box p={3} maxWidth={760} mx="auto">
         <Card>
           <CardHeader
-            title="Cau hinh Facebook Live"
-            subheader="Qu?n l? status, visibility l?c t?o live v? timing quay l?i pool c?a Facebook Page."
+            title="Cấu hình Facebook Live"
+            subheader="Quản lý trạng thái, phạm vi khi tạo live và thời gian quay lại pool của Facebook Page."
           />
           <CardContent>
             <Stack spacing={3}>
@@ -132,16 +132,16 @@ export default function FbLiveConfigPage() {
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
                 >
-                  <MenuItem value="LIVE_NOW">LIVE_NOW (ph?t ngay)</MenuItem>
-                  <MenuItem value="SCHEDULED_UNPUBLISHED">SCHEDULED_UNPUBLISHED (hen gio)</MenuItem>
+                  <MenuItem value="LIVE_NOW">LIVE_NOW (phát ngay)</MenuItem>
+                  <MenuItem value="SCHEDULED_UNPUBLISHED">SCHEDULED_UNPUBLISHED (hẹn giờ)</MenuItem>
                 </Select>
               </FormControl>
 
               <FormControl fullWidth>
-                <InputLabel id="privacy-label">Ph?m vi l?c t?o</InputLabel>
+                <InputLabel id="privacy-label">Phạm vi lúc tạo</InputLabel>
                 <Select
                   labelId="privacy-label"
-                  label="Ph?m vi l?c t?o"
+                  label="Phạm vi lúc tạo"
                   value={privacyValueOnCreate}
                   onChange={(e) => setPrivacy(e.target.value)}
                 >
@@ -156,14 +156,14 @@ export default function FbLiveConfigPage() {
                 control={
                   <Switch checked={embeddable} onChange={(e) => setEmbeddable(e.target.checked)} />
                 }
-                label="Cho ph?p nh?ng (embeddable)"
+                label="Cho phép nhúng (embeddable)"
               />
 
               <FormControl fullWidth>
-                <InputLabel id="after-label">Ph?m vi sau khi k?t th?c</InputLabel>
+                <InputLabel id="after-label">Phạm vi sau khi kết thúc</InputLabel>
                 <Select
                   labelId="after-label"
-                  label="Ph?m vi sau khi k?t th?c"
+                  label="Phạm vi sau khi kết thúc"
                   value={ensurePrivacyAfterEnd}
                   onChange={(e) => setEnsureAfterEnd(e.target.value)}
                 >
@@ -181,8 +181,8 @@ export default function FbLiveConfigPage() {
                   Page Pool Timing
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Cac gia tri nay dieu khien viec Facebook Page quay lai pool sau khi end live. Don
-                  vi la milliseconds.
+                  Các giá trị này điều khiển việc Facebook Page quay lại pool sau khi kết thúc
+                  live. Đơn vị là milliseconds.
                 </Typography>
               </Box>
 
@@ -191,8 +191,8 @@ export default function FbLiveConfigPage() {
                 label="Safe free delay (ms)"
                 value={pagePool.safeFreeDelayMs}
                 onChange={handlePoolChange("safeFreeDelayMs")}
-                helperText={`D?ng cho case end fail/skip. Hi?n t?i: ${formatMs(
-                  pagePool.safeFreeDelayMs
+                helperText={`Dùng cho trường hợp end fail/skip. Hiện tại: ${formatMs(
+                  pagePool.safeFreeDelayMs,
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
               />
@@ -202,8 +202,8 @@ export default function FbLiveConfigPage() {
                 label="Fast free delay (ms)"
                 value={pagePool.fastFreeDelayMs}
                 onChange={handlePoolChange("fastFreeDelayMs")}
-                helperText={`D?ng khi Facebook end live th?nh c?ng. Hi?n t?i: ${formatMs(
-                  pagePool.fastFreeDelayMs
+                helperText={`Dùng khi Facebook end live thành công. Hiện tại: ${formatMs(
+                  pagePool.fastFreeDelayMs,
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
               />
@@ -213,8 +213,8 @@ export default function FbLiveConfigPage() {
                 label="Stale idle free delay (ms)"
                 value={pagePool.staleIdleFreeDelayMs}
                 onChange={handlePoolChange("staleIdleFreeDelayMs")}
-                helperText={`Khi cron th?y page stale nh?ng Facebook ?? idle, nh? sau ${formatMs(
-                  pagePool.staleIdleFreeDelayMs
+                helperText={`Khi cron thấy page stale nhưng Facebook đã idle, nhả sau ${formatMs(
+                  pagePool.staleIdleFreeDelayMs,
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
               />
@@ -224,8 +224,8 @@ export default function FbLiveConfigPage() {
                 label="Stale busy threshold (ms)"
                 value={pagePool.staleBusyMs}
                 onChange={handlePoolChange("staleBusyMs")}
-                helperText={`Qua nguong nay backend moi bat dau probe stale page. Hien tai: ${formatMs(
-                  pagePool.staleBusyMs
+                helperText={`Qua ngưỡng này backend mới bắt đầu probe stale page. Hiện tại: ${formatMs(
+                  pagePool.staleBusyMs,
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
               />
@@ -235,8 +235,8 @@ export default function FbLiveConfigPage() {
                 label="Lease heartbeat interval (ms)"
                 value={pagePool.leaseHeartbeatMs}
                 onChange={handlePoolChange("leaseHeartbeatMs")}
-                helperText={`Native app se ping lease theo nhip nay. Hien tai: ${formatMs(
-                  pagePool.leaseHeartbeatMs
+                helperText={`Native app sẽ ping lease theo nhịp này. Hiện tại: ${formatMs(
+                  pagePool.leaseHeartbeatMs,
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
               />
@@ -246,15 +246,15 @@ export default function FbLiveConfigPage() {
                 label="Lease timeout (ms)"
                 value={pagePool.leaseTimeoutMs}
                 onChange={handlePoolChange("leaseTimeoutMs")}
-                helperText={`Qu? ng??ng n?y kh?ng c? heartbeat th?nh c?ng th? backend s? expire lease. Hi?n t?i: ${formatMs(
-                  pagePool.leaseTimeoutMs
+                helperText={`Quá ngưỡng này không có heartbeat thành công thì backend sẽ expire lease. Hiện tại: ${formatMs(
+                  pagePool.leaseTimeoutMs,
                 )}`}
                 inputProps={{ inputMode: "numeric", min: 0 }}
               />
 
               <Box>
                 <Button variant="contained" onClick={handleSave} disabled={saving || !canSave}>
-                  {saving ? "?ang l?u..." : "L?u c?u h?nh"}
+                  {saving ? "Đang lưu..." : "Lưu cấu hình"}
                 </Button>
               </Box>
             </Stack>
