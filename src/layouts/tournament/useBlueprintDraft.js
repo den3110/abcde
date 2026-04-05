@@ -81,6 +81,7 @@ export default function useBlueprintDraft({
               doubleElim: {
                 hasGrandFinalReset:
                   !!koPlan?.doubleElim?.hasGrandFinalReset,
+                startRoundKey: koPlan?.doubleElim?.startRoundKey || null,
               },
             }
           : {}),
