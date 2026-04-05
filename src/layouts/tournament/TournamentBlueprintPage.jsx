@@ -634,6 +634,267 @@ function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
   return { winnersBracket, losersBracket, grandFinal };
 }
 
+const DOUBLE_ELIM_GF_GAP = 56;
+const DOUBLE_ELIM_GF_RIGHT_PADDING = 360;
+const DOUBLE_ELIM_CONNECTOR_COLOR = "#707070";
+
+function getSeedNodeMetrics(root, seedId) {
+  if (!root || !seedId) return null;
+  const node = root.querySelector(`[data-seed-id="${seedId}"]`);
+  if (!node) return null;
+  const rootRect = root.getBoundingClientRect();
+  const rect = node.getBoundingClientRect();
+  return {
+    right: rect.right - rootRect.left,
+    centerY: rect.top - rootRect.top + rect.height / 2,
+  };
+}
+
+function buildConnectorPath(startX, startY, endX, endY, bendX) {
+  return `M ${startX} ${startY} H ${bendX} V ${endY} H ${endX}`;
+}
+
+function sameConnectorLayout(a, b) {
+  if (!a || !b) return false;
+  return (
+    Math.abs(a.left - b.left) < 1 &&
+    Math.abs(a.top - b.top) < 1 &&
+    Math.abs(a.width - b.width) < 1 &&
+    Math.abs(a.height - b.height) < 1 &&
+    a.winnersPath === b.winnersPath &&
+    a.losersPath === b.losersPath
+  );
+}
+
+function DoubleElimPreviewLayout({
+  preview,
+  baseRuleLabel,
+  grandFinalRuleLabel,
+  renderSeedComponent,
+}) {
+  const wrapperRef = useRef(null);
+  const grandFinalRef = useRef(null);
+  const [layout, setLayout] = useState(null);
+
+  const winnersFinalSeedId =
+    preview?.winnersBracket?.[preview.winnersBracket.length - 1]?.seeds?.[0]?.id || null;
+  const losersFinalSeedId =
+    preview?.losersBracket?.[preview.losersBracket.length - 1]?.seeds?.[0]?.id || null;
+  const grandFinalRounds = useMemo(
+    () => preview.grandFinal.map((round) => ({ ...round, title: "" })),
+    [preview.grandFinal]
+  );
+
+  useEffect(() => {
+    let frameId = 0;
+
+    const updateLayout = () => {
+      cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        const wrapperNode = wrapperRef.current;
+        const grandFinalNode = grandFinalRef.current;
+        if (!wrapperNode || !grandFinalNode || !winnersFinalSeedId || !losersFinalSeedId) return;
+
+        const winnersNode = getSeedNodeMetrics(wrapperNode, winnersFinalSeedId);
+        const losersNode = getSeedNodeMetrics(wrapperNode, losersFinalSeedId);
+        if (!winnersNode || !losersNode) return;
+
+        const wrapperRect = wrapperNode.getBoundingClientRect();
+        const grandFinalRect = grandFinalNode.getBoundingClientRect();
+        const left = Math.max(winnersNode.right, losersNode.right) + DOUBLE_ELIM_GF_GAP;
+        const top = Math.max(
+          0,
+          (winnersNode.centerY + losersNode.centerY) / 2 - grandFinalRect.height / 2
+        );
+        const bendX = left - DOUBLE_ELIM_GF_GAP / 2;
+        const upperTargetY = top + grandFinalRect.height * 0.35;
+        const lowerTargetY = top + grandFinalRect.height * 0.65;
+
+        const nextLayout = {
+          left,
+          top,
+          width: grandFinalRect.width,
+          height: grandFinalRect.height,
+          winnersPath: buildConnectorPath(
+            winnersNode.right,
+            winnersNode.centerY,
+            left,
+            upperTargetY,
+            bendX
+          ),
+          losersPath: buildConnectorPath(
+            losersNode.right,
+            losersNode.centerY,
+            left,
+            lowerTargetY,
+            bendX
+          ),
+          canvasWidth: Math.max(wrapperNode.scrollWidth, left + grandFinalRect.width + 24),
+          canvasHeight: Math.max(wrapperNode.scrollHeight, top + grandFinalRect.height + 24),
+          wrapperTop: wrapperRect.top,
+        };
+
+        setLayout((prev) => (sameConnectorLayout(prev, nextLayout) ? prev : nextLayout));
+      });
+    };
+
+    updateLayout();
+    window.addEventListener("resize", updateLayout);
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateLayout) : null;
+    if (resizeObserver) {
+      if (wrapperRef.current) resizeObserver.observe(wrapperRef.current);
+      if (grandFinalRef.current) resizeObserver.observe(grandFinalRef.current);
+    }
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", updateLayout);
+      if (resizeObserver) resizeObserver.disconnect();
+    };
+  }, [winnersFinalSeedId, losersFinalSeedId]);
+
+  return (
+    <Box sx={{ overflowX: "auto", pb: 1 }}>
+      <Box
+        ref={wrapperRef}
+        sx={{
+          position: "relative",
+          width: "max-content",
+          minWidth: "100%",
+          pr: `${DOUBLE_ELIM_GF_RIGHT_PADDING}px`,
+          pb: 1,
+        }}
+      >
+        <Stack spacing={3}>
+          <Box>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                Nhánh thắng
+              </Typography>
+              <Chip size="small" variant="outlined" label={baseRuleLabel} />
+            </Stack>
+            <Bracket
+              rounds={preview.winnersBracket}
+              renderSeedComponent={renderSeedComponent}
+              mobileBreakpoint={0}
+            />
+          </Box>
+
+          <Box>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                Nhánh thua
+              </Typography>
+              <Chip size="small" variant="outlined" label={baseRuleLabel} />
+            </Stack>
+            <Bracket
+              rounds={preview.losersBracket}
+              renderSeedComponent={renderSeedComponent}
+              mobileBreakpoint={0}
+            />
+          </Box>
+        </Stack>
+
+        {layout ? (
+          <Box
+            component="svg"
+            viewBox={`0 0 ${layout.canvasWidth} ${layout.canvasHeight}`}
+            sx={{
+              position: "absolute",
+              inset: 0,
+              width: layout.canvasWidth,
+              height: layout.canvasHeight,
+              pointerEvents: "none",
+              overflow: "visible",
+            }}
+          >
+            <path
+              d={layout.winnersPath}
+              fill="none"
+              stroke={DOUBLE_ELIM_CONNECTOR_COLOR}
+              strokeWidth="1.5"
+            />
+            <path
+              d={layout.losersPath}
+              fill="none"
+              stroke={DOUBLE_ELIM_CONNECTOR_COLOR}
+              strokeWidth="1.5"
+            />
+          </Box>
+        ) : null}
+
+        <Box
+          ref={grandFinalRef}
+          sx={{
+            position: "absolute",
+            left: layout?.left || 0,
+            top: layout?.top || 0,
+            minWidth: 320,
+            visibility: layout ? "visible" : "hidden",
+            zIndex: 1,
+          }}
+        >
+          <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ mb: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+              Chung kết tổng
+            </Typography>
+            <Chip size="small" variant="outlined" color="info" label={grandFinalRuleLabel} />
+          </Stack>
+          <Box sx={{ display: "flex", justifyContent: "center" }}>
+            <Bracket
+              rounds={grandFinalRounds}
+              renderSeedComponent={renderSeedComponent}
+              mobileBreakpoint={0}
+            />
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+DoubleElimPreviewLayout.propTypes = {
+  preview: PropTypes.shape({
+    winnersBracket: PropTypes.arrayOf(
+      PropTypes.shape({
+        seeds: PropTypes.arrayOf(
+          PropTypes.shape({
+            id: PropTypes.string,
+          })
+        ),
+      })
+    ).isRequired,
+    losersBracket: PropTypes.arrayOf(
+      PropTypes.shape({
+        seeds: PropTypes.arrayOf(
+          PropTypes.shape({
+            id: PropTypes.string,
+          })
+        ),
+      })
+    ).isRequired,
+    grandFinal: PropTypes.arrayOf(
+      PropTypes.shape({
+        seeds: PropTypes.arrayOf(
+          PropTypes.shape({
+            id: PropTypes.string,
+          })
+        ),
+      })
+    ).isRequired,
+  }).isRequired,
+  baseRuleLabel: PropTypes.string,
+  grandFinalRuleLabel: PropTypes.string,
+  renderSeedComponent: PropTypes.func.isRequired,
+};
+
+DoubleElimPreviewLayout.defaultProps = {
+  baseRuleLabel: "",
+  grandFinalRuleLabel: "",
+};
+
 /* ========================= PO (losers-cascade) builder (non-2^n) với baseRound ========================= */
 function buildPoRoundsFromPlan(planPO, stageIndex = 1, baseRound = 1) {
   const N = Math.max(0, Number(planPO?.drawSize || 0));
@@ -1669,7 +1930,7 @@ export default function TournamentBlueprintPage() {
       if (!pair) {
         return (
           <Seed>
-            <SeedItem>
+            <SeedItem data-seed-id={seedCode || undefined}>
               <div style={{ display: "grid", gap: 4 }}>
                 {seedCode ? (
                   <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.72)" }}>
@@ -1685,7 +1946,7 @@ export default function TournamentBlueprintPage() {
       }
       return (
         <Seed>
-          <SeedItem>
+          <SeedItem data-seed-id={seedCode || undefined}>
             <div style={{ display: "grid", gap: 4 }}>
               {seedCode ? (
                 <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.72)" }}>
@@ -1714,6 +1975,14 @@ export default function TournamentBlueprintPage() {
       const baseRuleLabel = ruleSummary(normalizeRulesForState(koRules, DEFAULT_RULES));
       const grandFinalRuleLabel = ruleSummary(
         normalizeRulesForState(koFinalOverride ? koFinalRules : koRules, DEFAULT_RULES)
+      );
+      return (
+        <DoubleElimPreviewLayout
+          preview={preview}
+          baseRuleLabel={baseRuleLabel}
+          grandFinalRuleLabel={grandFinalRuleLabel}
+          renderSeedComponent={renderSeedComponent}
+        />
       );
       const grandFinalRounds = preview.grandFinal.map((round) => ({ ...round, title: "" }));
       return (
