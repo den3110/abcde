@@ -104,7 +104,8 @@ const clampDoubleElimStartRoundKey = (roundKey, configuredDrawSize) => {
   }
   return getKoRoundKeyFromDrawSize(maxSize);
 };
-const getKoDrawSize = (plan = {}) => {
+const getKoDrawSize = (plan = {}) => getKoConfiguredDrawSize(plan);
+const getDoubleElimStartDrawSize = (plan = {}) => {
   const format = normalizeKoFormat(plan?.format);
   const configuredDrawSize = getKoConfiguredDrawSize(plan);
   if (format !== KO_FORMAT_DOUBLE) return configuredDrawSize;
@@ -112,10 +113,12 @@ const getKoDrawSize = (plan = {}) => {
     plan?.doubleElim?.startRoundKey,
     configuredDrawSize
   );
-  return Math.max(
-    getKoMinDrawSize(format),
-    Math.min(configuredDrawSize, getKoDrawSizeFromRoundKey(startRoundKey) || configuredDrawSize)
-  );
+  return Math.max(4, Math.min(configuredDrawSize, getKoDrawSizeFromRoundKey(startRoundKey) || configuredDrawSize));
+};
+const getDoubleElimStartRoundIndex = (plan = {}) => {
+  const configuredDrawSize = getKoConfiguredDrawSize(plan);
+  const startDrawSize = getDoubleElimStartDrawSize(plan);
+  return Math.max(1, Math.round(Math.log2(configuredDrawSize / startDrawSize)) + 1);
 };
 const buildKoPlanState = (plan = {}, fallback = {}) => {
   const format = normalizeKoFormat(plan.format ?? fallback.format);
@@ -488,20 +491,23 @@ const grandFinalMatchCode = (baseRound, finalLbRoundIndex, order = 1) =>
 
 const previewMatchCodePrefix = (matchCode) => String(matchCode || "").replace(/-T\d+$/, "");
 
-const getLosersRoundPreviewTitle = (baseRound, roundNo, winnersRounds) => {
-  const currentPrefix = previewMatchCodePrefix(loserRoundMatchCode(baseRound, roundNo, 1));
-
-  if (roundNo === winnersRounds * 2 - 2) {
-    return `${currentPrefix} • Chung kết nhánh thua`;
-  }
-
+const getLosersRoundPreviewTitle = (losersBaseRound, roundNo, finalRoundIndex) => {
+  const currentPrefix = previewMatchCodePrefix(loserRoundMatchCode(losersBaseRound, roundNo, 1));
+  if (roundNo === finalRoundIndex) return `${currentPrefix} • Chung kết nhánh thua`;
   return `${currentPrefix} • Nhánh thua ${roundNo}`;
 };
 
 function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
-  const drawSize = getKoDrawSize({ ...planKO, format: KO_FORMAT_DOUBLE });
+  const drawSize = getKoConfiguredDrawSize({ ...planKO, format: KO_FORMAT_DOUBLE });
   const winnersRounds = Math.round(Math.log2(drawSize));
   const firstPairs = drawSize / 2;
+  const startRoundKey = clampDoubleElimStartRoundKey(planKO?.doubleElim?.startRoundKey, drawSize);
+  const startDrawSize = Math.max(4, getKoDrawSizeFromRoundKey(startRoundKey) || drawSize);
+  const startWinnersRoundIndex = Math.max(
+    1,
+    Math.round(Math.log2(drawSize / startDrawSize)) + 1
+  );
+  const losersBaseRound = baseRound + startWinnersRoundIndex - 1;
 
   const winnersBracket = [];
   const r1 = Array.from({ length: firstPairs }, (_, i) => {
@@ -538,71 +544,110 @@ function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
     prevPairs = pairs;
   }
 
-  const losersBracket = [
-    {
-      title: "Round 1 - nhánh thua",
-      seeds: Array.from({ length: Math.max(1, firstPairs / 2) }, (_, idx) => ({
-        id: loserRoundMatchCode(baseRound, 1, idx + 1),
-        teams: [
-          { name: `L-${winnerRoundMatchCode(baseRound, 1, idx * 2 + 1)}` },
-          { name: `L-${winnerRoundMatchCode(baseRound, 1, idx * 2 + 2)}` },
-        ],
-      })),
-    },
-  ];
+  const losersBracket = [];
+  const openingPairs = Math.max(1, startDrawSize / 4);
+  let currentLosersRoundIndex = 1;
 
-  for (let winnersRound = 2; winnersRound < winnersRounds; winnersRound += 1) {
-    const entryRoundIndex = winnersRound * 2 - 2;
-    const consolidateRoundIndex = winnersRound * 2 - 1;
-    const entryCount = Math.max(1, drawSize / 2 ** winnersRound);
+  losersBracket.push({
+    title: "",
+    seeds: Array.from({ length: openingPairs }, (_, idx) => ({
+      id: loserRoundMatchCode(losersBaseRound, currentLosersRoundIndex, idx + 1),
+      teams: [
+        {
+          name: `L-${winnerRoundMatchCode(
+            baseRound,
+            startWinnersRoundIndex,
+            idx * 2 + 1
+          )}`,
+        },
+        {
+          name: `L-${winnerRoundMatchCode(
+            baseRound,
+            startWinnersRoundIndex,
+            idx * 2 + 2
+          )}`,
+        },
+      ],
+    })),
+  });
+
+  for (
+    let winnersRound = startWinnersRoundIndex + 1;
+    winnersRound < winnersRounds;
+    winnersRound += 1
+  ) {
+    const entryRoundIndex = currentLosersRoundIndex + 1;
+    const consolidateRoundIndex = currentLosersRoundIndex + 2;
+    const winnersRoundMatchCount = Math.max(1, drawSize / 2 ** winnersRound);
 
     losersBracket.push({
-      title: `Round ${entryRoundIndex} - nhánh thua`,
-      seeds: Array.from({ length: entryCount }, (_, idx) => ({
-        id: loserRoundMatchCode(baseRound, entryRoundIndex, idx + 1),
+      title: "",
+      seeds: Array.from({ length: winnersRoundMatchCount }, (_, idx) => ({
+        id: loserRoundMatchCode(losersBaseRound, entryRoundIndex, idx + 1),
         teams: [
-          { name: `W-${loserRoundMatchCode(baseRound, entryRoundIndex - 1, idx + 1)}` },
+          {
+            name: `W-${loserRoundMatchCode(
+              losersBaseRound,
+              entryRoundIndex - 1,
+              idx + 1
+            )}`,
+          },
           { name: `L-${winnerRoundMatchCode(baseRound, winnersRound, idx + 1)}` },
         ],
       })),
     });
 
     losersBracket.push({
-      title: `Round ${consolidateRoundIndex} - nhánh thua`,
-      seeds: Array.from({ length: Math.ceil(entryCount / 2) }, (_, idx) => ({
-        id: loserRoundMatchCode(baseRound, consolidateRoundIndex, idx + 1),
+      title: "",
+      seeds: Array.from({ length: Math.ceil(winnersRoundMatchCount / 2) }, (_, idx) => ({
+        id: loserRoundMatchCode(losersBaseRound, consolidateRoundIndex, idx + 1),
         teams: [
-          { name: `W-${loserRoundMatchCode(baseRound, entryRoundIndex, idx * 2 + 1)}` },
-          { name: `W-${loserRoundMatchCode(baseRound, entryRoundIndex, idx * 2 + 2)}` },
+          {
+            name: `W-${loserRoundMatchCode(
+              losersBaseRound,
+              entryRoundIndex,
+              idx * 2 + 1
+            )}`,
+          },
+          {
+            name: `W-${loserRoundMatchCode(
+              losersBaseRound,
+              entryRoundIndex,
+              idx * 2 + 2
+            )}`,
+          },
         ],
       })),
     });
+
+    currentLosersRoundIndex = consolidateRoundIndex;
   }
 
-  const finalLbRoundIndex = winnersRounds * 2 - 2;
-  const finalLbSourceRoundIndex = winnersRounds === 2 ? 1 : finalLbRoundIndex - 1;
+  const finalLbRoundIndex = currentLosersRoundIndex + 1;
+  const finalLbSourceRoundIndex = Math.max(1, finalLbRoundIndex - 1);
   losersBracket.push({
-    title: "Chung kết nhánh thua",
+    title: "",
     seeds: [
       {
-        id: loserRoundMatchCode(baseRound, finalLbRoundIndex, 1),
+        id: loserRoundMatchCode(losersBaseRound, finalLbRoundIndex, 1),
         teams: [
-          { name: `W-${loserRoundMatchCode(baseRound, finalLbSourceRoundIndex, 1)}` },
+          { name: `W-${loserRoundMatchCode(losersBaseRound, finalLbSourceRoundIndex, 1)}` },
           { name: `L-${winnerRoundMatchCode(baseRound, winnersRounds, 1)}` },
         ],
       },
     ],
   });
 
+  const grandFinalRound = losersBaseRound + finalLbRoundIndex;
   const grandFinal = [
     {
-      title: "Chung kết tổng",
+      title: `${grandFinalMatchCode(losersBaseRound, finalLbRoundIndex)} • Chung kết tổng`,
       seeds: [
         {
-          id: grandFinalMatchCode(baseRound, finalLbRoundIndex, 1),
+          id: grandFinalMatchCode(losersBaseRound, finalLbRoundIndex, 1),
           teams: [
             { name: `W-${winnerRoundMatchCode(baseRound, winnersRounds, 1)}` },
-            { name: `W-${loserRoundMatchCode(baseRound, finalLbRoundIndex, 1)}` },
+            { name: `W-${loserRoundMatchCode(losersBaseRound, finalLbRoundIndex, 1)}` },
           ],
         },
       ],
@@ -620,43 +665,41 @@ function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
   }
   losersBracket.forEach((round, idx) => {
     const roundNo = idx + 1;
-    round.title =
-      idx === losersBracket.length - 1
-        ? `${loserRoundMatchCode(baseRound, roundNo, 1).split("-T")[0]} • Chung kết nhánh thua`
-        : `${loserRoundMatchCode(baseRound, roundNo, 1).split("-T")[0]} • Nhánh thua ${roundNo}`;
+    round.title = getLosersRoundPreviewTitle(
+      losersBaseRound,
+      roundNo,
+      finalLbRoundIndex
+    );
   });
   if (grandFinal[0]) {
-    grandFinal[0].title = `${grandFinalMatchCode(baseRound, finalLbRoundIndex)} • Chung kết tổng`;
-  }
-
-  if (winnersBracket[0]) {
-    winnersBracket[0].title = `${winnerRoundMatchCode(baseRound, 1, 1).split("-T")[0]} • ${roundTitleByPairs(firstPairs)} nhánh thắng`;
-  }
-  for (let roundIndex = 2; roundIndex <= winnersRounds; roundIndex += 1) {
-    const pairs = Math.ceil(firstPairs / 2 ** (roundIndex - 1));
-    if (winnersBracket[roundIndex - 1]) {
-      winnersBracket[roundIndex - 1].title = `${winnerRoundMatchCode(baseRound, roundIndex, 1).split("-T")[0]} • ${roundTitleByPairs(Math.max(1, pairs))} nhánh thắng`;
-    }
-  }
-  losersBracket.forEach((round, idx) => {
-    const roundNo = idx + 1;
-    round.title = getLosersRoundPreviewTitle(baseRound, roundNo, winnersRounds);
-  });
-  if (grandFinal[0]) {
-    grandFinal[0].title = `${grandFinalMatchCode(baseRound, finalLbRoundIndex)} • Chung kết tổng`;
+    grandFinal[0].title = `V${grandFinalRound}-T1 • Chung kết tổng`;
   }
 
   return { winnersBracket, losersBracket, grandFinal };
 }
 
 const DOUBLE_ELIM_GF_GAP = 40;
-const DOUBLE_ELIM_GF_RIGHT_PADDING = 220;
+const DOUBLE_ELIM_GF_RIGHT_PADDING = 140;
 const DOUBLE_ELIM_CONNECTOR_COLOR = "#707070";
 const DOUBLE_ELIM_CUSTOM_CARD_WIDTH = 230;
 const DOUBLE_ELIM_CUSTOM_CARD_HEIGHT = 112;
 const DOUBLE_ELIM_CUSTOM_CARD_GAP = 36;
 const DOUBLE_ELIM_CUSTOM_COLUMN_GAP = 84;
 const DOUBLE_ELIM_CUSTOM_HEADER_HEIGHT = 72;
+const DOUBLE_ELIM_CUSTOM_CARD_PADDING_Y = 11;
+const DOUBLE_ELIM_CUSTOM_CARD_HEADER_HEIGHT = 18;
+const DOUBLE_ELIM_CUSTOM_CARD_TEAM_HEIGHT = 28;
+const DOUBLE_ELIM_CUSTOM_CARD_TEAM_GAP = 8;
+const DOUBLE_ELIM_CUSTOM_CARD_TEAM_A_CENTER_Y =
+  DOUBLE_ELIM_CUSTOM_CARD_PADDING_Y +
+  DOUBLE_ELIM_CUSTOM_CARD_HEADER_HEIGHT +
+  DOUBLE_ELIM_CUSTOM_CARD_TEAM_GAP +
+  DOUBLE_ELIM_CUSTOM_CARD_TEAM_HEIGHT / 2;
+const DOUBLE_ELIM_CUSTOM_CARD_TEAM_B_CENTER_Y =
+  DOUBLE_ELIM_CUSTOM_CARD_TEAM_A_CENTER_Y +
+  DOUBLE_ELIM_CUSTOM_CARD_TEAM_HEIGHT +
+  DOUBLE_ELIM_CUSTOM_CARD_TEAM_GAP;
+const DOUBLE_ELIM_GF_HEADER_HEIGHT = 54;
 
 function getSeedNodeMetrics(root, seedId) {
   if (!root || !seedId) return null;
@@ -671,26 +714,8 @@ function getSeedNodeMetrics(root, seedId) {
   };
 }
 
-function getSeedTeamMetrics(root, seedId, slot) {
-  if (!root || !seedId || !slot) return null;
-  const node = root.querySelector(
-    `[data-seed-id="${seedId}"] [data-seed-team="${slot}"]`
-  );
-  if (!node) return null;
-  const rootRect = root.getBoundingClientRect();
-  const rect = node.getBoundingClientRect();
-  return {
-    left: rect.left - rootRect.left,
-    centerY: rect.top - rootRect.top + rect.height / 2,
-  };
-}
-
 function buildConnectorPath(startX, startY, endX, endY, bendX) {
   return `M ${startX} ${startY} H ${bendX} V ${endY} H ${endX}`;
-}
-
-function buildStraightConnectorPath(startX, startY, endX) {
-  return `M ${startX} ${startY} H ${endX}`;
 }
 
 function buildLosersBracketLayout(rounds = []) {
@@ -722,6 +747,8 @@ function buildLosersBracketLayout(rounds = []) {
         left: x,
         right: x + DOUBLE_ELIM_CUSTOM_CARD_WIDTH,
         centerY: y + DOUBLE_ELIM_CUSTOM_CARD_HEIGHT / 2,
+        teamACenterY: y + DOUBLE_ELIM_CUSTOM_CARD_TEAM_A_CENTER_Y,
+        teamBCenterY: y + DOUBLE_ELIM_CUSTOM_CARD_TEAM_B_CENTER_Y,
       };
     });
 
@@ -748,7 +775,13 @@ function buildLosersBracketLayout(rounds = []) {
         const source = prevColumn.seeds[seedIdx];
         if (!source) return;
         paths.push(
-          buildStraightConnectorPath(source.right, source.centerY, seedLayout.left)
+          buildConnectorPath(
+            source.right,
+            source.centerY,
+            seedLayout.left,
+            seedLayout.teamACenterY,
+            seedLayout.left - DOUBLE_ELIM_CUSTOM_COLUMN_GAP / 2
+          )
         );
         return;
       }
@@ -762,7 +795,7 @@ function buildLosersBracketLayout(rounds = []) {
             sourceA.right,
             sourceA.centerY,
             seedLayout.left,
-            seedLayout.centerY,
+            seedLayout.teamACenterY,
             bendX
           )
         );
@@ -773,7 +806,7 @@ function buildLosersBracketLayout(rounds = []) {
             sourceB.right,
             sourceB.centerY,
             seedLayout.left,
-            seedLayout.centerY,
+            seedLayout.teamBCenterY,
             bendX
           )
         );
@@ -806,15 +839,19 @@ function StaticPreviewSeedCard({ seed }) {
       data-seed-id={seedCode || undefined}
       sx={{
         width: DOUBLE_ELIM_CUSTOM_CARD_WIDTH,
-        minHeight: DOUBLE_ELIM_CUSTOM_CARD_HEIGHT,
+        height: DOUBLE_ELIM_CUSTOM_CARD_HEIGHT,
         bgcolor: "#1f2336",
         color: "#fff",
         borderRadius: 1.5,
         boxShadow: "0 4px 10px rgba(15,23,42,0.16)",
         px: 2,
-        py: 1.25,
+        py: 0,
+        boxSizing: "border-box",
         display: "grid",
-        gap: 1,
+        gridTemplateRows: `${DOUBLE_ELIM_CUSTOM_CARD_HEADER_HEIGHT}px ${DOUBLE_ELIM_CUSTOM_CARD_TEAM_HEIGHT}px ${DOUBLE_ELIM_CUSTOM_CARD_TEAM_HEIGHT}px`,
+        rowGap: `${DOUBLE_ELIM_CUSTOM_CARD_TEAM_GAP}px`,
+        alignContent: "start",
+        pt: `${DOUBLE_ELIM_CUSTOM_CARD_PADDING_Y}px`,
       }}
     >
       {seedCode ? (
@@ -824,16 +861,36 @@ function StaticPreviewSeedCard({ seed }) {
             color: "rgba(255,255,255,0.72)",
             fontWeight: 700,
             textAlign: "center",
-            lineHeight: 1.2,
+            lineHeight: `${DOUBLE_ELIM_CUSTOM_CARD_HEADER_HEIGHT}px`,
           }}
         >
           {seedCode}
         </Typography>
       ) : null}
-      <Typography data-seed-team="A" variant="body2" sx={{ fontWeight: 700, color: "#fff" }}>
+      <Typography
+        data-seed-team="A"
+        variant="body2"
+        sx={{
+          fontWeight: 700,
+          color: "#fff",
+          height: `${DOUBLE_ELIM_CUSTOM_CARD_TEAM_HEIGHT}px`,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
         {teams[0]?.name || "—"}
       </Typography>
-      <Typography data-seed-team="B" variant="body2" sx={{ fontWeight: 700, color: "#fff" }}>
+      <Typography
+        data-seed-team="B"
+        variant="body2"
+        sx={{
+          fontWeight: 700,
+          color: "#fff",
+          height: `${DOUBLE_ELIM_CUSTOM_CARD_TEAM_HEIGHT}px`,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
         {teams[1]?.name || "—"}
       </Typography>
     </Box>
@@ -873,7 +930,6 @@ function DoubleElimPreviewLayout({
   renderStandaloneSeedCard,
 }) {
   const wrapperRef = useRef(null);
-  const grandFinalRef = useRef(null);
   const [layout, setLayout] = useState(null);
   const losersLayout = useMemo(
     () => buildLosersBracketLayout(preview?.losersBracket || []),
@@ -884,11 +940,7 @@ function DoubleElimPreviewLayout({
     preview?.winnersBracket?.[preview.winnersBracket.length - 1]?.seeds?.[0]?.id || null;
   const losersFinalSeedId =
     preview?.losersBracket?.[preview.losersBracket.length - 1]?.seeds?.[0]?.id || null;
-  const grandFinalSeedId = preview?.grandFinal?.[0]?.seeds?.[0]?.id || null;
-  const grandFinalRounds = useMemo(
-    () => preview.grandFinal.map((round) => ({ ...round, title: "" })),
-    [preview.grandFinal]
-  );
+  const grandFinalSeed = preview?.grandFinal?.[0]?.seeds?.[0] || null;
 
   useEffect(() => {
     let frameId = 0;
@@ -897,8 +949,7 @@ function DoubleElimPreviewLayout({
       cancelAnimationFrame(frameId);
       frameId = window.requestAnimationFrame(() => {
         const wrapperNode = wrapperRef.current;
-        const grandFinalNode = grandFinalRef.current;
-        if (!wrapperNode || !grandFinalNode || !winnersFinalSeedId || !losersFinalSeedId || !grandFinalSeedId) {
+        if (!wrapperNode || !winnersFinalSeedId || !losersFinalSeedId || !grandFinalSeed) {
           return;
         }
 
@@ -906,34 +957,20 @@ function DoubleElimPreviewLayout({
         const losersNode = getSeedNodeMetrics(wrapperNode, losersFinalSeedId);
         if (!winnersNode || !losersNode) return;
 
-        const wrapperRect = wrapperNode.getBoundingClientRect();
-        const grandFinalRect = grandFinalNode.getBoundingClientRect();
-        const grandFinalSeedMetrics = getSeedNodeMetrics(wrapperNode, grandFinalSeedId);
-        const grandFinalTeamA = getSeedTeamMetrics(wrapperNode, grandFinalSeedId, "A");
-        const grandFinalTeamB = getSeedTeamMetrics(wrapperNode, grandFinalSeedId, "B");
-        if (!grandFinalSeedMetrics || !grandFinalTeamA || !grandFinalTeamB) return;
-
-        const blockRect = grandFinalNode.getBoundingClientRect();
-        const seedNode = wrapperNode.querySelector(`[data-seed-id="${grandFinalSeedId}"]`);
-        const seedRect = seedNode?.getBoundingClientRect();
-        const blockOffsetLeft = blockRect.left - wrapperRect.left;
-        const blockOffsetTop = blockRect.top - wrapperRect.top;
-        const blockToSeedLeft = seedRect ? seedRect.left - blockRect.left : 0;
-        const blockToSeedTop = seedRect ? seedRect.top - blockRect.top : 0;
-        const seedCenterOffset = blockToSeedTop + (seedRect?.height || 0) / 2;
         const cardLeft = Math.max(winnersNode.right, losersNode.right) + DOUBLE_ELIM_GF_GAP;
-        const left = Math.max(0, cardLeft - blockToSeedLeft);
-        const top = Math.max(0, (winnersNode.centerY + losersNode.centerY) / 2 - seedCenterOffset);
+        const left = Math.max(0, cardLeft);
+        const top = Math.max(
+          0,
+          (winnersNode.centerY + losersNode.centerY) / 2 - DOUBLE_ELIM_CUSTOM_CARD_HEIGHT / 2
+        );
         const bendX = cardLeft - DOUBLE_ELIM_GF_GAP / 2;
-        const upperTargetY = top + (grandFinalTeamA.centerY - blockOffsetTop);
-        const lowerTargetY = top + (grandFinalTeamB.centerY - blockOffsetTop);
+        const upperTargetY = top + DOUBLE_ELIM_CUSTOM_CARD_TEAM_A_CENTER_Y;
+        const lowerTargetY = top + DOUBLE_ELIM_CUSTOM_CARD_TEAM_B_CENTER_Y;
         const endX = cardLeft;
 
         const nextLayout = {
           left,
           top,
-          width: grandFinalRect.width,
-          height: grandFinalRect.height,
           winnersPath: buildConnectorPath(
             winnersNode.right,
             winnersNode.centerY,
@@ -948,8 +985,14 @@ function DoubleElimPreviewLayout({
             lowerTargetY,
             bendX
           ),
-          canvasWidth: Math.max(wrapperNode.scrollWidth, left + grandFinalRect.width + 24),
-          canvasHeight: Math.max(wrapperNode.scrollHeight, top + grandFinalRect.height + 24),
+          canvasWidth: Math.max(
+            wrapperNode.scrollWidth,
+            left + DOUBLE_ELIM_CUSTOM_CARD_WIDTH + 24
+          ),
+          canvasHeight: Math.max(
+            wrapperNode.scrollHeight,
+            top + DOUBLE_ELIM_CUSTOM_CARD_HEIGHT + 24
+          ),
         };
 
         setLayout((prev) => (sameConnectorLayout(prev, nextLayout) ? prev : nextLayout));
@@ -963,7 +1006,6 @@ function DoubleElimPreviewLayout({
       typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateLayout) : null;
     if (resizeObserver) {
       if (wrapperRef.current) resizeObserver.observe(wrapperRef.current);
-      if (grandFinalRef.current) resizeObserver.observe(grandFinalRef.current);
     }
 
     return () => {
@@ -971,7 +1013,7 @@ function DoubleElimPreviewLayout({
       window.removeEventListener("resize", updateLayout);
       if (resizeObserver) resizeObserver.disconnect();
     };
-  }, [winnersFinalSeedId, losersFinalSeedId, grandFinalSeedId]);
+  }, [winnersFinalSeedId, losersFinalSeedId, grandFinalSeed]);
 
   return (
     <Box sx={{ overflowX: "auto", pb: 1 }}>
@@ -1103,24 +1145,35 @@ function DoubleElimPreviewLayout({
         ) : null}
 
         <Box
-          ref={grandFinalRef}
           sx={{
             position: "absolute",
             left: layout?.left || 0,
-            top: layout?.top || 0,
-            minWidth: 320,
+            top: layout ? Math.max(0, layout.top - DOUBLE_ELIM_GF_HEADER_HEIGHT) : 0,
+            width: DOUBLE_ELIM_CUSTOM_CARD_WIDTH,
             visibility: layout ? "visible" : "hidden",
             zIndex: 1,
           }}
         >
-          <Stack spacing={0.75} alignItems="center" sx={{ mb: 1.5 }}>
+          <Stack spacing={0.75} alignItems="center">
             <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
               Chung kết tổng
             </Typography>
             <Chip size="small" variant="outlined" color="info" label={grandFinalRuleLabel} />
           </Stack>
+        </Box>
+
+        <Box
+          sx={{
+            position: "absolute",
+            left: layout?.left || 0,
+            top: layout?.top || 0,
+            width: DOUBLE_ELIM_CUSTOM_CARD_WIDTH,
+            visibility: layout ? "visible" : "hidden",
+            zIndex: 1,
+          }}
+        >
           <Box sx={{ display: "flex", justifyContent: "center" }}>
-            {renderStandaloneSeedCard(grandFinalRounds[0]?.seeds?.[0])}
+            {grandFinalSeed ? renderStandaloneSeedCard(grandFinalSeed) : null}
           </Box>
         </Box>
       </Box>
@@ -1843,6 +1896,7 @@ export default function TournamentBlueprintPage() {
   const [koPlan, setKoPlan] = useState(() =>
     buildKoPlanState({ drawSize: 16, seeds: [], format: KO_FORMAT_SINGLE })
   );
+  const [koDrawSizeInput, setKoDrawSizeInput] = useState("16");
   const setKoPlanState = (nextOrUpdater) => {
     setKoPlan((prev) => {
       const next =
@@ -1854,6 +1908,7 @@ export default function TournamentBlueprintPage() {
   const koConfiguredDrawSize = getKoConfiguredDrawSize(koPlan);
   const koDrawSize = getKoDrawSize(koPlan);
   const koFirstRoundPairs = Math.max(1, koDrawSize / 2);
+  const koDoubleElimStartDrawSize = koIsDoubleElim ? getDoubleElimStartDrawSize(koPlan) : 0;
   const koStartRoundKey = koIsDoubleElim
     ? clampDoubleElimStartRoundKey(koPlan?.doubleElim?.startRoundKey, koConfiguredDrawSize)
     : null;
@@ -1862,7 +1917,27 @@ export default function TournamentBlueprintPage() {
     [koConfiguredDrawSize]
   );
   const koStartRoundLabel = koIsDoubleElim ? getKoStartRoundLabel(koStartRoundKey) : "";
-  const koLosersOpeningPairs = Math.max(1, koFirstRoundPairs / 2);
+  const koLosersOpeningPairs = koIsDoubleElim
+    ? Math.max(1, koDoubleElimStartDrawSize / 4)
+    : 0;
+  const koDrawSizeError = useMemo(() => {
+    const raw = String(koDrawSizeInput || "").trim();
+    const minDrawSize = getKoMinDrawSize(koPlan?.format);
+    if (!raw) return "Hãy nhập KO drawSize.";
+    if (!/^\d+$/.test(raw)) return "KO drawSize chỉ nhận số nguyên dương.";
+    const parsed = Number(raw);
+    if (parsed < minDrawSize) {
+      return `KO drawSize tối thiểu là ${minDrawSize}.`;
+    }
+    if (nextPow2(parsed) !== parsed) {
+      return "KO drawSize phải là lũy thừa của 2, ví dụ 4, 8, 16, 32.";
+    }
+    return "";
+  }, [koDrawSizeInput, koPlan?.format]);
+
+  useEffect(() => {
+    setKoDrawSizeInput(String(koPlan?.drawSize ?? ""));
+  }, [koPlan?.drawSize]);
 
   // ===== Rules per stage (có CAP) =====
   const [groupRules, setGroupRules] = useState(DEFAULT_RULES);
@@ -3759,7 +3834,7 @@ export default function TournamentBlueprintPage() {
       <TextField
         select
         size="small"
-        label="Bắt đầu nhánh thắng / nhánh thua từ"
+        label="Bắt đầu nhánh thua từ"
         value={koStartRoundKey || "SF"}
         sx={{ minWidth: 250 }}
         onChange={(e) => {
@@ -3780,6 +3855,33 @@ export default function TournamentBlueprintPage() {
         ))}
       </TextField>
     );
+  };
+
+  const handleKoDrawSizeInputChange = (rawValue) => {
+    if (!/^\d*$/.test(rawValue)) return;
+    setKoDrawSizeInput(rawValue);
+    if (!rawValue) return;
+
+    const nextDrawSize = Number(rawValue);
+    const minDrawSize = getKoMinDrawSize(koPlan?.format);
+    if (!Number.isFinite(nextDrawSize) || nextDrawSize < minDrawSize) return;
+    if (nextPow2(nextDrawSize) !== nextDrawSize) return;
+
+    setKoPlanState((prev) => ({
+      ...prev,
+      drawSize: nextDrawSize,
+      ...(normalizeKoFormat(prev?.format) === KO_FORMAT_DOUBLE
+        ? {
+            doubleElim: {
+              ...(prev?.doubleElim || {}),
+              startRoundKey: clampDoubleElimStartRoundKey(
+                prev?.doubleElim?.startRoundKey,
+                nextDrawSize
+              ),
+            },
+          }
+        : {}),
+    }));
   };
 
   const manualContent = (
@@ -4127,32 +4229,13 @@ export default function TournamentBlueprintPage() {
             </TextField>
             <TextField
               size="small"
-              type="number"
+              type="text"
               label="KO drawSize"
-              value={koPlan.drawSize}
-              onChange={(e) =>
-                setKoPlanState((p) => {
-                  const nextDrawSize = Math.max(
-                    getKoMinDrawSize(p?.format),
-                    parseInt(e.target.value || String(getKoMinDrawSize(p?.format)), 10)
-                  );
-                  return {
-                    ...p,
-                    drawSize: nextDrawSize,
-                    ...(normalizeKoFormat(p?.format) === KO_FORMAT_DOUBLE
-                      ? {
-                          doubleElim: {
-                            ...(p?.doubleElim || {}),
-                            startRoundKey: clampDoubleElimStartRoundKey(
-                              p?.doubleElim?.startRoundKey,
-                              nextDrawSize
-                            ),
-                          },
-                        }
-                      : {}),
-                  };
-                })
-              }
+              value={koDrawSizeInput}
+              onChange={(e) => handleKoDrawSizeInputChange(e.target.value)}
+              error={!!koDrawSizeError}
+              helperText={koDrawSizeError || " "}
+              inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
             />
             {renderDoubleElimStartRoundSelect()}
             </Box>
@@ -4172,7 +4255,7 @@ export default function TournamentBlueprintPage() {
               size="small"
               label={
                 koIsDoubleElim
-                  ? `Nhánh thắng: ${koFirstRoundPairs} cặp • Nhánh thua: ${koLosersOpeningPairs} cặp`
+                  ? `Nhánh thắng R1: ${koFirstRoundPairs} cặp • Nhánh thua mở đầu: ${koLosersOpeningPairs} cặp`
                   : `KO R1: ${koFirstRoundPairs} cặp`
               }
             />
@@ -4722,15 +4805,13 @@ export default function TournamentBlueprintPage() {
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
                 <TextField
                   size="small"
-                  type="number"
+                  type="text"
                   label="KO drawSize"
-                  value={koPlan.drawSize}
-                  onChange={(e) =>
-                    setKoPlan((p) => ({
-                      ...p,
-                      drawSize: parseInt(e.target.value || "2", 10),
-                    }))
-                  }
+                  value={koDrawSizeInput}
+                  onChange={(e) => handleKoDrawSizeInputChange(e.target.value)}
+                  error={!!koDrawSizeError}
+                  helperText={koDrawSizeError || " "}
+                  inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
                 />
                 <Chip
                   size="small"
@@ -5052,8 +5133,7 @@ export default function TournamentBlueprintPage() {
 function normalizeSeedsKO(plan) {
   const format = normalizeKoFormat(plan?.format);
   const configuredDrawSize = getKoConfiguredDrawSize({ ...plan, format });
-  const size = getKoDrawSize({ ...plan, format, drawSize: configuredDrawSize });
-  const firstPairs = size / 2;
+  const firstPairs = configuredDrawSize / 2;
   const map = new Map((plan?.seeds || []).map((s) => [Number(s.pair), s]));
   const placeholder = () => ({ type: "registration", ref: {}, label: "" });
   const seeds = Array.from({ length: firstPairs }, (_, i) => {
