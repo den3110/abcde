@@ -28,7 +28,7 @@ import {
   IconButton,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
-import { Bracket, Seed, SeedItem, SeedTeam, SingleLineSeed } from "react-brackets";
+import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
 import { toast } from "react-toastify";
 import { Add as AddIcon, Remove as RemoveIcon } from "@mui/icons-material";
 import {
@@ -652,6 +652,11 @@ function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
 const DOUBLE_ELIM_GF_GAP = 40;
 const DOUBLE_ELIM_GF_RIGHT_PADDING = 220;
 const DOUBLE_ELIM_CONNECTOR_COLOR = "#707070";
+const DOUBLE_ELIM_CUSTOM_CARD_WIDTH = 230;
+const DOUBLE_ELIM_CUSTOM_CARD_HEIGHT = 112;
+const DOUBLE_ELIM_CUSTOM_CARD_GAP = 36;
+const DOUBLE_ELIM_CUSTOM_COLUMN_GAP = 84;
+const DOUBLE_ELIM_CUSTOM_HEADER_HEIGHT = 72;
 
 function getSeedNodeMetrics(root, seedId) {
   if (!root || !seedId) return null;
@@ -684,6 +689,157 @@ function buildConnectorPath(startX, startY, endX, endY, bendX) {
   return `M ${startX} ${startY} H ${bendX} V ${endY} H ${endX}`;
 }
 
+function buildStraightConnectorPath(startX, startY, endX) {
+  return `M ${startX} ${startY} H ${endX}`;
+}
+
+function buildLosersBracketLayout(rounds = []) {
+  const columns = [];
+  let previous = null;
+
+  rounds.forEach((round, idx) => {
+    const roundNo = idx + 1;
+    const isEntryRound = roundNo % 2 === 0;
+    const topOffset =
+      !previous || isEntryRound
+        ? previous?.topOffset || 0
+        : previous.topOffset + (DOUBLE_ELIM_CUSTOM_CARD_HEIGHT + previous.rowGap) / 2;
+    const rowGap =
+      !previous || isEntryRound
+        ? previous?.rowGap || DOUBLE_ELIM_CUSTOM_CARD_GAP
+        : DOUBLE_ELIM_CUSTOM_CARD_HEIGHT + previous.rowGap * 2;
+
+    const x = idx * (DOUBLE_ELIM_CUSTOM_CARD_WIDTH + DOUBLE_ELIM_CUSTOM_COLUMN_GAP);
+    const seeds = (round?.seeds || []).map((seed, seedIdx) => {
+      const y =
+        DOUBLE_ELIM_CUSTOM_HEADER_HEIGHT +
+        topOffset +
+        seedIdx * (DOUBLE_ELIM_CUSTOM_CARD_HEIGHT + rowGap);
+      return {
+        seed,
+        x,
+        y,
+        left: x,
+        right: x + DOUBLE_ELIM_CUSTOM_CARD_WIDTH,
+        centerY: y + DOUBLE_ELIM_CUSTOM_CARD_HEIGHT / 2,
+      };
+    });
+
+    columns.push({
+      title: round?.title || "",
+      x,
+      topOffset,
+      rowGap,
+      seeds,
+    });
+
+    previous = { topOffset, rowGap };
+  });
+
+  const paths = [];
+  columns.forEach((column, idx) => {
+    if (idx === 0) return;
+    const prevColumn = columns[idx - 1];
+    const roundNo = idx + 1;
+    const isEntryRound = roundNo % 2 === 0;
+
+    column.seeds.forEach((seedLayout, seedIdx) => {
+      if (isEntryRound) {
+        const source = prevColumn.seeds[seedIdx];
+        if (!source) return;
+        paths.push(
+          buildStraightConnectorPath(source.right, source.centerY, seedLayout.left)
+        );
+        return;
+      }
+
+      const sourceA = prevColumn.seeds[seedIdx * 2];
+      const sourceB = prevColumn.seeds[seedIdx * 2 + 1];
+      const bendX = seedLayout.left - DOUBLE_ELIM_CUSTOM_COLUMN_GAP / 2;
+      if (sourceA) {
+        paths.push(
+          buildConnectorPath(
+            sourceA.right,
+            sourceA.centerY,
+            seedLayout.left,
+            seedLayout.centerY,
+            bendX
+          )
+        );
+      }
+      if (sourceB) {
+        paths.push(
+          buildConnectorPath(
+            sourceB.right,
+            sourceB.centerY,
+            seedLayout.left,
+            seedLayout.centerY,
+            bendX
+          )
+        );
+      }
+    });
+  });
+
+  const width = columns.length
+    ? columns[columns.length - 1].x + DOUBLE_ELIM_CUSTOM_CARD_WIDTH
+    : 0;
+  const height = columns.reduce((maxHeight, column) => {
+    if (!column.seeds.length) return Math.max(maxHeight, DOUBLE_ELIM_CUSTOM_HEADER_HEIGHT);
+    const lastSeed = column.seeds[column.seeds.length - 1];
+    return Math.max(maxHeight, lastSeed.y + DOUBLE_ELIM_CUSTOM_CARD_HEIGHT);
+  }, DOUBLE_ELIM_CUSTOM_HEADER_HEIGHT);
+
+  return {
+    columns,
+    paths,
+    width,
+    height,
+  };
+}
+
+function StaticPreviewSeedCard({ seed }) {
+  const seedCode = seed?.id || "";
+  const teams = Array.isArray(seed?.teams) ? seed.teams : [];
+  return (
+    <Box
+      data-seed-id={seedCode || undefined}
+      sx={{
+        width: DOUBLE_ELIM_CUSTOM_CARD_WIDTH,
+        minHeight: DOUBLE_ELIM_CUSTOM_CARD_HEIGHT,
+        bgcolor: "#1f2336",
+        color: "#fff",
+        borderRadius: 1.5,
+        boxShadow: "0 4px 10px rgba(15,23,42,0.16)",
+        px: 2,
+        py: 1.25,
+        display: "grid",
+        gap: 1,
+      }}
+    >
+      {seedCode ? (
+        <Typography
+          variant="caption"
+          sx={{
+            color: "rgba(255,255,255,0.72)",
+            fontWeight: 700,
+            textAlign: "center",
+            lineHeight: 1.2,
+          }}
+        >
+          {seedCode}
+        </Typography>
+      ) : null}
+      <Typography data-seed-team="A" variant="body2" sx={{ fontWeight: 700, color: "#fff" }}>
+        {teams[0]?.name || "—"}
+      </Typography>
+      <Typography data-seed-team="B" variant="body2" sx={{ fontWeight: 700, color: "#fff" }}>
+        {teams[1]?.name || "—"}
+      </Typography>
+    </Box>
+  );
+}
+
 function sameConnectorLayout(a, b) {
   if (!a || !b) return false;
   return (
@@ -691,6 +847,8 @@ function sameConnectorLayout(a, b) {
     Math.abs(a.top - b.top) < 1 &&
     Math.abs(a.width - b.width) < 1 &&
     Math.abs(a.height - b.height) < 1 &&
+    Math.abs((a.canvasWidth || 0) - (b.canvasWidth || 0)) < 1 &&
+    Math.abs((a.canvasHeight || 0) - (b.canvasHeight || 0)) < 1 &&
     a.winnersPath === b.winnersPath &&
     a.losersPath === b.losersPath
   );
@@ -701,11 +859,15 @@ function DoubleElimPreviewLayout({
   baseRuleLabel,
   grandFinalRuleLabel,
   renderSeedComponent,
-  renderLosersSeedComponent,
+  renderStandaloneSeedCard,
 }) {
   const wrapperRef = useRef(null);
   const grandFinalRef = useRef(null);
   const [layout, setLayout] = useState(null);
+  const losersLayout = useMemo(
+    () => buildLosersBracketLayout(preview?.losersBracket || []),
+    [preview?.losersBracket]
+  );
 
   const winnersFinalSeedId =
     preview?.winnersBracket?.[preview.winnersBracket.length - 1]?.seeds?.[0]?.id || null;
@@ -834,11 +996,70 @@ function DoubleElimPreviewLayout({
               </Typography>
               <Chip size="small" variant="outlined" label={baseRuleLabel} />
             </Stack>
-            <Bracket
-              rounds={preview.losersBracket}
-              renderSeedComponent={renderLosersSeedComponent}
-              mobileBreakpoint={0}
-            />
+            <Box
+              sx={{
+                position: "relative",
+                width: losersLayout.width,
+                minWidth: losersLayout.width,
+                height: losersLayout.height,
+              }}
+            >
+              <Box
+                component="svg"
+                viewBox={`0 0 ${losersLayout.width} ${losersLayout.height}`}
+                sx={{
+                  position: "absolute",
+                  inset: 0,
+                  width: losersLayout.width,
+                  height: losersLayout.height,
+                  pointerEvents: "none",
+                  overflow: "visible",
+                }}
+              >
+                {losersLayout.paths.map((path, idx) => (
+                  <path
+                    key={`lb-path-${idx}`}
+                    d={path}
+                    fill="none"
+                    stroke={DOUBLE_ELIM_CONNECTOR_COLOR}
+                    strokeWidth="1.5"
+                  />
+                ))}
+              </Box>
+
+              {losersLayout.columns.map((column) => (
+                <Typography
+                  key={`${column.title}-${column.x}`}
+                  variant="h5"
+                  color="text.secondary"
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: column.x,
+                    width: DOUBLE_ELIM_CUSTOM_CARD_WIDTH,
+                    textAlign: "center",
+                    fontWeight: 400,
+                  }}
+                >
+                  {column.title}
+                </Typography>
+              ))}
+
+              {losersLayout.columns.flatMap((column) =>
+                column.seeds.map((seedLayout) => (
+                  <Box
+                    key={seedLayout.seed.id}
+                    sx={{
+                      position: "absolute",
+                      left: seedLayout.x,
+                      top: seedLayout.y,
+                    }}
+                  >
+                    {renderStandaloneSeedCard(seedLayout.seed)}
+                  </Box>
+                ))
+              )}
+            </Box>
           </Box>
         </Stack>
 
@@ -881,18 +1102,14 @@ function DoubleElimPreviewLayout({
             zIndex: 1,
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ mb: 1.5 }}>
+          <Stack spacing={0.75} alignItems="center" sx={{ mb: 1.5 }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
               Chung kết tổng
             </Typography>
             <Chip size="small" variant="outlined" color="info" label={grandFinalRuleLabel} />
           </Stack>
           <Box sx={{ display: "flex", justifyContent: "center" }}>
-            <Bracket
-              rounds={grandFinalRounds}
-              renderSeedComponent={renderSeedComponent}
-              mobileBreakpoint={0}
-            />
+            {renderStandaloneSeedCard(grandFinalRounds[0]?.seeds?.[0])}
           </Box>
         </Box>
       </Box>
@@ -933,7 +1150,7 @@ DoubleElimPreviewLayout.propTypes = {
   baseRuleLabel: PropTypes.string,
   grandFinalRuleLabel: PropTypes.string,
   renderSeedComponent: PropTypes.func.isRequired,
-  renderLosersSeedComponent: PropTypes.func.isRequired,
+  renderStandaloneSeedCard: PropTypes.func.isRequired,
 };
 
 DoubleElimPreviewLayout.defaultProps = {
@@ -2020,11 +2237,7 @@ export default function TournamentBlueprintPage() {
 
     // Đếm số "vòng hiển thị" trước stage hiện tại
     const renderSeedComponent = ({ seed }) => renderSeedNode({ seed });
-    const renderLosersSeedComponent = ({ seed, roundIndex }) =>
-      renderSeedNode({
-        seed,
-        Wrapper: roundIndex % 2 === 1 ? SingleLineSeed : Seed,
-      });
+    const renderStandaloneSeedCard = (seed) => <StaticPreviewSeedCard seed={seed} />;
     const renderDoubleElimPreviewLayout = () => {
       const preview = buildDoubleElimPreviewFromPlan(koPlan, baseRound);
       const baseRuleLabel = ruleSummary(normalizeRulesForState(koRules, DEFAULT_RULES));
@@ -2037,7 +2250,7 @@ export default function TournamentBlueprintPage() {
           baseRuleLabel={baseRuleLabel}
           grandFinalRuleLabel={grandFinalRuleLabel}
           renderSeedComponent={renderSeedComponent}
-          renderLosersSeedComponent={renderLosersSeedComponent}
+          renderStandaloneSeedCard={renderStandaloneSeedCard}
         />
       );
     };
