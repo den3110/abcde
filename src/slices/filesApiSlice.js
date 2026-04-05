@@ -33,6 +33,18 @@ export const filesApiSlice = apiSlice.injectEndpoints({
       ],
     }),
 
+    deleteFiles: builder.mutation({
+      query: (ids) => ({
+        url: `/files/bulk-delete`,
+        method: "POST",
+        body: { ids },
+      }),
+      invalidatesTags: (_res, _err, ids = []) => [
+        ...ids.map((id) => ({ type: "File", id })),
+        { type: "File", id: "PARTIAL-LIST" },
+      ],
+    }),
+
     /* ===== Legacy multi-upload (multipart/form-data) — optional ===== */
     uploadFiles: builder.mutation({
       query: ({ files, category }) => {
@@ -118,6 +130,7 @@ export const filesApiSlice = apiSlice.injectEndpoints({
 export const {
   useListFilesQuery,
   useDeleteFileMutation,
+  useDeleteFilesMutation,
   useUploadFilesMutation, // legacy
 
   // multipart

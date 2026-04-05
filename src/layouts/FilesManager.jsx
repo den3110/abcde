@@ -1,7 +1,7 @@
 // src/pages/admin/FilesManager.jsx
 // Full rewrite: File Public Manager + khu "Cập nhật dữ liệu SPC (.txt)" với UI đẹp hơn
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Box,
@@ -45,6 +45,7 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import {
   useListFilesQuery,
   useDeleteFileMutation,
+  useDeleteFilesMutation,
   useMultipartInitMutation,
   useMultipartUploadPartMutation,
   useMultipartCompleteMutation,
@@ -209,6 +210,7 @@ const PublicFilesSection = () => {
 
   const { data, isFetching, refetch } = useListFilesQuery({ q, category, page, limit });
   const [deleteFile, { isLoading: isDeleting }] = useDeleteFileMutation();
+  const [deleteFiles, { isLoading: isBulkDeleting }] = useDeleteFilesMutation();
 
   const [multipartInit] = useMultipartInitMutation();
   const [multipartUploadPart] = useMultipartUploadPartMutation();
@@ -219,9 +221,16 @@ const PublicFilesSection = () => {
 
   const items = data?.items || [];
   const total = data?.total || 0;
+  const [rowSelectionModel, setRowSelectionModel] = useState([]);
+  const selectedCount = rowSelectionModel.length;
 
   // upload task UI
   const [tasks, setTasks] = useState([]); // [{id,name,pct,bps,eta,status,size}]
+
+  useEffect(() => {
+    const currentIds = new Set(items.map((item) => item._id));
+    setRowSelectionModel((prev) => prev.filter((id) => currentIds.has(id)));
+  }, [items]);
 
   const onPickFiles = (files) => {
     setError("");
@@ -381,9 +390,33 @@ const PublicFilesSection = () => {
     if (!window.confirm("Xoá file này?")) return;
     try {
       await deleteFile(id).unwrap();
-      refetch();
+      setRowSelectionModel((prev) => prev.filter((rowId) => rowId !== id));
+      await refetch();
     } catch (e) {
       setError(e?.data?.message || "Xoá thất bại");
+    }
+  };
+
+  const onDeleteSelected = async () => {
+    if (!selectedCount) return;
+    const noun = selectedCount === 1 ? "file" : `${selectedCount} file`;
+    if (!window.confirm(`Xóa ${noun} đã chọn?`)) return;
+
+    try {
+      setError("");
+      setOk("");
+      const result = await deleteFiles(rowSelectionModel).unwrap();
+      const deletedCount = Number(result?.deletedCount || 0);
+      const missingCount = Array.isArray(result?.missingIds) ? result.missingIds.length : 0;
+      setRowSelectionModel([]);
+      await refetch();
+      setOk(
+        missingCount > 0
+          ? `Đã xóa ${deletedCount} file. Có ${missingCount} file không còn tồn tại.`
+          : `Đã xóa ${deletedCount} file đã chọn.`
+      );
+    } catch (e) {
+      setError(e?.data?.message || "Xóa nhiều file thất bại");
     }
   };
 
@@ -484,7 +517,7 @@ const PublicFilesSection = () => {
     <Card variant="outlined">
       <CardHeader title="Quản lý file public" subheader="Upload & tạo link công khai để tải về" />
       <CardContent sx={{ position: "relative" }}>
-        {(isFetching || isDeleting) && (
+        {(isFetching || isDeleting || isBulkDeleting) && (
           <Box sx={{ position: "absolute", left: 16, right: 16, top: 8 }}>
             <LinearProgress />
           </Box>
@@ -625,6 +658,28 @@ const PublicFilesSection = () => {
           alignItems={{ sm: "center" }}
           sx={{ mb: 1 }}
         >
+          {selectedCount > 0 ? (
+            <Chip color="primary" variant="outlined" label={`Đã chọn ${selectedCount} file`} />
+          ) : null}
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={
+              isBulkDeleting ? <CircularProgress color="inherit" size={16} /> : <DeleteOutlineIcon />
+            }
+            onClick={onDeleteSelected}
+            disabled={!selectedCount || isDeleting || isBulkDeleting}
+          >
+            Xóa đã chọn
+          </Button>
+          <Button
+            variant="text"
+            color="inherit"
+            onClick={() => setRowSelectionModel([])}
+            disabled={!selectedCount || isDeleting || isBulkDeleting}
+          >
+            Bỏ chọn
+          </Button>
           <Box flex={1} />
           <TextField
             size="small"
@@ -656,13 +711,19 @@ const PublicFilesSection = () => {
             rows={items}
             getRowId={(row) => row._id}
             columns={columns}
+            checkboxSelection
             rowCount={total}
             paginationMode="server"
             paginationModel={paginationModel}
             onPaginationModelChange={setPaginationModel}
+            selectionModel={rowSelectionModel}
+            onSelectionModelChange={(nextSelection) => {
+              setRowSelectionModel(Array.isArray(nextSelection) ? nextSelection : []);
+            }}
             pageSizeOptions={[10, 20, 50, 100]}
+            disableSelectionOnClick
             disableRowSelectionOnClick
-            loading={isFetching || isDeleting}
+            loading={isFetching || isDeleting || isBulkDeleting}
             slots={{ toolbar: GridToolbar }}
             slotProps={{
               toolbar: { showQuickFilter: true, quickFilterProps: { debounceMs: 400 } },
