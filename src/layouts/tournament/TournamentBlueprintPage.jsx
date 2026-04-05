@@ -681,7 +681,6 @@ function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
 const DOUBLE_ELIM_GF_GAP = 40;
 const DOUBLE_ELIM_GF_RIGHT_PADDING = 140;
 const DOUBLE_ELIM_CONNECTOR_COLOR = "#707070";
-const DOUBLE_ELIM_CONNECTOR_RADIUS = 12;
 const DOUBLE_ELIM_CONNECTOR_STROKE_WIDTH = 0.9;
 const DOUBLE_ELIM_CUSTOM_CARD_WIDTH = 230;
 const DOUBLE_ELIM_CUSTOM_CARD_HEIGHT = 112;
@@ -720,39 +719,9 @@ function buildConnectorPath(startX, startY, endX, endY, bendX) {
   return `M ${startX} ${startY} H ${bendX} V ${endY} H ${endX}`;
 }
 
-function buildRoundedConnectorPath(startX, startY, endX, endY, bendX) {
-  const minBendX = Math.max(startX + 8, Math.min(endX - 8, bendX));
-  const verticalDelta = endY - startY;
-  const horizontalIn = Math.abs(minBendX - startX);
-  const horizontalOut = Math.abs(endX - minBendX);
-  const maxRadius = Math.min(
-    DOUBLE_ELIM_CONNECTOR_RADIUS,
-    Math.max(0, horizontalIn - 2),
-    Math.max(0, horizontalOut - 2),
-    Math.max(0, Math.abs(verticalDelta) / 2 - 1)
-  );
-
-  if (maxRadius < 2 || Math.abs(verticalDelta) < 4) {
-    return buildConnectorPath(startX, startY, endX, endY, minBendX);
-  }
-
-  const directionY = verticalDelta >= 0 ? 1 : -1;
-  const firstCornerX = minBendX - maxRadius;
-  const secondCornerY = endY - directionY * maxRadius;
-
-  return [
-    `M ${startX} ${startY}`,
-    `H ${firstCornerX}`,
-    `Q ${minBendX} ${startY} ${minBendX} ${startY + directionY * maxRadius}`,
-    `V ${secondCornerY}`,
-    `Q ${minBendX} ${endY} ${minBendX + maxRadius} ${endY}`,
-    `H ${endX}`,
-  ].join(" ");
-}
-
 function buildSourceBentConnectorPath(startX, startY, endX, endY, offset = 22) {
   const bendX = Math.min(endX - 12, startX + offset);
-  return buildRoundedConnectorPath(startX, startY, endX, endY, bendX);
+  return buildConnectorPath(startX, startY, endX, endY, bendX);
 }
 
 function buildLosersBracketLayout(rounds = []) {
@@ -827,7 +796,7 @@ function buildLosersBracketLayout(rounds = []) {
       const bendX = seedLayout.left - DOUBLE_ELIM_CUSTOM_COLUMN_GAP / 2;
       if (sourceA) {
         paths.push(
-          buildRoundedConnectorPath(
+          buildConnectorPath(
             sourceA.right,
             sourceA.centerY,
             seedLayout.left,
@@ -838,7 +807,7 @@ function buildLosersBracketLayout(rounds = []) {
       }
       if (sourceB) {
         paths.push(
-          buildRoundedConnectorPath(
+          buildConnectorPath(
             sourceB.right,
             sourceB.centerY,
             seedLayout.left,
@@ -1007,14 +976,14 @@ function DoubleElimPreviewLayout({
         const nextLayout = {
           left,
           top,
-          winnersPath: buildRoundedConnectorPath(
+          winnersPath: buildConnectorPath(
             winnersNode.right,
             winnersNode.centerY,
             endX,
             upperTargetY,
             bendX
           ),
-          losersPath: buildRoundedConnectorPath(
+          losersPath: buildConnectorPath(
             losersNode.right,
             losersNode.centerY,
             endX,
@@ -1112,8 +1081,8 @@ function DoubleElimPreviewLayout({
                     fill="none"
                     stroke={DOUBLE_ELIM_CONNECTOR_COLOR}
                     strokeWidth={DOUBLE_ELIM_CONNECTOR_STROKE_WIDTH}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                    strokeLinecap="square"
+                    strokeLinejoin="miter"
                   />
                 ))}
               </Box>
@@ -1172,16 +1141,16 @@ function DoubleElimPreviewLayout({
               fill="none"
               stroke={DOUBLE_ELIM_CONNECTOR_COLOR}
               strokeWidth={DOUBLE_ELIM_CONNECTOR_STROKE_WIDTH}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              strokeLinecap="square"
+              strokeLinejoin="miter"
             />
             <path
               d={layout.losersPath}
               fill="none"
               stroke={DOUBLE_ELIM_CONNECTOR_COLOR}
               strokeWidth={DOUBLE_ELIM_CONNECTOR_STROKE_WIDTH}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              strokeLinecap="square"
+              strokeLinejoin="miter"
             />
           </Box>
         ) : null}
