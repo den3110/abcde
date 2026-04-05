@@ -462,7 +462,16 @@ function buildRoundsFromPlan(planKO, stageIndex = 1, baseRound = 1) {
   return rounds;
 }
 
-function buildDoubleElimPreviewFromPlan(planKO) {
+const winnerRoundMatchCode = (baseRound, roundIndex, order) =>
+  `V${baseRound + roundIndex - 1}-T${order}`;
+
+const loserRoundMatchCode = (baseRound, roundIndex, order) =>
+  `V${baseRound + roundIndex - 1}-BT-T${order}`;
+
+const grandFinalMatchCode = (baseRound, finalLbRoundIndex, order = 1) =>
+  `V${baseRound + finalLbRoundIndex}-T${order}`;
+
+function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
   const drawSize = getKoDrawSize({ ...planKO, format: KO_FORMAT_DOUBLE });
   const winnersRounds = Math.round(Math.log2(drawSize));
   const firstPairs = drawSize / 2;
@@ -473,7 +482,7 @@ function buildDoubleElimPreviewFromPlan(planKO) {
     const A = found?.A || { type: "registration", label: "—" };
     const B = found?.B || { type: "registration", label: "—" };
     return {
-      id: `WB1-${i + 1}`,
+      id: winnerRoundMatchCode(baseRound, 1, i + 1),
       pairIndex: i + 1,
       teams: [
         { name: seedLabel(A), __seed: A, __pair: i + 1, __slot: "A" },
@@ -492,10 +501,10 @@ function buildDoubleElimPreviewFromPlan(planKO) {
     winnersBracket.push({
       title: `${roundTitleByPairs(pairs)} nhánh thắng`,
       seeds: Array.from({ length: pairs }, (_, idx) => ({
-        id: `WB${roundIndex}-${idx + 1}`,
+        id: winnerRoundMatchCode(baseRound, roundIndex, idx + 1),
         teams: [
-          { name: `W-WB${roundIndex - 1}-T${idx * 2 + 1}` },
-          { name: `W-WB${roundIndex - 1}-T${idx * 2 + 2}` },
+          { name: `W-${winnerRoundMatchCode(baseRound, roundIndex - 1, idx * 2 + 1)}` },
+          { name: `W-${winnerRoundMatchCode(baseRound, roundIndex - 1, idx * 2 + 2)}` },
         ],
       })),
     });
@@ -506,10 +515,10 @@ function buildDoubleElimPreviewFromPlan(planKO) {
     {
       title: "Round 1 - nhánh thua",
       seeds: Array.from({ length: Math.max(1, firstPairs / 2) }, (_, idx) => ({
-        id: `LB1-${idx + 1}`,
+        id: loserRoundMatchCode(baseRound, 1, idx + 1),
         teams: [
-          { name: `L-WB1-T${idx * 2 + 1}` },
-          { name: `L-WB1-T${idx * 2 + 2}` },
+          { name: `L-${winnerRoundMatchCode(baseRound, 1, idx * 2 + 1)}` },
+          { name: `L-${winnerRoundMatchCode(baseRound, 1, idx * 2 + 2)}` },
         ],
       })),
     },
@@ -523,10 +532,10 @@ function buildDoubleElimPreviewFromPlan(planKO) {
     losersBracket.push({
       title: `Round ${entryRoundIndex} - nhánh thua`,
       seeds: Array.from({ length: entryCount }, (_, idx) => ({
-        id: `LB${entryRoundIndex}-${idx + 1}`,
+        id: loserRoundMatchCode(baseRound, entryRoundIndex, idx + 1),
         teams: [
-          { name: `W-LB${entryRoundIndex - 1}-T${idx + 1}` },
-          { name: `L-WB${winnersRound}-T${idx + 1}` },
+          { name: `W-${loserRoundMatchCode(baseRound, entryRoundIndex - 1, idx + 1)}` },
+          { name: `L-${winnerRoundMatchCode(baseRound, winnersRound, idx + 1)}` },
         ],
       })),
     });
@@ -534,10 +543,10 @@ function buildDoubleElimPreviewFromPlan(planKO) {
     losersBracket.push({
       title: `Round ${consolidateRoundIndex} - nhánh thua`,
       seeds: Array.from({ length: Math.ceil(entryCount / 2) }, (_, idx) => ({
-        id: `LB${consolidateRoundIndex}-${idx + 1}`,
+        id: loserRoundMatchCode(baseRound, consolidateRoundIndex, idx + 1),
         teams: [
-          { name: `W-LB${entryRoundIndex}-T${idx * 2 + 1}` },
-          { name: `W-LB${entryRoundIndex}-T${idx * 2 + 2}` },
+          { name: `W-${loserRoundMatchCode(baseRound, entryRoundIndex, idx * 2 + 1)}` },
+          { name: `W-${loserRoundMatchCode(baseRound, entryRoundIndex, idx * 2 + 2)}` },
         ],
       })),
     });
@@ -549,10 +558,10 @@ function buildDoubleElimPreviewFromPlan(planKO) {
     title: "Chung kết nhánh thua",
     seeds: [
       {
-        id: `LB${finalLbRoundIndex}-1`,
+        id: loserRoundMatchCode(baseRound, finalLbRoundIndex, 1),
         teams: [
-          { name: `W-LB${finalLbSourceRoundIndex}-T1` },
-          { name: `L-WB${winnersRounds}-T1` },
+          { name: `W-${loserRoundMatchCode(baseRound, finalLbSourceRoundIndex, 1)}` },
+          { name: `L-${winnerRoundMatchCode(baseRound, winnersRounds, 1)}` },
         ],
       },
     ],
@@ -563,15 +572,35 @@ function buildDoubleElimPreviewFromPlan(planKO) {
       title: "Chung kết tổng",
       seeds: [
         {
-          id: "GF-1",
+          id: grandFinalMatchCode(baseRound, finalLbRoundIndex, 1),
           teams: [
-            { name: `W-WB${winnersRounds}-T1` },
-            { name: `W-LB${finalLbRoundIndex}-T1` },
+            { name: `W-${winnerRoundMatchCode(baseRound, winnersRounds, 1)}` },
+            { name: `W-${loserRoundMatchCode(baseRound, finalLbRoundIndex, 1)}` },
           ],
         },
       ],
     },
   ];
+
+  if (winnersBracket[0]) {
+    winnersBracket[0].title = `${winnerRoundMatchCode(baseRound, 1, 1).split("-T")[0]} • ${roundTitleByPairs(firstPairs)} nhánh thắng`;
+  }
+  for (let roundIndex = 2; roundIndex <= winnersRounds; roundIndex += 1) {
+    const pairs = Math.ceil(firstPairs / 2 ** (roundIndex - 1));
+    if (winnersBracket[roundIndex - 1]) {
+      winnersBracket[roundIndex - 1].title = `${winnerRoundMatchCode(baseRound, roundIndex, 1).split("-T")[0]} • ${roundTitleByPairs(Math.max(1, pairs))} nhánh thắng`;
+    }
+  }
+  losersBracket.forEach((round, idx) => {
+    const roundNo = idx + 1;
+    round.title =
+      idx === losersBracket.length - 1
+        ? `${loserRoundMatchCode(baseRound, roundNo, 1).split("-T")[0]} • Chung kết nhánh thua`
+        : `${loserRoundMatchCode(baseRound, roundNo, 1).split("-T")[0]} • Nhánh thua ${roundNo}`;
+  });
+  if (grandFinal[0]) {
+    grandFinal[0].title = `${grandFinalMatchCode(baseRound, finalLbRoundIndex)} • Chung kết tổng`;
+  }
 
   return { winnersBracket, losersBracket, grandFinal };
 }
@@ -1265,6 +1294,8 @@ export default function TournamentBlueprintPage() {
     () => buildDoubleElimStartRoundOptions(koDrawSize),
     [koDrawSize]
   );
+  const koStartRoundLabel = koIsDoubleElim ? getKoStartRoundLabel(koStartRoundKey) : "";
+  const koLosersOpeningPairs = Math.max(1, koFirstRoundPairs / 2);
 
   // ===== Rules per stage (có CAP) =====
   const [groupRules, setGroupRules] = useState(DEFAULT_RULES);
@@ -1605,11 +1636,17 @@ export default function TournamentBlueprintPage() {
       const A = seed?.teams?.[0];
       const B = seed?.teams?.[1];
       const pair = A?.__pair || B?.__pair;
+      const seedCode = seed?.id || "";
       if (!pair) {
         return (
           <Seed>
             <SeedItem>
               <div style={{ display: "grid", gap: 4 }}>
+                {seedCode ? (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.72)" }}>
+                    {seedCode}
+                  </div>
+                ) : null}
                 <SeedTeam>{A?.name || "—"}</SeedTeam>
                 <SeedTeam>{B?.name || "—"}</SeedTeam>
               </div>
@@ -1621,6 +1658,11 @@ export default function TournamentBlueprintPage() {
         <Seed>
           <SeedItem>
             <div style={{ display: "grid", gap: 4 }}>
+              {seedCode ? (
+                <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.72)" }}>
+                  {seedCode}
+                </div>
+              ) : null}
               <SeedTeam>
                 <Button size="small" variant="text" onClick={() => openPicker(stageIdx, pair, "A")}>
                   {A?.name || "—"}
@@ -1639,7 +1681,8 @@ export default function TournamentBlueprintPage() {
 
     // Đếm số "vòng hiển thị" trước stage hiện tại
     const renderDoubleElimPreviewLayout = () => {
-      const preview = buildDoubleElimPreviewFromPlan(koPlan);
+      const preview = buildDoubleElimPreviewFromPlan(koPlan, baseRound);
+      const losersAndGrandFinal = [...preview.losersBracket, ...preview.grandFinal];
       const baseRuleLabel = ruleSummary(normalizeRulesForState(koRules, DEFAULT_RULES));
       const grandFinalRuleLabel = ruleSummary(
         normalizeRulesForState(koFinalOverride ? koFinalRules : koRules, DEFAULT_RULES)
@@ -1647,18 +1690,8 @@ export default function TournamentBlueprintPage() {
 
       return (
         <Box sx={{ overflowX: "auto", pb: 1 }}>
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: "max-content minmax(260px, 320px)",
-              gridTemplateRows: "auto auto",
-              gap: 4,
-              alignItems: "start",
-              width: "max-content",
-              minWidth: "100%",
-            }}
-          >
-            <Box sx={{ gridColumn: "1 / 2", gridRow: "1 / 2" }}>
+          <Stack spacing={3} sx={{ width: "max-content", minWidth: "100%" }}>
+            <Box>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
                   Nhánh thắng
@@ -1672,14 +1705,7 @@ export default function TournamentBlueprintPage() {
               />
             </Box>
 
-            <Box
-              sx={{
-                gridColumn: "2 / 3",
-                gridRow: "1 / 3",
-                alignSelf: "center",
-                minWidth: 260,
-              }}
-            >
+            <Box sx={{ display: "none" }}>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
                   Chung kết tổng
@@ -1693,20 +1719,25 @@ export default function TournamentBlueprintPage() {
               />
             </Box>
 
-            <Box sx={{ gridColumn: "1 / 2", gridRow: "2 / 3" }}>
+            <Box>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
                   Nhánh thua
                 </Typography>
                 <Chip size="small" variant="outlined" label={baseRuleLabel} />
+                <Chip size="small" variant="outlined" color="info" label={grandFinalRuleLabel} />
               </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                Chung kết tổng: {preview.grandFinal?.[0]?.seeds?.[0]?.teams?.[0]?.name || "—"} vs{" "}
+                {preview.grandFinal?.[0]?.seeds?.[0]?.teams?.[1]?.name || "—"}
+              </Typography>
               <Bracket
-                rounds={preview.losersBracket}
+                rounds={losersAndGrandFinal}
                 renderSeedComponent={renderSeedComponent}
                 mobileBreakpoint={0}
               />
             </Box>
-          </Box>
+          </Stack>
         </Box>
       );
     };
@@ -3538,8 +3569,41 @@ export default function TournamentBlueprintPage() {
       {koRuntime?.locked ? (
         renderLockedStageCard("ko", "Knockout", stageCardMap.ko?.config)
       ) : (
-        <>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+        <Paper
+          variant="outlined"
+          sx={{
+            mt: 1,
+            p: 2.25,
+            borderRadius: 3,
+            borderColor: "rgba(33, 150, 243, 0.18)",
+            background:
+              "linear-gradient(180deg, rgba(33,150,243,0.04) 0%, rgba(255,255,255,0.98) 100%)",
+          }}
+        >
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 0.5 }}>
+                Cấu trúc nhánh loại trực tiếp
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Chọn kiểu bracket, vòng bắt đầu và số đội vào nhánh. Phần tóm tắt bên dưới sẽ diễn
+                giải cách hệ thống dựng sơ đồ.
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                display: "grid",
+                gap: 2,
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  lg: koIsDoubleElim
+                    ? "minmax(240px,1.1fr) minmax(240px,1.1fr) 160px"
+                    : "minmax(240px,1.2fr) 160px",
+                },
+                alignItems: "start",
+              }}
+            >
             <TextField
               select
               size="small"
@@ -3605,22 +3669,21 @@ export default function TournamentBlueprintPage() {
               }
             />
             {renderDoubleElimStartRoundSelect()}
+            </Box>
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
             {koIsDoubleElim ? (
               <Chip
                 size="small"
-                color="info"
-                variant="outlined"
-                label={`Bắt đầu: ${getKoStartRoundLabel(koStartRoundKey)}`}
+                color="primary"
+                variant="filled"
+                label={`Bắt đầu từ ${koStartRoundLabel}`}
               />
             ) : null}
             <Chip
               size="small"
               label={
                 koIsDoubleElim
-                  ? `WB R1: ${koFirstRoundPairs} cặp • LB mở đầu: ${Math.max(
-                      1,
-                      koFirstRoundPairs / 2
-                    )} cặp`
+                  ? `Nhánh thắng: ${koFirstRoundPairs} cặp • Nhánh thua: ${koLosersOpeningPairs} cặp`
                   : `KO R1: ${koFirstRoundPairs} cặp`
               }
             />
@@ -3639,12 +3702,19 @@ export default function TournamentBlueprintPage() {
                 size="small"
                 color="info"
                 variant="outlined"
-                label="Chung kết tổng giữa nhánh thắng và nhánh thua"
+                label="Có chung kết tổng"
               />
             )}
           </Stack>
 
-        </>
+          {koIsDoubleElim ? (
+            <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
+              Nhánh thua sẽ lần lượt nhận đội thua từ nhánh thắng sau từng chặng. Preview bên dưới
+              đã được tách rõ thành nhánh thắng, nhánh thua và chung kết tổng.
+            </Alert>
+          ) : null}
+        </Stack>
+        </Paper>
       )}
 
       <Box sx={{ mt: 1 }}>
