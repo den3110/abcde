@@ -90,31 +90,46 @@ const getKoDrawSizeFromRoundKey = (roundKey) => {
 };
 const getKoMinDrawSize = (format) =>
   normalizeKoFormat(format) === KO_FORMAT_DOUBLE ? 4 : 2;
-const getKoDrawSize = (plan = {}) => {
+const getKoConfiguredDrawSize = (plan = {}) => {
   const format = normalizeKoFormat(plan?.format);
   const min = getKoMinDrawSize(format);
-  const drawSizeFromRoundKey =
-    format === KO_FORMAT_DOUBLE
-      ? getKoDrawSizeFromRoundKey(plan?.doubleElim?.startRoundKey)
-      : 0;
-  return Math.max(min, nextPow2(Number(drawSizeFromRoundKey || plan?.drawSize || min)));
+  return Math.max(min, nextPow2(Number(plan?.drawSize || min)));
+};
+const clampDoubleElimStartRoundKey = (roundKey, configuredDrawSize) => {
+  const maxSize = Math.max(4, nextPow2(Number(configuredDrawSize || 4)));
+  const normalized = normalizeKoRoundKey(roundKey);
+  if (normalized) {
+    const roundSize = getKoDrawSizeFromRoundKey(normalized);
+    if (roundSize >= 4 && roundSize <= maxSize) return normalized;
+  }
+  return getKoRoundKeyFromDrawSize(maxSize);
+};
+const getKoDrawSize = (plan = {}) => {
+  const format = normalizeKoFormat(plan?.format);
+  const configuredDrawSize = getKoConfiguredDrawSize(plan);
+  if (format !== KO_FORMAT_DOUBLE) return configuredDrawSize;
+  const startRoundKey = clampDoubleElimStartRoundKey(
+    plan?.doubleElim?.startRoundKey,
+    configuredDrawSize
+  );
+  return Math.max(
+    getKoMinDrawSize(format),
+    Math.min(configuredDrawSize, getKoDrawSizeFromRoundKey(startRoundKey) || configuredDrawSize)
+  );
 };
 const buildKoPlanState = (plan = {}, fallback = {}) => {
   const format = normalizeKoFormat(plan.format ?? fallback.format);
-  const minDrawSize = getKoMinDrawSize(format);
-  const requestedStartRoundKey =
+  const stateDrawSize = getKoConfiguredDrawSize({
+    format,
+    drawSize: plan.drawSize ?? fallback.drawSize,
+  });
+  const startRoundKey =
     format === KO_FORMAT_DOUBLE
-      ? normalizeKoRoundKey(
-          plan?.doubleElim?.startRoundKey ?? fallback?.doubleElim?.startRoundKey
+      ? clampDoubleElimStartRoundKey(
+          plan?.doubleElim?.startRoundKey ?? fallback?.doubleElim?.startRoundKey,
+          stateDrawSize
         )
       : null;
-  const rawDrawSize = Number(plan.drawSize ?? fallback.drawSize ?? minDrawSize) || minDrawSize;
-  const normalizedDrawSize = Math.max(
-    minDrawSize,
-    nextPow2(getKoDrawSizeFromRoundKey(requestedStartRoundKey) || rawDrawSize)
-  );
-  const stateDrawSize =
-    format === KO_FORMAT_DOUBLE ? normalizedDrawSize : Math.max(minDrawSize, rawDrawSize);
   return {
     ...fallback,
     ...plan,
@@ -133,7 +148,7 @@ const buildKoPlanState = (plan = {}, fallback = {}) => {
                 plan?.doubleElim?.hasGrandFinalReset ??
                 fallback?.doubleElim?.hasGrandFinalReset
               ),
-            startRoundKey: getKoRoundKeyFromDrawSize(normalizedDrawSize),
+            startRoundKey,
           },
         }
       : {
@@ -174,9 +189,9 @@ const getKoStartRoundLabel = (roundKeyOrDrawSize) => {
 };
 
 const buildDoubleElimStartRoundOptions = (currentDrawSize = 4) => {
-  const maxSize = Math.max(256, nextPow2(Number(currentDrawSize || 4)));
+  const maxSize = Math.max(4, nextPow2(Number(currentDrawSize || 4)));
   const options = [];
-  for (let size = 4; size <= maxSize; size *= 2) {
+  for (let size = maxSize; size >= 4; size /= 2) {
     options.push({
       value: getKoRoundKeyFromDrawSize(size),
       label: getKoStartRoundLabel(size),
@@ -635,7 +650,7 @@ function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
 }
 
 const DOUBLE_ELIM_GF_GAP = 40;
-const DOUBLE_ELIM_GF_RIGHT_PADDING = 320;
+const DOUBLE_ELIM_GF_RIGHT_PADDING = 220;
 const DOUBLE_ELIM_CONNECTOR_COLOR = "#707070";
 
 function getSeedNodeMetrics(root, seedId) {
@@ -645,6 +660,7 @@ function getSeedNodeMetrics(root, seedId) {
   const rootRect = root.getBoundingClientRect();
   const rect = node.getBoundingClientRect();
   return {
+    left: rect.left - rootRect.left,
     right: rect.right - rootRect.left,
     centerY: rect.top - rootRect.top + rect.height / 2,
   };
@@ -729,15 +745,16 @@ function DoubleElimPreviewLayout({
         const seedRect = seedNode?.getBoundingClientRect();
         const blockOffsetLeft = blockRect.left - wrapperRect.left;
         const blockOffsetTop = blockRect.top - wrapperRect.top;
+        const blockToSeedLeft = seedRect ? seedRect.left - blockRect.left : 0;
         const blockToSeedTop = seedRect ? seedRect.top - blockRect.top : 0;
         const seedCenterOffset = blockToSeedTop + (seedRect?.height || 0) / 2;
-        const left = Math.max(winnersNode.right, losersNode.right) + DOUBLE_ELIM_GF_GAP;
+        const cardLeft = Math.max(winnersNode.right, losersNode.right) + DOUBLE_ELIM_GF_GAP;
+        const left = Math.max(0, cardLeft - blockToSeedLeft);
         const top = Math.max(0, (winnersNode.centerY + losersNode.centerY) / 2 - seedCenterOffset);
-        const bendX = left - DOUBLE_ELIM_GF_GAP / 2;
-        const seedLeftOffset = grandFinalSeedMetrics.left - blockOffsetLeft;
+        const bendX = cardLeft - DOUBLE_ELIM_GF_GAP / 2;
         const upperTargetY = top + (grandFinalTeamA.centerY - blockOffsetTop);
         const lowerTargetY = top + (grandFinalTeamB.centerY - blockOffsetTop);
-        const endX = left + seedLeftOffset;
+        const endX = cardLeft;
 
         const nextLayout = {
           left,
@@ -781,7 +798,7 @@ function DoubleElimPreviewLayout({
       window.removeEventListener("resize", updateLayout);
       if (resizeObserver) resizeObserver.disconnect();
     };
-  }, [winnersFinalSeedId, losersFinalSeedId]);
+  }, [winnersFinalSeedId, losersFinalSeedId, grandFinalSeedId]);
 
   return (
     <Box sx={{ overflowX: "auto", pb: 1 }}>
@@ -1606,12 +1623,15 @@ export default function TournamentBlueprintPage() {
     });
   };
   const koIsDoubleElim = normalizeKoFormat(koPlan?.format) === KO_FORMAT_DOUBLE;
+  const koConfiguredDrawSize = getKoConfiguredDrawSize(koPlan);
   const koDrawSize = getKoDrawSize(koPlan);
   const koFirstRoundPairs = Math.max(1, koDrawSize / 2);
-  const koStartRoundKey = koIsDoubleElim ? getKoRoundKeyFromDrawSize(koDrawSize) : null;
+  const koStartRoundKey = koIsDoubleElim
+    ? clampDoubleElimStartRoundKey(koPlan?.doubleElim?.startRoundKey, koConfiguredDrawSize)
+    : null;
   const koStartRoundOptions = useMemo(
-    () => buildDoubleElimStartRoundOptions(koDrawSize),
-    [koDrawSize]
+    () => buildDoubleElimStartRoundOptions(koConfiguredDrawSize),
+    [koConfiguredDrawSize]
   );
   const koStartRoundLabel = koIsDoubleElim ? getKoStartRoundLabel(koStartRoundKey) : "";
   const koLosersOpeningPairs = Math.max(1, koFirstRoundPairs / 2);
@@ -2003,7 +2023,7 @@ export default function TournamentBlueprintPage() {
     const renderLosersSeedComponent = ({ seed, roundIndex }) =>
       renderSeedNode({
         seed,
-        Wrapper: roundIndex % 2 === 0 ? SingleLineSeed : Seed,
+        Wrapper: roundIndex % 2 === 1 ? SingleLineSeed : Seed,
       });
     const renderDoubleElimPreviewLayout = () => {
       const preview = buildDoubleElimPreviewFromPlan(koPlan, baseRound);
@@ -2019,67 +2039,6 @@ export default function TournamentBlueprintPage() {
           renderSeedComponent={renderSeedComponent}
           renderLosersSeedComponent={renderLosersSeedComponent}
         />
-      );
-      const grandFinalRounds = preview.grandFinal.map((round) => ({ ...round, title: "" }));
-      return (
-        <Box sx={{ overflowX: "auto", pb: 1 }}>
-          <Box
-            sx={{
-              width: "max-content",
-              minWidth: "100%",
-              display: "grid",
-              gridTemplateColumns: "max-content max-content",
-              columnGap: 4,
-              alignItems: "center",
-            }}
-          >
-            <Stack spacing={3}>
-              <Box>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                    Nhánh thắng
-                  </Typography>
-                  <Chip size="small" variant="outlined" label={baseRuleLabel} />
-                </Stack>
-                <Bracket
-                  rounds={preview.winnersBracket}
-                  renderSeedComponent={renderSeedComponent}
-                  mobileBreakpoint={0}
-                />
-              </Box>
-
-              <Box>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                    Nhánh thua
-                  </Typography>
-                  <Chip size="small" variant="outlined" label={baseRuleLabel} />
-                </Stack>
-                <Bracket
-                  rounds={preview.losersBracket}
-                  renderSeedComponent={renderSeedComponent}
-                  mobileBreakpoint={0}
-                />
-              </Box>
-            </Stack>
-
-            <Box sx={{ alignSelf: "center", minWidth: 320, pl: 1 }}>
-              <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ mb: 1.5 }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                  Chung kết tổng
-                </Typography>
-                <Chip size="small" variant="outlined" color="info" label={grandFinalRuleLabel} />
-              </Stack>
-              <Box sx={{ display: "flex", justifyContent: "center" }}>
-                <Bracket
-                  rounds={grandFinalRounds}
-                  renderSeedComponent={renderSeedComponent}
-                  mobileBreakpoint={0}
-                />
-              </Box>
-            </Box>
-          </Box>
-        </Box>
       );
     };
 
@@ -2117,46 +2076,6 @@ export default function TournamentBlueprintPage() {
     // KO
     if (normalizeKoFormat(koPlan?.format) === KO_FORMAT_DOUBLE) {
       return renderDoubleElimPreviewLayout();
-    }
-
-    if (normalizeKoFormat(koPlan?.format) === KO_FORMAT_DOUBLE) {
-      const preview = buildDoubleElimPreviewFromPlan(koPlan);
-      return (
-        <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
-              Nhánh thắng
-            </Typography>
-            <Bracket
-              rounds={preview.winnersBracket}
-              renderSeedComponent={renderSeedComponent}
-              mobileBreakpoint={0}
-            />
-          </Box>
-
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
-              Nhánh thua
-            </Typography>
-            <Bracket
-              rounds={preview.losersBracket}
-              renderSeedComponent={renderSeedComponent}
-              mobileBreakpoint={0}
-            />
-          </Box>
-
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
-              Chung kết tổng
-            </Typography>
-            <Bracket
-              rounds={preview.grandFinal}
-              renderSeedComponent={renderSeedComponent}
-              mobileBreakpoint={0}
-            />
-          </Box>
-        </Stack>
-      );
     }
 
     const rounds = buildRoundsFromPlan(koPlan, stageIdx + 1, baseRound);
@@ -3621,10 +3540,8 @@ export default function TournamentBlueprintPage() {
         sx={{ minWidth: 250 }}
         onChange={(e) => {
           const nextRoundKey = normalizeKoRoundKey(e.target.value) || "SF";
-          const nextDrawSize = getKoDrawSizeFromRoundKey(nextRoundKey) || 4;
           setKoPlanState((prev) => ({
             ...prev,
-            drawSize: nextDrawSize,
             doubleElim: {
               ...(prev?.doubleElim || {}),
               startRoundKey: nextRoundKey,
@@ -3939,7 +3856,7 @@ export default function TournamentBlueprintPage() {
                 gridTemplateColumns: {
                   xs: "1fr",
                   lg: koIsDoubleElim
-                    ? "minmax(240px,1.1fr) minmax(240px,1.1fr) 160px"
+                    ? "minmax(240px,1fr) minmax(220px,0.9fr) minmax(280px,1fr)"
                     : "minmax(240px,1.2fr) 160px",
                 },
                 alignItems: "start",
@@ -3953,27 +3870,28 @@ export default function TournamentBlueprintPage() {
               sx={{ minWidth: 240 }}
               onChange={(e) => {
                 const nextFormat = normalizeKoFormat(e.target.value);
-                setKoPlanState((prev) => ({
-                  ...prev,
-                  format: nextFormat,
-                  drawSize: Math.max(
-                    getKoMinDrawSize(nextFormat),
-                    Number(prev?.drawSize || getKoMinDrawSize(nextFormat))
-                  ),
-                  ...(nextFormat === KO_FORMAT_DOUBLE
-                    ? {
-                        doubleElim: {
-                          ...(prev?.doubleElim || {}),
-                          startRoundKey: getKoRoundKeyFromDrawSize(
-                            Math.max(
-                              getKoMinDrawSize(nextFormat),
-                              Number(prev?.drawSize || getKoMinDrawSize(nextFormat))
-                            )
-                          ),
-                        },
-                      }
-                    : {}),
-                }));
+                setKoPlanState((prev) => {
+                  const nextDrawSize = getKoConfiguredDrawSize({
+                    format: nextFormat,
+                    drawSize: prev?.drawSize || getKoMinDrawSize(nextFormat),
+                  });
+                  return {
+                    ...prev,
+                    format: nextFormat,
+                    drawSize: nextDrawSize,
+                    ...(nextFormat === KO_FORMAT_DOUBLE
+                      ? {
+                          doubleElim: {
+                            ...(prev?.doubleElim || {}),
+                            startRoundKey: clampDoubleElimStartRoundKey(
+                              prev?.doubleElim?.startRoundKey,
+                              nextDrawSize
+                            ),
+                          },
+                        }
+                      : {}),
+                  };
+                });
                 if (nextFormat === KO_FORMAT_DOUBLE) {
                   setKoThirdPlace(false);
                   setKoSemiOverride(false);
@@ -4001,7 +3919,10 @@ export default function TournamentBlueprintPage() {
                       ? {
                           doubleElim: {
                             ...(p?.doubleElim || {}),
-                            startRoundKey: getKoRoundKeyFromDrawSize(nextDrawSize),
+                            startRoundKey: clampDoubleElimStartRoundKey(
+                              p?.doubleElim?.startRoundKey,
+                              nextDrawSize
+                            ),
                           },
                         }
                       : {}),
@@ -4012,6 +3933,9 @@ export default function TournamentBlueprintPage() {
             {renderDoubleElimStartRoundSelect()}
             </Box>
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            {koIsDoubleElim ? (
+              <Chip size="small" variant="outlined" label={`KO tổng: ${koConfiguredDrawSize} đội`} />
+            ) : null}
             {koIsDoubleElim ? (
               <Chip
                 size="small"
@@ -4903,7 +4827,8 @@ export default function TournamentBlueprintPage() {
 /* ===== Normalizers for payload ===== */
 function normalizeSeedsKO(plan) {
   const format = normalizeKoFormat(plan?.format);
-  const size = getKoDrawSize({ ...plan, format });
+  const configuredDrawSize = getKoConfiguredDrawSize({ ...plan, format });
+  const size = getKoDrawSize({ ...plan, format, drawSize: configuredDrawSize });
   const firstPairs = size / 2;
   const map = new Map((plan?.seeds || []).map((s) => [Number(s.pair), s]));
   const placeholder = () => ({ type: "registration", ref: {}, label: "" });
@@ -4917,15 +4842,17 @@ function normalizeSeedsKO(plan) {
     };
   });
   return {
-    drawSize: size,
+    drawSize: configuredDrawSize,
     seeds,
     format,
     ...(format === KO_FORMAT_DOUBLE
       ? {
           doubleElim: {
             hasGrandFinalReset: !!plan?.doubleElim?.hasGrandFinalReset,
-            startRoundKey:
-              normalizeKoRoundKey(plan?.doubleElim?.startRoundKey) || getKoRoundKeyFromDrawSize(size),
+            startRoundKey: clampDoubleElimStartRoundKey(
+              plan?.doubleElim?.startRoundKey,
+              configuredDrawSize
+            ),
           },
         }
       : {}),
