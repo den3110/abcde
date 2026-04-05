@@ -840,6 +840,17 @@ function StaticPreviewSeedCard({ seed }) {
   );
 }
 
+StaticPreviewSeedCard.propTypes = {
+  seed: PropTypes.shape({
+    id: PropTypes.string,
+    teams: PropTypes.arrayOf(
+      PropTypes.shape({
+        name: PropTypes.string,
+      })
+    ),
+  }).isRequired,
+};
+
 function sameConnectorLayout(a, b) {
   if (!a || !b) return false;
   return (
