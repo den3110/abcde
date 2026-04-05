@@ -77,9 +77,10 @@ export const filesApiSlice = apiSlice.injectEndpoints({
     // 3) UPLOAD PART (dùng queryFn + axios để có onUploadProgress)
     multipartUploadPart: builder.mutation({
       // args: { uploadId, partNo, blob, contentRange, checksum, signal, onUploadProgress }
-      async queryFn(args) {
+      async queryFn(args, api) {
         const { uploadId, partNo, blob, contentRange, checksum, signal, onUploadProgress } =
           args || {};
+        const token = api.getState()?.auth?.userInfo?.token;
         try {
           const res = await axios.put(
             process.env.REACT_APP_API_URL + `/files/multipart/${uploadId}/${partNo}`,
@@ -89,6 +90,7 @@ export const filesApiSlice = apiSlice.injectEndpoints({
               signal,
               headers: {
                 "Content-Type": "application/octet-stream",
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 ...(contentRange ? { "Content-Range": contentRange } : {}),
                 ...(checksum ? { "X-Chunk-Checksum": checksum } : {}),
               },
