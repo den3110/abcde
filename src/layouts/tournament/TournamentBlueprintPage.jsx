@@ -1908,6 +1908,7 @@ export default function TournamentBlueprintPage() {
     buildKoPlanState({ drawSize: 16, seeds: [], format: KO_FORMAT_SINGLE })
   );
   const [koDrawSizeInput, setKoDrawSizeInput] = useState("16");
+  const [koDrawSizeInputFocused, setKoDrawSizeInputFocused] = useState(false);
   const setKoPlanState = (nextOrUpdater) => {
     setKoPlan((prev) => {
       const next =
@@ -1947,8 +1948,9 @@ export default function TournamentBlueprintPage() {
   }, [koDrawSizeInput, koPlan?.format]);
 
   useEffect(() => {
+    if (koDrawSizeInputFocused) return;
     setKoDrawSizeInput(String(koPlan?.drawSize ?? ""));
-  }, [koPlan?.drawSize]);
+  }, [koPlan?.drawSize, koDrawSizeInputFocused]);
 
   // ===== Rules per stage (có CAP) =====
   const [groupRules, setGroupRules] = useState(DEFAULT_RULES);
@@ -3895,6 +3897,33 @@ export default function TournamentBlueprintPage() {
     }));
   };
 
+  const commitKoDrawSizeInput = () => {
+    const raw = String(koDrawSizeInput || "").trim();
+    if (!raw) return;
+    if (!/^\d+$/.test(raw)) return;
+
+    const nextDrawSize = Number(raw);
+    const minDrawSize = getKoMinDrawSize(koPlan?.format);
+    if (!Number.isFinite(nextDrawSize) || nextDrawSize < minDrawSize) return;
+    if (nextPow2(nextDrawSize) !== nextDrawSize) return;
+
+    setKoPlanState((prev) => ({
+      ...prev,
+      drawSize: nextDrawSize,
+      ...(normalizeKoFormat(prev?.format) === KO_FORMAT_DOUBLE
+        ? {
+            doubleElim: {
+              ...(prev?.doubleElim || {}),
+              startRoundKey: clampDoubleElimStartRoundKey(
+                prev?.doubleElim?.startRoundKey,
+                nextDrawSize
+              ),
+            },
+          }
+        : {}),
+    }));
+  };
+
   const manualContent = (
     <Stack spacing={3}>
       {hasLockedStages ? (
@@ -4244,6 +4273,17 @@ export default function TournamentBlueprintPage() {
               label="KO drawSize"
               value={koDrawSizeInput}
               onChange={(e) => handleKoDrawSizeInputChange(e.target.value)}
+              onFocus={() => setKoDrawSizeInputFocused(true)}
+              onBlur={() => {
+                setKoDrawSizeInputFocused(false);
+                commitKoDrawSizeInput();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitKoDrawSizeInput();
+                }
+              }}
               error={!!koDrawSizeError}
               helperText={koDrawSizeError || " "}
               inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
@@ -4820,6 +4860,17 @@ export default function TournamentBlueprintPage() {
                   label="KO drawSize"
                   value={koDrawSizeInput}
                   onChange={(e) => handleKoDrawSizeInputChange(e.target.value)}
+                  onFocus={() => setKoDrawSizeInputFocused(true)}
+                  onBlur={() => {
+                    setKoDrawSizeInputFocused(false);
+                    commitKoDrawSizeInput();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitKoDrawSizeInput();
+                    }
+                  }}
                   error={!!koDrawSizeError}
                   helperText={koDrawSizeError || " "}
                   inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
