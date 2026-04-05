@@ -465,11 +465,42 @@ function buildRoundsFromPlan(planKO, stageIndex = 1, baseRound = 1) {
 const winnerRoundMatchCode = (baseRound, roundIndex, order) =>
   `V${baseRound + roundIndex - 1}-T${order}`;
 
-const loserRoundMatchCode = (baseRound, roundIndex, order) =>
-  `V${baseRound + roundIndex - 1}-BT-T${order}`;
+  const loserRoundMatchCode = (baseRound, roundIndex, order) =>
+    `V${baseRound + roundIndex - 1}-NT-T${order}`;
 
 const grandFinalMatchCode = (baseRound, finalLbRoundIndex, order = 1) =>
   `V${baseRound + finalLbRoundIndex}-T${order}`;
+
+const previewMatchCodePrefix = (matchCode) => String(matchCode || "").replace(/-T\d+$/, "");
+
+const getLosersRoundPreviewTitle = (baseRound, roundNo, winnersRounds) => {
+  const currentPrefix = previewMatchCodePrefix(loserRoundMatchCode(baseRound, roundNo, 1));
+
+  if (roundNo === 1) {
+    return `${currentPrefix} • Nhánh thua 1 · nhận đội thua từ ${previewMatchCodePrefix(
+      winnerRoundMatchCode(baseRound, 1, 1)
+    )}`;
+  }
+
+  if (roundNo === winnersRounds * 2 - 2) {
+    return `${currentPrefix} • Chung kết nhánh thua · thắng ${previewMatchCodePrefix(
+      loserRoundMatchCode(baseRound, roundNo - 1, 1)
+    )} gặp đội thua ${winnerRoundMatchCode(baseRound, winnersRounds, 1)}`;
+  }
+
+  if (roundNo % 2 === 0) {
+    const winnersSourceRound = roundNo / 2 + 1;
+    return `${currentPrefix} • Nhánh thua ${roundNo} · thắng ${previewMatchCodePrefix(
+      loserRoundMatchCode(baseRound, roundNo - 1, 1)
+    )} gặp đội thua ${previewMatchCodePrefix(
+      winnerRoundMatchCode(baseRound, winnersSourceRound, 1)
+    )}`;
+  }
+
+  return `${currentPrefix} • Nhánh thua ${roundNo} · các đội thắng từ ${previewMatchCodePrefix(
+    loserRoundMatchCode(baseRound, roundNo - 1, 1)
+  )} gặp nhau`;
+};
 
 function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
   const drawSize = getKoDrawSize({ ...planKO, format: KO_FORMAT_DOUBLE });
@@ -597,6 +628,23 @@ function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
       idx === losersBracket.length - 1
         ? `${loserRoundMatchCode(baseRound, roundNo, 1).split("-T")[0]} • Chung kết nhánh thua`
         : `${loserRoundMatchCode(baseRound, roundNo, 1).split("-T")[0]} • Nhánh thua ${roundNo}`;
+  });
+  if (grandFinal[0]) {
+    grandFinal[0].title = `${grandFinalMatchCode(baseRound, finalLbRoundIndex)} • Chung kết tổng`;
+  }
+
+  if (winnersBracket[0]) {
+    winnersBracket[0].title = `${winnerRoundMatchCode(baseRound, 1, 1).split("-T")[0]} • ${roundTitleByPairs(firstPairs)} nhánh thắng`;
+  }
+  for (let roundIndex = 2; roundIndex <= winnersRounds; roundIndex += 1) {
+    const pairs = Math.ceil(firstPairs / 2 ** (roundIndex - 1));
+    if (winnersBracket[roundIndex - 1]) {
+      winnersBracket[roundIndex - 1].title = `${winnerRoundMatchCode(baseRound, roundIndex, 1).split("-T")[0]} • ${roundTitleByPairs(Math.max(1, pairs))} nhánh thắng`;
+    }
+  }
+  losersBracket.forEach((round, idx) => {
+    const roundNo = idx + 1;
+    round.title = getLosersRoundPreviewTitle(baseRound, roundNo, winnersRounds);
   });
   if (grandFinal[0]) {
     grandFinal[0].title = `${grandFinalMatchCode(baseRound, finalLbRoundIndex)} • Chung kết tổng`;
@@ -1686,6 +1734,82 @@ export default function TournamentBlueprintPage() {
       const baseRuleLabel = ruleSummary(normalizeRulesForState(koRules, DEFAULT_RULES));
       const grandFinalRuleLabel = ruleSummary(
         normalizeRulesForState(koFinalOverride ? koFinalRules : koRules, DEFAULT_RULES)
+      );
+      const grandFinalTeams = preview.grandFinal?.[0]?.seeds?.[0]?.teams || [];
+
+      return (
+        <Box sx={{ overflowX: "auto", pb: 1 }}>
+          <Stack spacing={3} sx={{ width: "max-content", minWidth: "100%" }}>
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Nhánh thắng
+                </Typography>
+                <Chip size="small" variant="outlined" label={baseRuleLabel} />
+              </Stack>
+              <Bracket
+                rounds={preview.winnersBracket}
+                renderSeedComponent={renderSeedComponent}
+                mobileBreakpoint={0}
+              />
+            </Box>
+
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Nhánh thua
+                </Typography>
+                <Chip size="small" variant="outlined" label={baseRuleLabel} />
+              </Stack>
+              <Alert severity="info" variant="outlined" sx={{ mb: 1.5, py: 0.5 }}>
+                <Typography variant="caption" sx={{ display: "block" }}>
+                  `L-Vx-Ty` là đội thua của trận đó, `W-Vx-NT-Ty` là đội thắng của trận nhánh thua đó,
+                  còn `NT` là viết tắt của nhánh thua.
+                </Typography>
+                <Typography variant="caption" sx={{ display: "block" }}>
+                  Mỗi cột chẵn của nhánh thua sẽ nhận thêm đội mới rơi xuống từ nhánh thắng.
+                </Typography>
+              </Alert>
+              <Bracket
+                rounds={preview.losersBracket}
+                renderSeedComponent={renderSeedComponent}
+                mobileBreakpoint={0}
+              />
+            </Box>
+
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                pt: 1,
+                borderTop: (theme) => `1px dashed ${theme.palette.divider}`,
+              }}
+            >
+              <Box sx={{ minWidth: 420, maxWidth: "100%" }}>
+                <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ mb: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                    Chung kết tổng
+                  </Typography>
+                  <Chip size="small" variant="outlined" color="info" label={grandFinalRuleLabel} />
+                </Stack>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", textAlign: "center", mb: 1.5 }}
+                >
+                  {grandFinalTeams?.[0]?.name || "—"} vs {grandFinalTeams?.[1]?.name || "—"}
+                </Typography>
+                <Box sx={{ display: "flex", justifyContent: "center" }}>
+                  <Bracket
+                    rounds={preview.grandFinal}
+                    renderSeedComponent={renderSeedComponent}
+                    mobileBreakpoint={0}
+                  />
+                </Box>
+              </Box>
+            </Box>
+          </Stack>
+        </Box>
       );
 
       return (
