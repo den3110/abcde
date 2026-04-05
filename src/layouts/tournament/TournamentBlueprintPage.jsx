@@ -634,8 +634,8 @@ function buildDoubleElimPreviewFromPlan(planKO, baseRound = 1) {
   return { winnersBracket, losersBracket, grandFinal };
 }
 
-const DOUBLE_ELIM_GF_GAP = 56;
-const DOUBLE_ELIM_GF_RIGHT_PADDING = 360;
+const DOUBLE_ELIM_GF_GAP = 40;
+const DOUBLE_ELIM_GF_RIGHT_PADDING = 320;
 const DOUBLE_ELIM_CONNECTOR_COLOR = "#707070";
 
 function getSeedNodeMetrics(root, seedId) {
@@ -646,6 +646,20 @@ function getSeedNodeMetrics(root, seedId) {
   const rect = node.getBoundingClientRect();
   return {
     right: rect.right - rootRect.left,
+    centerY: rect.top - rootRect.top + rect.height / 2,
+  };
+}
+
+function getSeedTeamMetrics(root, seedId, slot) {
+  if (!root || !seedId || !slot) return null;
+  const node = root.querySelector(
+    `[data-seed-id="${seedId}"] [data-seed-team="${slot}"]`
+  );
+  if (!node) return null;
+  const rootRect = root.getBoundingClientRect();
+  const rect = node.getBoundingClientRect();
+  return {
+    left: rect.left - rootRect.left,
     centerY: rect.top - rootRect.top + rect.height / 2,
   };
 }
@@ -681,6 +695,7 @@ function DoubleElimPreviewLayout({
     preview?.winnersBracket?.[preview.winnersBracket.length - 1]?.seeds?.[0]?.id || null;
   const losersFinalSeedId =
     preview?.losersBracket?.[preview.losersBracket.length - 1]?.seeds?.[0]?.id || null;
+  const grandFinalSeedId = preview?.grandFinal?.[0]?.seeds?.[0]?.id || null;
   const grandFinalRounds = useMemo(
     () => preview.grandFinal.map((round) => ({ ...round, title: "" })),
     [preview.grandFinal]
@@ -694,7 +709,9 @@ function DoubleElimPreviewLayout({
       frameId = window.requestAnimationFrame(() => {
         const wrapperNode = wrapperRef.current;
         const grandFinalNode = grandFinalRef.current;
-        if (!wrapperNode || !grandFinalNode || !winnersFinalSeedId || !losersFinalSeedId) return;
+        if (!wrapperNode || !grandFinalNode || !winnersFinalSeedId || !losersFinalSeedId || !grandFinalSeedId) {
+          return;
+        }
 
         const winnersNode = getSeedNodeMetrics(wrapperNode, winnersFinalSeedId);
         const losersNode = getSeedNodeMetrics(wrapperNode, losersFinalSeedId);
@@ -702,14 +719,25 @@ function DoubleElimPreviewLayout({
 
         const wrapperRect = wrapperNode.getBoundingClientRect();
         const grandFinalRect = grandFinalNode.getBoundingClientRect();
+        const grandFinalSeedMetrics = getSeedNodeMetrics(wrapperNode, grandFinalSeedId);
+        const grandFinalTeamA = getSeedTeamMetrics(wrapperNode, grandFinalSeedId, "A");
+        const grandFinalTeamB = getSeedTeamMetrics(wrapperNode, grandFinalSeedId, "B");
+        if (!grandFinalSeedMetrics || !grandFinalTeamA || !grandFinalTeamB) return;
+
+        const blockRect = grandFinalNode.getBoundingClientRect();
+        const seedNode = wrapperNode.querySelector(`[data-seed-id="${grandFinalSeedId}"]`);
+        const seedRect = seedNode?.getBoundingClientRect();
+        const blockOffsetLeft = blockRect.left - wrapperRect.left;
+        const blockOffsetTop = blockRect.top - wrapperRect.top;
+        const blockToSeedTop = seedRect ? seedRect.top - blockRect.top : 0;
+        const seedCenterOffset = blockToSeedTop + (seedRect?.height || 0) / 2;
         const left = Math.max(winnersNode.right, losersNode.right) + DOUBLE_ELIM_GF_GAP;
-        const top = Math.max(
-          0,
-          (winnersNode.centerY + losersNode.centerY) / 2 - grandFinalRect.height / 2
-        );
+        const top = Math.max(0, (winnersNode.centerY + losersNode.centerY) / 2 - seedCenterOffset);
         const bendX = left - DOUBLE_ELIM_GF_GAP / 2;
-        const upperTargetY = top + grandFinalRect.height * 0.35;
-        const lowerTargetY = top + grandFinalRect.height * 0.65;
+        const seedLeftOffset = grandFinalSeedMetrics.left - blockOffsetLeft;
+        const upperTargetY = top + (grandFinalTeamA.centerY - blockOffsetTop);
+        const lowerTargetY = top + (grandFinalTeamB.centerY - blockOffsetTop);
+        const endX = left + seedLeftOffset;
 
         const nextLayout = {
           left,
@@ -719,20 +747,19 @@ function DoubleElimPreviewLayout({
           winnersPath: buildConnectorPath(
             winnersNode.right,
             winnersNode.centerY,
-            left,
+            endX,
             upperTargetY,
             bendX
           ),
           losersPath: buildConnectorPath(
             losersNode.right,
             losersNode.centerY,
-            left,
+            endX,
             lowerTargetY,
             bendX
           ),
           canvasWidth: Math.max(wrapperNode.scrollWidth, left + grandFinalRect.width + 24),
           canvasHeight: Math.max(wrapperNode.scrollHeight, top + grandFinalRect.height + 24),
-          wrapperTop: wrapperRect.top,
         };
 
         setLayout((prev) => (sameConnectorLayout(prev, nextLayout) ? prev : nextLayout));
@@ -1939,8 +1966,8 @@ export default function TournamentBlueprintPage() {
                     {seedCode}
                   </div>
                 ) : null}
-                <SeedTeam>{A?.name || "—"}</SeedTeam>
-                <SeedTeam>{B?.name || "—"}</SeedTeam>
+                <SeedTeam data-seed-team="A">{A?.name || "—"}</SeedTeam>
+                <SeedTeam data-seed-team="B">{B?.name || "—"}</SeedTeam>
               </div>
             </SeedItem>
           </Wrapper>
@@ -1955,12 +1982,12 @@ export default function TournamentBlueprintPage() {
                   {seedCode}
                 </div>
               ) : null}
-              <SeedTeam>
+              <SeedTeam data-seed-team="A">
                 <Button size="small" variant="text" onClick={() => openPicker(stageIdx, pair, "A")}>
                   {A?.name || "—"}
                 </Button>
               </SeedTeam>
-              <SeedTeam>
+              <SeedTeam data-seed-team="B">
                 <Button size="small" variant="text" onClick={() => openPicker(stageIdx, pair, "B")}>
                   {B?.name || "—"}
                 </Button>
