@@ -28,7 +28,7 @@ import {
   IconButton,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
-import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
+import { Bracket, Seed, SeedItem, SeedTeam, SingleLineSeed } from "react-brackets";
 import { toast } from "react-toastify";
 import { Add as AddIcon, Remove as RemoveIcon } from "@mui/icons-material";
 import {
@@ -671,6 +671,7 @@ function DoubleElimPreviewLayout({
   baseRuleLabel,
   grandFinalRuleLabel,
   renderSeedComponent,
+  renderLosersSeedComponent,
 }) {
   const wrapperRef = useRef(null);
   const grandFinalRef = useRef(null);
@@ -791,7 +792,7 @@ function DoubleElimPreviewLayout({
             </Stack>
             <Bracket
               rounds={preview.losersBracket}
-              renderSeedComponent={renderSeedComponent}
+              renderSeedComponent={renderLosersSeedComponent}
               mobileBreakpoint={0}
             />
           </Box>
@@ -888,6 +889,7 @@ DoubleElimPreviewLayout.propTypes = {
   baseRuleLabel: PropTypes.string,
   grandFinalRuleLabel: PropTypes.string,
   renderSeedComponent: PropTypes.func.isRequired,
+  renderLosersSeedComponent: PropTypes.func.isRequired,
 };
 
 DoubleElimPreviewLayout.defaultProps = {
@@ -1922,14 +1924,14 @@ export default function TournamentBlueprintPage() {
 
   const renderEditableBracket = (stageIdx) => {
     const stage = stages[stageIdx];
-    const renderSeedComponent = ({ seed }) => {
+    const renderSeedNode = ({ seed, Wrapper = Seed }) => {
       const A = seed?.teams?.[0];
       const B = seed?.teams?.[1];
       const pair = A?.__pair || B?.__pair;
       const seedCode = seed?.id || "";
       if (!pair) {
         return (
-          <Seed>
+          <Wrapper mobileBreakpoint={0}>
             <SeedItem data-seed-id={seedCode || undefined}>
               <div style={{ display: "grid", gap: 4 }}>
                 {seedCode ? (
@@ -1941,11 +1943,11 @@ export default function TournamentBlueprintPage() {
                 <SeedTeam>{B?.name || "—"}</SeedTeam>
               </div>
             </SeedItem>
-          </Seed>
+          </Wrapper>
         );
       }
       return (
-        <Seed>
+        <Wrapper mobileBreakpoint={0}>
           <SeedItem data-seed-id={seedCode || undefined}>
             <div style={{ display: "grid", gap: 4 }}>
               {seedCode ? (
@@ -1965,11 +1967,17 @@ export default function TournamentBlueprintPage() {
               </SeedTeam>
             </div>
           </SeedItem>
-        </Seed>
+        </Wrapper>
       );
     };
 
     // Đếm số "vòng hiển thị" trước stage hiện tại
+    const renderSeedComponent = ({ seed }) => renderSeedNode({ seed });
+    const renderLosersSeedComponent = ({ seed, roundIndex }) =>
+      renderSeedNode({
+        seed,
+        Wrapper: roundIndex % 2 === 0 ? SingleLineSeed : Seed,
+      });
     const renderDoubleElimPreviewLayout = () => {
       const preview = buildDoubleElimPreviewFromPlan(koPlan, baseRound);
       const baseRuleLabel = ruleSummary(normalizeRulesForState(koRules, DEFAULT_RULES));
@@ -1982,6 +1990,7 @@ export default function TournamentBlueprintPage() {
           baseRuleLabel={baseRuleLabel}
           grandFinalRuleLabel={grandFinalRuleLabel}
           renderSeedComponent={renderSeedComponent}
+          renderLosersSeedComponent={renderLosersSeedComponent}
         />
       );
       const grandFinalRounds = preview.grandFinal.map((round) => ({ ...round, title: "" }));
