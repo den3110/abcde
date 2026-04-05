@@ -372,7 +372,7 @@ export default function AdminMatchDetailPage() {
               )}
               <Typography variant="body2">
                 <StadiumIcon sx={{ fontSize: 16, mr: 0.5, mb: "-3px" }} />
-                Sân: <b>{match?.courtLabel || "—"}</b>
+                Sân: <b>{match?.courtStationName || match?.courtStationLabel || match?.courtLabel || "—"}</b>
               </Typography>
               <Typography variant="body2">
                 <AccessTimeIcon sx={{ fontSize: 16, mr: 0.5, mb: "-3px" }} />

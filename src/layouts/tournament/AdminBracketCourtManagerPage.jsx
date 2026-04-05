@@ -538,6 +538,8 @@ export default function AdminBracketCourtManagerPage() {
   }, [courts]);
 
   const courtLabelOf = (m) =>
+    m?.courtStationName ||
+    m?.courtStationLabel ||
     m?.courtLabel ||
     courtIdToName.get(String(m?.court || "")) ||
     m?.courtName ||
@@ -1045,7 +1047,7 @@ export default function AdminBracketCourtManagerPage() {
         field: "courtLabel",
         headerName: "Sân",
         width: 120,
-        valueGetter: (p) => p.row?.courtLabel || "",
+        valueGetter: (p) => courtLabelOf(p.row),
       },
     ];
     return base;

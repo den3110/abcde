@@ -56,6 +56,16 @@ function pickMatchCode(m) {
   return (cand || matchCode(m) || "").trim();
 }
 
+const matchCourtName = (match) =>
+  String(
+    match?.courtStationName ||
+      match?.courtStationLabel ||
+      match?.courtLabel ||
+      match?.court?.name ||
+      match?.courtName ||
+      ""
+  ).trim();
+
 /* ============ debounce nhỏ cho ô tìm kiếm ============ */
 function useDebounced(value, delay = 400) {
   const [v, setV] = useState(value);
@@ -211,7 +221,7 @@ function TournamentAccordion({
             <List dense sx={{ maxHeight: 360, overflowY: "auto" }}>
               {items.map((m) => {
                 const chip = getMatchStatusChip(m.status);
-                const courtName = m.court?.name || m.courtName || "";
+                const courtName = matchCourtName(m);
                 const evt = (m?.tournament?.eventType || "double").toLowerCase();
                 const displayMode = getTournamentNameDisplayMode(m?.tournament);
                 return (

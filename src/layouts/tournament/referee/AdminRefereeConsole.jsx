@@ -72,6 +72,16 @@ export const VI_MATCH_STATUS = {
 export const getMatchStatusChip = (s) =>
   VI_MATCH_STATUS[s] || { label: s || "—", color: "default" };
 
+const matchCourtName = (match) =>
+  String(
+    match?.courtStationName ||
+      match?.courtStationLabel ||
+      match?.courtLabel ||
+      match?.court?.name ||
+      match?.courtName ||
+      ""
+  ).trim();
+
 // ===== cap hint (UI) =====
 const capHint = (rules) => {
   const mode = String(rules?.cap?.mode || "none");
@@ -849,11 +859,11 @@ export default function AdminRefereeConsole() {
                         variant="outlined"
                       />
                     )}
-                    {(match.court?.name || match.courtName) && (
+                    {matchCourtName(match) && (
                       <Chip
                         size="small"
                         icon={<StadiumIcon sx={{ fontSize: 14 }} />}
-                        label={match.court?.name || match.courtName}
+                        label={matchCourtName(match)}
                         variant="outlined"
                       />
                     )}

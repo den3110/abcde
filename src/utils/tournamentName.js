@@ -8,8 +8,25 @@ const readText = (...candidates) => {
 };
 
 export const getTournamentNameDisplayMode = (source) => {
-  const mode = readText(source?.nameDisplayMode, source?.tournament?.nameDisplayMode);
+  const mode = readText(
+    source?.displayNameMode,
+    source?.nameDisplayMode,
+    source?.tournament?.displayNameMode,
+    source?.tournament?.nameDisplayMode
+  );
   return mode === "fullName" ? "fullName" : "nickname";
+};
+
+const displayModeValue = (value) =>
+  value === "fullName" || value === "nickname" ? value : "";
+
+const storedDisplayNameForMode = (entity, displayMode) => {
+  const storedName = readText(entity?.displayName);
+  const storedMode = displayModeValue(
+    readText(entity?.displayNameMode, entity?.nameDisplayMode)
+  );
+  if (storedName && storedMode === displayMode) return storedName;
+  return "";
 };
 
 const nicknameOf = (player) =>
@@ -26,10 +43,9 @@ const nicknameOf = (player) =>
 const fullNameOf = (player) =>
   readText(
     player?.fullName,
-    player?.name,
-    player?.displayName,
     player?.user?.fullName,
-    player?.user?.name
+    player?.user?.name,
+    player?.name
   );
 
 export const getTournamentPlayerName = (player, displayMode = "nickname", fallback = "—") => {
@@ -37,9 +53,21 @@ export const getTournamentPlayerName = (player, displayMode = "nickname", fallba
   const nickname = nicknameOf(player);
   const fullName = fullNameOf(player);
   if (displayMode === "fullName") {
-    return fullName || nickname || fallback;
+    return (
+      storedDisplayNameForMode(player, displayMode) ||
+      fullName ||
+      nickname ||
+      readText(player?.displayName) ||
+      fallback
+    );
   }
-  return nickname || fullName || fallback;
+  return (
+    storedDisplayNameForMode(player, displayMode) ||
+    nickname ||
+    fullName ||
+    readText(player?.displayName) ||
+    fallback
+  );
 };
 
 const extractPlayers = (entity) => {
