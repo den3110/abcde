@@ -307,12 +307,13 @@ function OutputCell({ row }) {
   );
 }
 
-function DriveLinksCell({ row }) {
+function DriveLinksCell({ row, onOpenDriveAction, driveActionBusy = false }) {
   const canPlay =
     Boolean(row.playbackUrl) && (row.status === "ready" || row.temporaryPlaybackReady);
   const rawHref = row.rawStreamAvailable
     ? row.rawStreamUrl || row.driveRawUrl
     : row.driveRawUrl || null;
+  const hasSourceDriveFile = Boolean(String(row?.driveFileId || "").trim());
   const stop = (event) => event.stopPropagation();
 
   return (
@@ -359,6 +360,21 @@ function DriveLinksCell({ row }) {
           onClick={stop}
         >
           Preview
+        </Button>
+      ) : null}
+      {hasSourceDriveFile ? (
+        <Button
+          size="small"
+          color="error"
+          variant="outlined"
+          disabled={driveActionBusy}
+          startIcon={<DeleteOutlineIcon />}
+          onClick={(event) => {
+            stop(event);
+            onOpenDriveAction?.(row, "source", "trash");
+          }}
+        >
+          Xoá video
         </Button>
       ) : null}
       {!canPlay && !rawHref && !row.drivePreviewUrl ? (
@@ -1435,10 +1451,16 @@ export default function DriveVideoManagerPage() {
       {
         field: "driveLinks",
         headerName: "Drive / Playback",
-        minWidth: 320,
+        minWidth: 420,
         flex: 1,
         sortable: false,
-        renderCell: ({ row }) => <DriveLinksCell row={row} />,
+        renderCell: ({ row }) => (
+          <DriveLinksCell
+            row={row}
+            onOpenDriveAction={openDriveActionDialog}
+            driveActionBusy={driveActionSubmitting}
+          />
+        ),
       },
       {
         field: "commentary",

@@ -98,6 +98,83 @@ function formatDuration(seconds) {
   return `${secs}s`;
 }
 
+function getTimestampMs(value) {
+  const ts = new Date(value || 0).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function buildQueueSnapshotItems(entriesByRecordingId = {}, rowsByRecordingId = new Map(), kind = "waiting") {
+  return Object.entries(entriesByRecordingId || {}).map(([recordingId, entry]) => ({
+    kind,
+    recordingId: String(recordingId || ""),
+    position:
+      Number.isFinite(Number(entry?.position)) && Number(entry.position) > 0
+        ? Number(entry.position)
+        : null,
+    jobId: entry?.jobId ? String(entry.jobId) : null,
+    scheduledAt: entry?.scheduledAt || null,
+    row: rowsByRecordingId.get(String(recordingId || "")) || null,
+  }));
+}
+
+function buildFallbackQueueItem(row, kind = "waiting") {
+  if (!row?.recordingId) return null;
+  return {
+    kind,
+    recordingId: String(row.recordingId),
+    position:
+      Number.isFinite(Number(row?.exportPipeline?.queuePosition)) &&
+      Number(row.exportPipeline.queuePosition) > 0
+        ? Number(row.exportPipeline.queuePosition)
+        : null,
+    jobId: row?.exportPipeline?.jobId || null,
+    scheduledAt: row?.scheduledExportAt || row?.exportPipeline?.scheduledExportAt || null,
+    row,
+  };
+}
+
+function dedupeQueueItems(items = []) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = String(item?.recordingId || "").trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sortQueueItemsByPosition(items = []) {
+  return [...items].sort((a, b) => {
+    const aPos = Number.isFinite(Number(a?.position)) ? Number(a.position) : Number.MAX_SAFE_INTEGER;
+    const bPos = Number.isFinite(Number(b?.position)) ? Number(b.position) : Number.MAX_SAFE_INTEGER;
+    if (aPos !== bPos) return aPos - bPos;
+
+    const aUpdatedAt = getTimestampMs(a?.row?.updatedAt || a?.scheduledAt);
+    const bUpdatedAt = getTimestampMs(b?.row?.updatedAt || b?.scheduledAt);
+    if (aUpdatedAt !== bUpdatedAt) return aUpdatedAt - bUpdatedAt;
+
+    return String(a?.recordingId || "").localeCompare(String(b?.recordingId || ""));
+  });
+}
+
+function sortQueueItemsBySchedule(items = []) {
+  return [...items].sort((a, b) => {
+    const aScheduledAt = getTimestampMs(
+      a?.scheduledAt || a?.row?.scheduledExportAt || a?.row?.exportPipeline?.scheduledExportAt
+    );
+    const bScheduledAt = getTimestampMs(
+      b?.scheduledAt || b?.row?.scheduledExportAt || b?.row?.exportPipeline?.scheduledExportAt
+    );
+    if (aScheduledAt !== bScheduledAt) return aScheduledAt - bScheduledAt;
+
+    const aUpdatedAt = getTimestampMs(a?.row?.updatedAt);
+    const bUpdatedAt = getTimestampMs(b?.row?.updatedAt);
+    if (aUpdatedAt !== bUpdatedAt) return aUpdatedAt - bUpdatedAt;
+
+    return String(a?.recordingId || "").localeCompare(String(b?.recordingId || ""));
+  });
+}
+
 function SummaryCard({ title, value, hint, color = "text.primary" }) {
   return (
     <Card sx={{ borderRadius: 3, height: "100%" }}>
@@ -427,6 +504,20 @@ const PIPELINE_STAGE_PERCENT = {
   cleaning_r2: 95,
   completed: 100,
 };
+
+const ACTIVE_QUEUE_STAGES = new Set([
+  "downloading",
+  "downloading_facebook_vod",
+  "merging",
+  "uploading_drive",
+  "cleaning_r2",
+]);
+
+const SCHEDULED_QUEUE_STAGES = new Set([
+  "queued_retry",
+  "delayed_until_window",
+  "waiting_facebook_vod",
+]);
 
 function WorkerHealthPanel({ health, currentExportRow }) {
   const worker = health?.worker || null;
@@ -1049,12 +1140,363 @@ function RecordingDetailDialog({
   );
 }
 
+function ExportQueueItemCard({ item, onOpenDetail }) {
+  const row = item?.row || null;
+  const stage = row?.exportPipeline?.stage || "";
+  const stageLabel =
+    PIPELINE_STAGE_LABELS[stage] ||
+    row?.exportPipeline?.label ||
+    (item?.kind === "delayed" ? "Chờ đến lượt" : "Đang chờ xử lý");
+  const scheduledAt =
+    item?.scheduledAt || row?.scheduledExportAt || row?.exportPipeline?.scheduledExportAt || null;
+  const title = row?.participantsLabel || `Recording ${item?.recordingId || "-"}`;
+  const subtitle = row?.competitionLabel || item?.recordingId || "-";
+
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 3 }}>
+      <CardContent>
+        <Stack spacing={1}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", md: "flex-start" }}
+          >
+            <Stack spacing={0.45}>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ whiteSpace: "normal" }}>
+                {title}
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: "normal" }}>
+                {row?.matchCode ? `${row.matchCode} • ${subtitle}` : subtitle}
+              </Typography>
+            </Stack>
+
+            <Stack direction="row" spacing={0.75} flexWrap="wrap">
+              {item?.position ? (
+                <Chip
+                  size="small"
+                  color="info"
+                  variant="outlined"
+                  label={`Queue #${item.position}`}
+                />
+              ) : null}
+              <StatusChip status={row?.status} pipelineStage={stage} />
+            </Stack>
+          </Stack>
+
+          <Typography variant="body2" sx={{ opacity: 0.84, whiteSpace: "normal" }}>
+            {row?.exportPipeline?.detail ||
+              (scheduledAt
+                ? `Dự kiến xử lý lúc ${formatDateTime(scheduledAt)}`
+                : "Đang chờ worker nhận job.")}
+          </Typography>
+
+          <Stack direction="row" spacing={0.75} flexWrap="wrap">
+            <Chip size="small" variant="outlined" label={stageLabel} />
+            {scheduledAt ? (
+              <Chip
+                size="small"
+                variant="outlined"
+                color="secondary"
+                label={`Lịch: ${formatDateTime(scheduledAt)}`}
+              />
+            ) : null}
+            {item?.jobId ? (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Job: ${String(item.jobId).slice(0, 24)}`}
+              />
+            ) : null}
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`Cập nhật: ${formatRelative(row?.updatedAt)}`}
+            />
+          </Stack>
+
+          {row ? (
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Button size="small" variant="outlined" onClick={() => onOpenDetail?.(row)}>
+                Xem chi tiết
+              </Button>
+              {row?.playbackUrl && (row?.status === "ready" || row?.temporaryPlaybackReady) ? (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  component={Link}
+                  href={row.playbackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Mở phát lại
+                </Button>
+              ) : null}
+            </Stack>
+          ) : null}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExportQueueSection({
+  title,
+  hint,
+  items,
+  emptyMessage,
+  onOpenDetail,
+}) {
+  return (
+    <Stack spacing={1.1}>
+      <Box>
+        <Typography variant="h6" fontWeight={800}>
+          {title}
+        </Typography>
+        <Typography variant="body2" sx={{ opacity: 0.72 }}>
+          {hint}
+        </Typography>
+      </Box>
+
+      {!items.length ? (
+        <Alert severity="info">{emptyMessage}</Alert>
+      ) : (
+        <Stack spacing={1.1}>
+          {items.map((item) => (
+            <ExportQueueItemCard
+              key={`${item.kind}-${item.recordingId}`}
+              item={item}
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
+function ExportQueueDialog({
+  open,
+  onClose,
+  onRefresh,
+  onOpenDetail,
+  rows = [],
+  currentExportRow = null,
+  queueSnapshot = null,
+  generatedAt = null,
+}) {
+  const queueData = useMemo(() => {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const rowsByRecordingId = new Map(
+      safeRows
+        .filter((row) => row?.recordingId)
+        .map((row) => [String(row.recordingId), row])
+    );
+
+    const activeItems = dedupeQueueItems(
+      [
+        ...buildQueueSnapshotItems(queueSnapshot?.activeByRecordingId, rowsByRecordingId, "active"),
+        ...(currentExportRow ? [buildFallbackQueueItem(currentExportRow, "active")] : []),
+        ...safeRows
+          .filter(
+            (row) =>
+              row?.exportPipeline?.inWorker ||
+              ACTIVE_QUEUE_STAGES.has(String(row?.exportPipeline?.stage || ""))
+          )
+          .map((row) => buildFallbackQueueItem(row, "active")),
+      ].filter(Boolean)
+    );
+
+    const waitingItems = sortQueueItemsByPosition(
+      dedupeQueueItems(
+        [
+          ...buildQueueSnapshotItems(
+            queueSnapshot?.waitingByRecordingId,
+            rowsByRecordingId,
+            "waiting"
+          ),
+          ...safeRows
+            .filter((row) => String(row?.exportPipeline?.stage || "") === "queued")
+            .map((row) => buildFallbackQueueItem(row, "waiting")),
+        ].filter(Boolean)
+      )
+    );
+
+    const delayedItems = sortQueueItemsBySchedule(
+      dedupeQueueItems(
+        [
+          ...buildQueueSnapshotItems(
+            queueSnapshot?.delayedByRecordingId,
+            rowsByRecordingId,
+            "delayed"
+          ),
+          ...safeRows
+            .filter(
+              (row) =>
+                row?.status === "pending_export_window" ||
+                SCHEDULED_QUEUE_STAGES.has(String(row?.exportPipeline?.stage || ""))
+            )
+            .map((row) => buildFallbackQueueItem(row, "delayed")),
+        ].filter(Boolean)
+      )
+    );
+
+    const syncingItems = dedupeQueueItems(
+      safeRows
+        .filter((row) => String(row?.exportPipeline?.stage || "") === "awaiting_queue_sync")
+        .map((row) => buildFallbackQueueItem(row, "sync"))
+        .filter(Boolean)
+    ).sort((a, b) => getTimestampMs(b?.row?.updatedAt) - getTimestampMs(a?.row?.updatedAt));
+
+    const attentionItems = dedupeQueueItems(
+      safeRows
+        .filter((row) => canRetryExport(row))
+        .map((row) => buildFallbackQueueItem(row, "attention"))
+        .filter(Boolean)
+    ).sort((a, b) => getTimestampMs(b?.row?.updatedAt) - getTimestampMs(a?.row?.updatedAt));
+
+    return {
+      activeItems,
+      waitingItems,
+      delayedItems,
+      syncingItems,
+      attentionItems,
+    };
+  }, [currentExportRow, queueSnapshot, rows]);
+
+  const activeCount = Math.max(
+    queueData.activeItems.length,
+    Number(queueSnapshot?.activeCount) || 0
+  );
+  const waitingCount = Math.max(
+    queueData.waitingItems.length,
+    Number(queueSnapshot?.waitingCount) || 0
+  );
+  const delayedCount = Math.max(
+    queueData.delayedItems.length,
+    Number(queueSnapshot?.delayedCount) || 0
+  );
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth scroll="paper">
+      <DialogTitle sx={{ pb: 1.5 }}>
+        <Stack spacing={0.75}>
+          <Typography variant="h5" fontWeight={800}>
+            Hàng chờ export Drive
+          </Typography>
+          <Typography variant="body2" sx={{ opacity: 0.78 }}>
+            Theo dõi job đang chạy, thứ tự chờ worker và các job đang hẹn giờ theo queue hiện tại.
+          </Typography>
+          <Typography variant="caption" sx={{ opacity: 0.62 }}>
+            Snapshot: {formatDateTime(generatedAt)}
+            {queueSnapshot?.queueName ? ` • ${queueSnapshot.queueName}` : ""}
+          </Typography>
+        </Stack>
+      </DialogTitle>
+
+      <DialogContent dividers>
+        <Stack spacing={2.5}>
+          <Grid container spacing={1.5}>
+            <Grid item xs={12} md={3}>
+              <SummaryCard
+                title="Đang chạy"
+                value={activeCount}
+                hint="Job worker đang xử lý"
+                color="info.main"
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <SummaryCard
+                title="Chờ worker"
+                value={waitingCount}
+                hint="Sẽ chạy tuần tự theo thứ tự queue"
+                color="primary.main"
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <SummaryCard
+                title="Hẹn giờ / retry"
+                value={delayedCount}
+                hint="Đang chờ đến khung giờ hoặc lần thử lại"
+                color="secondary.main"
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <SummaryCard
+                title="Đồng bộ queue"
+                value={queueData.syncingItems.length}
+                hint="Đợi queue và worker đồng bộ lại"
+                color="warning.main"
+              />
+            </Grid>
+          </Grid>
+
+          {queueData.attentionItems.length ? (
+            <Alert severity="warning">
+              Có {queueData.attentionItems.length} bản ghi đang lỗi hoặc treo, chưa nằm trong hàng chờ hợp lệ.
+            </Alert>
+          ) : null}
+
+          <ExportQueueSection
+            title="Job đang chạy"
+            hint="Worker export chỉ xử lý một job tại một thời điểm."
+            items={queueData.activeItems}
+            emptyMessage="Hiện chưa có job export nào đang chạy."
+            onOpenDetail={onOpenDetail}
+          />
+
+          <Divider />
+
+          <ExportQueueSection
+            title="Đang chờ worker"
+            hint="Các bản ghi này sẽ lần lượt được worker nhận theo đúng thứ tự queue."
+            items={queueData.waitingItems}
+            emptyMessage="Hiện không có job nào đang chờ worker."
+            onOpenDetail={onOpenDetail}
+          />
+
+          <Divider />
+
+          <ExportQueueSection
+            title="Hẹn giờ / chờ retry"
+            hint="Bao gồm bản ghi chờ đến khung giờ export hoặc đang delay để thử lại."
+            items={queueData.delayedItems}
+            emptyMessage="Hiện không có job delayed nào trong queue."
+            onOpenDetail={onOpenDetail}
+          />
+
+          {queueData.syncingItems.length ? (
+            <>
+              <Divider />
+              <ExportQueueSection
+                title="Đang đồng bộ queue"
+                hint="Các bản ghi này vừa chuyển trạng thái và đang chờ queue phản ánh đầy đủ."
+                items={queueData.syncingItems}
+                emptyMessage="Không có bản ghi nào đang chờ đồng bộ queue."
+                onOpenDetail={onOpenDetail}
+              />
+            </>
+          ) : null}
+        </Stack>
+      </DialogContent>
+
+      <DialogActions>
+        <Button onClick={onRefresh} startIcon={<RefreshIcon />}>
+          Làm mới
+        </Button>
+        <Button onClick={onClose}>Đóng</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 export default function DriveExportMonitorPage() {
   const socket = useSocket();
   const [socketOn, setSocketOn] = useState(Boolean(socket?.connected));
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedRowId, setSelectedRowId] = useState(null);
+  const [queueDialogOpen, setQueueDialogOpen] = useState(false);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
   const [forcingRecordingId, setForcingRecordingId] = useState(null);
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
@@ -1234,6 +1676,7 @@ export default function DriveExportMonitorPage() {
     if (!currentRecordingId) return null;
     return rows.find((row) => row.recordingId === currentRecordingId) || null;
   }, [effectiveWorkerHealth, rows]);
+  const queueSnapshot = meta?.exportQueue || null;
 
   const workerAlertVisible =
     ["stale", "offline"].includes(effectiveWorkerHealth?.status || "offline") &&
@@ -1275,6 +1718,12 @@ export default function DriveExportMonitorPage() {
     refetchWorkerHealth();
     refetchCommentaryMonitor();
   };
+
+  const handleOpenQueueDetail = useCallback((row) => {
+    if (!row?.id) return;
+    setQueueDialogOpen(false);
+    setSelectedRowId(row.id);
+  }, []);
 
   const handleQueueCommentary = async (recordingId, forceRerender = false) => {
     try {
@@ -1605,6 +2054,9 @@ export default function DriveExportMonitorPage() {
                 label={socketOn ? "Socket realtime OK" : "Socket mất kết nối"}
               />
               <WorkerStatusChip health={effectiveWorkerHealth} />
+              <Button variant="outlined" onClick={() => setQueueDialogOpen(true)}>
+                Hàng chờ export
+              </Button>
               <Button
                 component={RouterLink}
                 to="/admin/live-recording-ai-commentary-monitor"
@@ -1801,6 +2253,17 @@ export default function DriveExportMonitorPage() {
               </Stack>
             </CardContent>
           </Card>
+
+          <ExportQueueDialog
+            open={queueDialogOpen}
+            onClose={() => setQueueDialogOpen(false)}
+            onRefresh={refreshAll}
+            onOpenDetail={handleOpenQueueDetail}
+            rows={rows}
+            currentExportRow={currentExportRow}
+            queueSnapshot={queueSnapshot}
+            generatedAt={meta?.generatedAt}
+          />
 
           <RecordingDetailDialog
             row={selectedRowForDialog}
