@@ -261,6 +261,7 @@ const openRecordingDriveFolderPicker = ({
       .setDeveloperKey(developerKey)
       .addView(view)
       .enableFeature(pickerApi.Feature.SUPPORT_DRIVES)
+      .setLocale("vi")
       .setCallback((data) => {
         if (data.action === pickerApi.Action.PICKED) {
           const picked = data.docs?.[0] || {};
@@ -705,7 +706,8 @@ export default function SystemSettingsPage() {
   if (isLoading || !form) {
     return (
       <DashboardLayout>
-        <DashboardNavbar />
+        <style dangerouslySetInnerHTML={{__html: `.picker-dialog { z-index: 99999 !important; } .picker-dialog-bg { z-index: 99998 !important; }`}} />
+      <DashboardNavbar />
         <Box p={2} sx={{ position: "relative" }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
             <Skeleton variant="text" width={220} height={36} />
@@ -734,6 +736,7 @@ export default function SystemSettingsPage() {
 
   return (
     <DashboardLayout>
+      <style dangerouslySetInnerHTML={{__html: `.picker-dialog { z-index: 99999 !important; } .picker-dialog-bg { z-index: 99998 !important; }`}} />
       <DashboardNavbar />
       <Box p={2}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
@@ -1153,6 +1156,7 @@ export default function SystemSettingsPage() {
                     !recordingDriveStatus?.connected ||
                     isRecordingDrivePickingFolder
                   }
+                  sx={{ textTransform: "none", fontWeight: 600, borderColor: "rgba(59, 130, 246, 0.4)" }}
                 >
                   {isRecordingDrivePickingFolder
                     ? "Đang mở Google Picker..."
