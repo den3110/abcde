@@ -93,6 +93,10 @@ const getInitialRecordingDriveMode = (value) =>
 
 const hydrateFormState = (source) => ({
   ...structuredClone(source || {}),
+  appShell: {
+    mode: source?.appShell?.mode === "webview" ? "webview" : "native",
+    webViewUrl: source?.appShell?.webViewUrl ?? "",
+  },
   referee: {
     matchControlLockEnabled: source?.referee?.matchControlLockEnabled ?? true,
   },
@@ -319,6 +323,7 @@ export default function SystemSettingsPage() {
     ? commentaryTtsGateway.availableModels
     : [];
   const isModernRecordingDriveFlow = form?.recordingDrive?.useModernPickerFlow !== false;
+  const isMobileWebViewMode = form?.appShell?.mode === "webview";
 
   const buildSettingsPayload = (source) => ({
     maintenance: {
@@ -349,6 +354,10 @@ export default function SystemSettingsPage() {
     },
     links: {
       guideUrl: source.links?.guideUrl ?? "",
+    },
+    appShell: {
+      mode: source.appShell?.mode === "webview" ? "webview" : "native",
+      webViewUrl: source.appShell?.webViewUrl ?? "",
     },
     ota: {
       forceUpdateEnabled: !!source.ota?.forceUpdateEnabled,
@@ -651,6 +660,17 @@ export default function SystemSettingsPage() {
     }));
   };
 
+  const handleAppShellModeToggle = (event) => {
+    const checked = event.target.checked;
+    setForm((prev) => ({
+      ...prev,
+      appShell: {
+        ...(prev.appShell || {}),
+        mode: checked ? "webview" : "native",
+      },
+    }));
+  };
+
   const applyFreeAiTtsPreset = () => {
     const localBaseUrl = buildLocalEdgeTtsBaseUrl();
     setForm((prev) => ({
@@ -891,6 +911,42 @@ export default function SystemSettingsPage() {
                 onChange={onToggle("ota.forceUpdateEnabled")}
               />
             </Stack>
+          </Section>
+
+          <Section
+            title="Chế độ app mobile"
+            desc="Chuyển giữa app native bình thường và dạng nhúng website bằng WebView trong ứng dụng mobile."
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Bật WebView nhúng website</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Khi bật, app mobile sẽ mở URL bên dưới bằng WebView toàn màn hình thay vì giao diện native.
+                </Typography>
+              </Box>
+              <Switch checked={isMobileWebViewMode} onChange={handleAppShellModeToggle} />
+            </Stack>
+
+            <TextField
+              label="URL WebView"
+              value={form.appShell?.webViewUrl ?? ""}
+              onChange={onChange("appShell.webViewUrl")}
+              placeholder="https://pickletour.vn"
+              helperText="Chỉ dùng khi bật WebView. App sẽ tự quay về chế độ native nếu URL trống hoặc không hợp lệ."
+              fullWidth
+            />
+
+            {isMobileWebViewMode ? (
+              <Alert severity={form.appShell?.webViewUrl?.trim() ? "info" : "warning"}>
+                {form.appShell?.webViewUrl?.trim()
+                  ? "Sau khi lưu, app mobile sẽ dùng URL này ở lần khởi động hoặc khi quay lại foreground tiếp theo."
+                  : "Bạn đang bật WebView nhưng chưa nhập URL hợp lệ."}
+              </Alert>
+            ) : (
+              <Alert severity="success">
+                App mobile đang để chế độ native bình thường.
+              </Alert>
+            )}
           </Section>
 
           <Section title="Đăng ký tài khoản" desc="Mở/đóng đăng ký người dùng mới.">

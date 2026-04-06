@@ -1143,6 +1143,9 @@ function RecordingDetailDialog({
 function ExportQueueItemCard({ item, onOpenDetail }) {
   const row = item?.row || null;
   const stage = row?.exportPipeline?.stage || "";
+  const isWindowGate =
+    item?.kind === "delayed" &&
+    (stage === "delayed_until_window" || row?.status === "pending_export_window");
   const stageLabel =
     PIPELINE_STAGE_LABELS[stage] ||
     row?.exportPipeline?.label ||
@@ -1187,7 +1190,11 @@ function ExportQueueItemCard({ item, onOpenDetail }) {
           <Typography variant="body2" sx={{ opacity: 0.84, whiteSpace: "normal" }}>
             {row?.exportPipeline?.detail ||
               (scheduledAt
-                ? `Dự kiến xử lý lúc ${formatDateTime(scheduledAt)}`
+                ? isWindowGate
+                  ? `Mở queue lúc ${formatDateTime(
+                      scheduledAt
+                    )}. Sau đó worker chạy tuần tự theo thứ tự chờ.`
+                  : `Dự kiến xử lý lúc ${formatDateTime(scheduledAt)}`
                 : "Đang chờ worker nhận job.")}
           </Typography>
 
@@ -1198,7 +1205,7 @@ function ExportQueueItemCard({ item, onOpenDetail }) {
                 size="small"
                 variant="outlined"
                 color="secondary"
-                label={`Lịch: ${formatDateTime(scheduledAt)}`}
+                label={`${isWindowGate ? "Mở queue" : "Lịch"}: ${formatDateTime(scheduledAt)}`}
               />
             ) : null}
             {item?.jobId ? (
@@ -1214,6 +1221,12 @@ function ExportQueueItemCard({ item, onOpenDetail }) {
               label={`Cập nhật: ${formatRelative(row?.updatedAt)}`}
             />
           </Stack>
+
+          {isWindowGate && item?.position ? (
+            <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: "normal" }}>
+              {`00:00 là mốc mở hàng chờ, không phải giờ tất cả video cùng chạy. Video này sẽ đợi tới lượt Queue #${item.position}.`}
+            </Typography>
+          ) : null}
 
           {row ? (
             <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -1434,6 +1447,13 @@ function ExportQueueDialog({
           {queueData.attentionItems.length ? (
             <Alert severity="warning">
               Có {queueData.attentionItems.length} bản ghi đang lỗi hoặc treo, chưa nằm trong hàng chờ hợp lệ.
+            </Alert>
+          ) : null}
+
+          {delayedCount > 0 ? (
+            <Alert severity="info">
+              00:00 là mốc mở hàng chờ theo khung giờ đêm, không phải tất cả video cùng bắt đầu export lúc 00:00.
+              Worker vẫn chạy tuần tự từng video theo đúng thứ tự queue.
             </Alert>
           ) : null}
 

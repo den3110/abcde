@@ -945,6 +945,7 @@ export default function DriveVideoManagerPage() {
   const [viewMode, setViewMode] = useState("ready");
   const [statusFilter, setStatusFilter] = useState("ready");
   const [commentaryFilter, setCommentaryFilter] = useState("all");
+  const [tournamentFilter, setTournamentFilter] = useState("");
   const [selectionModel, setSelectionModel] = useState([]);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
@@ -972,14 +973,16 @@ export default function DriveVideoManagerPage() {
       status: statusFilter,
       commentary: commentaryFilter,
       view: viewMode,
+      tournament: tournamentFilter,
       q: deferredSearch.trim(),
     }),
-    [commentaryFilter, deferredSearch, statusFilter, viewMode]
+    [commentaryFilter, deferredSearch, statusFilter, tournamentFilter, viewMode]
   );
 
   const {
     rows,
     summary,
+    meta,
     count,
     error: queryError,
     hasMore,
@@ -1031,7 +1034,18 @@ export default function DriveVideoManagerPage() {
 
   useEffect(() => {
     setSelectionModel([]);
-  }, [commentaryFilter, deferredSearch, statusFilter, viewMode]);
+  }, [commentaryFilter, deferredSearch, statusFilter, tournamentFilter, viewMode]);
+
+  const tournamentOptions = useMemo(() => {
+    const items = Array.isArray(meta?.tournaments) ? meta.tournaments : [];
+    return items
+      .map((item) => ({
+        value: String(item?.name || "").trim(),
+        label: String(item?.name || "").trim(),
+        count: Number(item?.count || 0),
+      }))
+      .filter((item) => item.value);
+  }, [meta?.tournaments]);
 
   const selectedRows = useMemo(
     () => rows.filter((row) => selectionModel.includes(row.id)),
@@ -1802,11 +1816,31 @@ export default function DriveVideoManagerPage() {
                       </MenuItem>
                     ))}
                   </TextField>
+                  <TextField
+                    select
+                    label="Giải đấu"
+                    value={tournamentFilter}
+                    onChange={(event) => setTournamentFilter(event.target.value)}
+                    sx={{ minWidth: 260 }}
+                  >
+                    <MenuItem value="">Tất cả giải đấu</MenuItem>
+                    {tournamentOptions.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label} ({option.count})
+                      </MenuItem>
+                    ))}
+                  </TextField>
                 </Stack>
 
                 <Typography variant="caption" sx={{ opacity: 0.68 }}>
                   Hiển thị {rows.length}/{count} video. Tab đầu tiên tập trung vào video ready trên Drive để thao tác nhanh.
                 </Typography>
+
+                {tournamentFilter ? (
+                  <Typography variant="caption" sx={{ opacity: 0.68 }}>
+                    {`Äang lá»c theo giáº£i: ${tournamentFilter}`}
+                  </Typography>
+                ) : null}
 
                 {selectionModel.length > 0 ? (
                   <Card variant="outlined" sx={{ borderRadius: 2.5 }}>
