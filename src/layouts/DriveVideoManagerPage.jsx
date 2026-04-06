@@ -314,6 +314,7 @@ function DriveLinksCell({ row, onOpenDriveAction, driveActionBusy = false }) {
     ? row.rawStreamUrl || row.driveRawUrl
     : row.driveRawUrl || null;
   const hasSourceDriveFile = Boolean(String(row?.driveFileId || "").trim());
+  const hasAiDriveFile = Boolean(String(row?.aiCommentary?.dubbedDriveFileId || "").trim());
   const stop = (event) => event.stopPropagation();
 
   return (
@@ -374,7 +375,22 @@ function DriveLinksCell({ row, onOpenDriveAction, driveActionBusy = false }) {
             onOpenDriveAction?.(row, "source", "trash");
           }}
         >
-          Xoá video
+          Xóa gốc
+        </Button>
+      ) : null}
+      {hasAiDriveFile ? (
+        <Button
+          size="small"
+          color="error"
+          variant="outlined"
+          disabled={driveActionBusy}
+          startIcon={<DeleteOutlineIcon />}
+          onClick={(event) => {
+            stop(event);
+            onOpenDriveAction?.(row, "ai", "trash");
+          }}
+        >
+          Xóa AI
         </Button>
       ) : null}
       {!canPlay && !rawHref && !row.drivePreviewUrl ? (
@@ -408,7 +424,7 @@ function DriveAssetActionDialog({
       ? `Đổi tên ${assetLabel}`
       : mode === "move"
       ? `Chuyển folder ${assetLabel}`
-      : `Đưa ${assetLabel} vào thùng rác`;
+      : `Xóa vĩnh viễn ${assetLabel}`;
   const file = assetQuery?.data?.file || null;
   const fileId = getDriveAssetFileId(row, target);
   const errorMessage =
@@ -424,7 +440,7 @@ function DriveAssetActionDialog({
               ? "Tên file sẽ được đổi trực tiếp trên Google Drive."
               : mode === "move"
               ? "Nhập folder ID đích. Nếu để trống, backend sẽ dùng folder Drive recording mặc định."
-              : "Thao tác này sẽ đưa file vào Google Drive Trash và đồng bộ lại DB recording."}
+              : "Thao tác này sẽ xóa hẳn file trên Google Drive và đồng bộ lại DB recording."}
           </Alert>
           <InfoBox label="Match" value={row.matchCode || row.matchId || "-"} />
           <InfoBox label="Asset" value={assetLabel} />
@@ -472,7 +488,7 @@ function DriveAssetActionDialog({
 
           {mode === "trash" ? (
             <Typography variant="body2" sx={{ opacity: 0.8 }}>
-              Sau khi trash, {assetLabel} sẽ không còn được xem là sẵn sàng trong hệ thống.
+              Sau khi xóa vĩnh viễn, {assetLabel} sẽ không còn được xem là sẵn sàng trong hệ thống.
             </Typography>
           ) : null}
         </Stack>
@@ -508,7 +524,7 @@ function DriveAssetActionDialog({
             ? "Lưu tên mới"
             : mode === "move"
             ? "Chuyển folder"
-            : "Đưa vào thùng rác"}
+            : "Xóa vĩnh viễn"}
         </Button>
       </DialogActions>
     </Dialog>
@@ -681,7 +697,7 @@ function RecordingDetailDialog({
                 startIcon={<DeleteOutlineIcon />}
                 onClick={() => onOpenDriveAction(row, "source", "trash")}
               >
-                Thùng rác gốc
+                Xóa hẳn gốc
               </Button>
             ) : null}
             {ai?.ready && ai?.dubbedPlaybackUrl ? (
@@ -731,7 +747,7 @@ function RecordingDetailDialog({
                 startIcon={<DeleteOutlineIcon />}
                 onClick={() => onOpenDriveAction(row, "ai", "trash")}
               >
-                Thùng rác AI
+                Xóa hẳn AI
               </Button>
             ) : null}
           </Stack>
@@ -1383,7 +1399,7 @@ export default function DriveVideoManagerPage() {
         toast.success(`Đã chuyển folder cho ${assetLabel}.`);
       } else {
         await trashDriveAsset(payload).unwrap();
-        toast.success(`Đã đưa ${assetLabel} vào thùng rác.`);
+        toast.success(`Đã xóa vĩnh viễn ${assetLabel} trên Drive.`);
       }
 
       closeDriveActionDialog();
@@ -1465,7 +1481,7 @@ export default function DriveVideoManagerPage() {
       {
         field: "driveLinks",
         headerName: "Drive / Playback",
-        minWidth: 420,
+        minWidth: 520,
         flex: 1,
         sortable: false,
         renderCell: ({ row }) => (
