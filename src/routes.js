@@ -64,7 +64,6 @@ import FbTokensPage from "layouts/FbTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
 import AdminAzureConfigPage from "layouts/AdminAzureConfigPage";
 import AzureManagerPage from "layouts/AzureManagerPage";
-import AdminAzureConfigPage from "layouts/AdminAzureConfigPage";
 import NewsImageMonitorPage from "layouts/NewsImageMonitorPage";
 import NewsListPage from "layouts/NewsListPage";
 import NewsDetailPage from "layouts/NewsDetailPage";
