@@ -933,6 +933,10 @@ function RecordingDetailDialog({
   onClose,
   loadingDetail = false,
   detailError = null,
+  onForceExportNow,
+  onRetryExport,
+  forcingRecordingId,
+  retryingRecordingId,
 }) {
   if (!row) return null;
 
@@ -1026,6 +1030,38 @@ function RecordingDetailDialog({
                 startIcon={<SearchIcon />}
               >
                 Trạng thái raw
+              </Button>
+            ) : null}
+            {canForceExportNow(row) ? (
+              <Button
+                size="small"
+                color="secondary"
+                variant="outlined"
+                disabled={Boolean(forcingRecordingId) || Boolean(retryingRecordingId)}
+                onClick={() => onForceExportNow?.(row.recordingId)}
+                startIcon={
+                  forcingRecordingId === row.recordingId ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : null
+                }
+              >
+                {forcingRecordingId === row.recordingId ? "Đang xuất..." : "Export ngay"}
+              </Button>
+            ) : null}
+            {canRetryExport(row) ? (
+              <Button
+                size="small"
+                color="warning"
+                variant="outlined"
+                disabled={Boolean(forcingRecordingId) || Boolean(retryingRecordingId)}
+                onClick={() => onRetryExport?.(row.recordingId)}
+                startIcon={
+                  retryingRecordingId === row.recordingId ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : null
+                }
+              >
+                {retryingRecordingId === row.recordingId ? "Đang thử lại..." : "Thử lại export"}
               </Button>
             ) : null}
           </Stack>
@@ -1140,7 +1176,7 @@ function RecordingDetailDialog({
   );
 }
 
-function ExportQueueItemCard({ item, onOpenDetail }) {
+function ExportQueueItemCard({ item, onOpenDetail, onForceExportNow, onRetryExport, forcingRecordingId, retryingRecordingId }) {
   const row = item?.row || null;
   const stage = row?.exportPipeline?.stage || "";
   const isWindowGate =
@@ -1154,6 +1190,9 @@ function ExportQueueItemCard({ item, onOpenDetail }) {
     item?.scheduledAt || row?.scheduledExportAt || row?.exportPipeline?.scheduledExportAt || null;
   const title = row?.participantsLabel || `Recording ${item?.recordingId || "-"}`;
   const subtitle = row?.competitionLabel || item?.recordingId || "-";
+  const showForce = canForceExportNow(row);
+  const showRetry = canRetryExport(row);
+  const busy = Boolean(forcingRecordingId) || Boolean(retryingRecordingId);
 
   return (
     <Card variant="outlined" sx={{ borderRadius: 3 }}>
@@ -1233,6 +1272,38 @@ function ExportQueueItemCard({ item, onOpenDetail }) {
               <Button size="small" variant="outlined" onClick={() => onOpenDetail?.(row)}>
                 Xem chi tiết
               </Button>
+              {showForce ? (
+                <Button
+                  size="small"
+                  color="secondary"
+                  variant="outlined"
+                  disabled={busy}
+                  onClick={() => onForceExportNow?.(row.recordingId)}
+                  startIcon={
+                    forcingRecordingId === row.recordingId ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : null
+                  }
+                >
+                  {forcingRecordingId === row.recordingId ? "Đang xuất..." : "Export ngay"}
+                </Button>
+              ) : null}
+              {showRetry ? (
+                <Button
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  disabled={busy}
+                  onClick={() => onRetryExport?.(row.recordingId)}
+                  startIcon={
+                    retryingRecordingId === row.recordingId ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : null
+                  }
+                >
+                  {retryingRecordingId === row.recordingId ? "Đang thử lại..." : "Thử lại export"}
+                </Button>
+              ) : null}
               {row?.playbackUrl && (row?.status === "ready" || row?.temporaryPlaybackReady) ? (
                 <Button
                   size="small"
@@ -1259,6 +1330,10 @@ function ExportQueueSection({
   items,
   emptyMessage,
   onOpenDetail,
+  onForceExportNow,
+  onRetryExport,
+  forcingRecordingId,
+  retryingRecordingId,
 }) {
   return (
     <Stack spacing={1.1}>
@@ -1280,6 +1355,10 @@ function ExportQueueSection({
               key={`${item.kind}-${item.recordingId}`}
               item={item}
               onOpenDetail={onOpenDetail}
+              onForceExportNow={onForceExportNow}
+              onRetryExport={onRetryExport}
+              forcingRecordingId={forcingRecordingId}
+              retryingRecordingId={retryingRecordingId}
             />
           ))}
         </Stack>
@@ -1293,6 +1372,10 @@ function ExportQueueDialog({
   onClose,
   onRefresh,
   onOpenDetail,
+  onForceExportNow,
+  onRetryExport,
+  forcingRecordingId,
+  retryingRecordingId,
   rows = [],
   currentExportRow = null,
   queueSnapshot = null,
@@ -1463,6 +1546,10 @@ function ExportQueueDialog({
             items={queueData.activeItems}
             emptyMessage="Hiện chưa có job export nào đang chạy."
             onOpenDetail={onOpenDetail}
+            onForceExportNow={onForceExportNow}
+            onRetryExport={onRetryExport}
+            forcingRecordingId={forcingRecordingId}
+            retryingRecordingId={retryingRecordingId}
           />
 
           <Divider />
@@ -1473,6 +1560,10 @@ function ExportQueueDialog({
             items={queueData.waitingItems}
             emptyMessage="Hiện không có job nào đang chờ worker."
             onOpenDetail={onOpenDetail}
+            onForceExportNow={onForceExportNow}
+            onRetryExport={onRetryExport}
+            forcingRecordingId={forcingRecordingId}
+            retryingRecordingId={retryingRecordingId}
           />
 
           <Divider />
@@ -1483,6 +1574,10 @@ function ExportQueueDialog({
             items={queueData.delayedItems}
             emptyMessage="Hiện không có job delayed nào trong queue."
             onOpenDetail={onOpenDetail}
+            onForceExportNow={onForceExportNow}
+            onRetryExport={onRetryExport}
+            forcingRecordingId={forcingRecordingId}
+            retryingRecordingId={retryingRecordingId}
           />
 
           {queueData.syncingItems.length ? (
@@ -1494,6 +1589,10 @@ function ExportQueueDialog({
                 items={queueData.syncingItems}
                 emptyMessage="Không có bản ghi nào đang chờ đồng bộ queue."
                 onOpenDetail={onOpenDetail}
+                onForceExportNow={onForceExportNow}
+                onRetryExport={onRetryExport}
+                forcingRecordingId={forcingRecordingId}
+                retryingRecordingId={retryingRecordingId}
               />
             </>
           ) : null}
@@ -2279,6 +2378,10 @@ export default function DriveExportMonitorPage() {
             onClose={() => setQueueDialogOpen(false)}
             onRefresh={refreshAll}
             onOpenDetail={handleOpenQueueDetail}
+            onForceExportNow={handleForceExportNow}
+            onRetryExport={handleRetryExport}
+            forcingRecordingId={forcingRecordingId}
+            retryingRecordingId={retryingRecordingId}
             rows={rows}
             currentExportRow={currentExportRow}
             queueSnapshot={queueSnapshot}
@@ -2289,6 +2392,10 @@ export default function DriveExportMonitorPage() {
             row={selectedRowForDialog}
             open={Boolean(selectedRow)}
             onClose={() => setSelectedRowId(null)}
+            onForceExportNow={handleForceExportNow}
+            onRetryExport={handleRetryExport}
+            forcingRecordingId={forcingRecordingId}
+            retryingRecordingId={retryingRecordingId}
             loadingDetail={selectedRowDetailLoading}
             detailError={selectedRowDetailError}
           />

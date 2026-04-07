@@ -399,28 +399,51 @@ export default function SystemSettingsPage() {
   }, [data]);
 
   useEffect(() => {
-    const handleRecordingDriveAuthDone = async (event) => {
-      if (event.data?.type !== "recording-drive-auth-done") return;
+    const closePopup = () => {
       if (recordingDrivePopupRef.current && !recordingDrivePopupRef.current.closed) {
-        try {
-          recordingDrivePopupRef.current.close();
-        } catch (_) {}
+        try { recordingDrivePopupRef.current.close(); } catch (_) {}
       }
       recordingDrivePopupRef.current = null;
+    };
+
+    const handleAuthSuccess = async (ok) => {
+      closePopup();
       await Promise.all([refetch(), refetchRecordingDriveStatus()]);
       window.setTimeout(() => {
         refetch();
         refetchRecordingDriveStatus();
       }, 1200);
-      if (event.data?.ok) {
+      if (ok) {
         toast.success("Đã kết nối Google Drive cho bản ghi.");
       } else {
-        toast.error(event.data?.message || "Kết nối Google Drive thất bại.");
+        toast.error("Kết nối Google Drive thất bại.");
       }
     };
 
-    window.addEventListener("message", handleRecordingDriveAuthDone);
-    return () => window.removeEventListener("message", handleRecordingDriveAuthDone);
+    // Primary: localStorage event (works when window.opener is destroyed by Brave after OAuth redirects)
+    const handleStorage = (event) => {
+      if (event.key !== "recording-drive-auth-done") return;
+      try {
+        const payload = JSON.parse(event.newValue || "{}");
+        handleAuthSuccess(payload.ok !== false);
+      } catch (_) {
+        handleAuthSuccess(true);
+      }
+      try { localStorage.removeItem("recording-drive-auth-done"); } catch (_) {}
+    };
+
+    // Secondary: postMessage (works in browsers that preserve window.opener)
+    const handleMessage = (event) => {
+      if (event.data?.type !== "recording-drive-auth-done") return;
+      handleAuthSuccess(event.data?.ok);
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("message", handleMessage);
+    };
   }, [refetch, refetchRecordingDriveStatus]);
 
   useEffect(() => {
