@@ -100,6 +100,9 @@ const hydrateFormState = (source) => ({
   referee: {
     matchControlLockEnabled: source?.referee?.matchControlLockEnabled ?? true,
   },
+  privacy: {
+    hideUserRatings: source?.privacy?.hideUserRatings ?? false,
+  },
   recordingDrive: {
     enabled: source?.recordingDrive?.enabled ?? true,
     mode: getInitialRecordingDriveMode(source?.recordingDrive?.mode),
@@ -365,6 +368,9 @@ export default function SystemSettingsPage() {
     },
     referee: {
       matchControlLockEnabled: source.referee?.matchControlLockEnabled ?? true,
+    },
+    privacy: {
+      hideUserRatings: !!source.privacy?.hideUserRatings,
     },
     recordingDrive: {
       enabled: !!source.recordingDrive?.enabled,
@@ -1009,6 +1015,37 @@ export default function SystemSettingsPage() {
               <Switch
                 checked={!!form.referee?.matchControlLockEnabled}
                 onChange={handleRefereeMatchControlLockToggle}
+              />
+            </Stack>
+          </Section>
+
+          <Section
+            title="Quyền riêng tư"
+            desc="Ẩn điểm trình của người chơi. Khi bật, user và trọng tài chỉ nhìn thấy điểm trình của chính mình, không xem được điểm người khác."
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Ẩn điểm trình người dùng</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Admin luôn xem được toàn bộ. User/Trọng tài chỉ thấy điểm của chính mình trên bảng xếp hạng, hồ sơ và lịch sử trận đấu.
+                </Typography>
+              </Box>
+              <Switch
+                checked={!!form.privacy?.hideUserRatings}
+                onChange={onToggle("privacy.hideUserRatings")}
+              />
+            </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} sx={{ mt: 2 }}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Ẩn điểm trình với chính bản thân</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Nếu bật, người dùng cũng sẽ bị ẩn điểm trình của chính mình (thấy ***). Thuộc tính này hoạt động ngay cả khi chức năng trên đang tắt.
+                </Typography>
+              </Box>
+              <Switch
+                checked={!!form.privacy?.hideUserRatingsSelf}
+                onChange={onToggle("privacy.hideUserRatingsSelf")}
               />
             </Stack>
           </Section>
