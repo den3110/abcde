@@ -102,6 +102,7 @@ const hydrateFormState = (source) => ({
   },
   privacy: {
     hideUserRatings: source?.privacy?.hideUserRatings ?? false,
+    hideUserRatingsSelf: source?.privacy?.hideUserRatingsSelf ?? false,
   },
   recordingDrive: {
     enabled: source?.recordingDrive?.enabled ?? true,
@@ -371,6 +372,7 @@ export default function SystemSettingsPage() {
     },
     privacy: {
       hideUserRatings: !!source.privacy?.hideUserRatings,
+      hideUserRatingsSelf: !!source.privacy?.hideUserRatingsSelf,
     },
     recordingDrive: {
       enabled: !!source.recordingDrive?.enabled,
