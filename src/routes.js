@@ -527,6 +527,18 @@ const routes = [
   },
   {
     type: "collapse",
+    name: "Azure Manager (Dashboard)",
+    key: "admin-azure-manager",
+    icon: <Icon fontSize="small">cloud</Icon>,
+    route: "/admin/azure-manager",
+    component: <AzureManagerPage />,
+    private: true,
+    roles: ["superadmin", "superuser"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
     name: "Push Realtime",
     key: "push-realtime",
     icon: <Icon fontSize="small">hub</Icon>,
