@@ -62,6 +62,9 @@ import DriveVideoManagerPage from "layouts/DriveVideoManagerPage";
 import FbVodDriveMonitorPage from "layouts/FbVodDriveMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
+import AdminAzureConfigPage from "layouts/AdminAzureConfigPage";
+import AzureManagerPage from "layouts/AzureManagerPage";
+import AdminAzureConfigPage from "layouts/AdminAzureConfigPage";
 import NewsImageMonitorPage from "layouts/NewsImageMonitorPage";
 import NewsListPage from "layouts/NewsListPage";
 import NewsDetailPage from "layouts/NewsDetailPage";
@@ -511,6 +514,18 @@ const routes = [
   // ─────────────── Quản trị nâng cao (Super Admin) ───────────────
   { type: "divider", key: "divider-advanced" },
   { type: "title", title: "Quản trị nâng cao", key: "title-advanced" },
+  {
+    type: "collapse",
+    name: "Azure Credentials",
+    key: "admin-azure-config",
+    icon: <Icon fontSize="small">api</Icon>,
+    route: "/admin/azure-config",
+    component: <AdminAzureConfigPage />,
+    private: true,
+    roles: ["superadmin", "superuser"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
   {
     type: "collapse",
     name: "Push Realtime",
