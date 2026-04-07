@@ -15,6 +15,8 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import SettingsIcon from "@mui/icons-material/Settings";
 
+import { Link } from "react-router-dom";
+
 import {
   useGetAzureVmStatusesQuery,
   useGetAzureBillingQuery,
@@ -64,10 +66,11 @@ export default function AzureManagerPage() {
               Làm mới trạng thái
             </Button>
             <Button
+              component={Link}
+              to="/admin/azure-config"
               variant="outlined"
               color="primary"
               startIcon={<SettingsIcon />}
-              href="/admin/settings"
             >
               Cấu hình Secret Keys
             </Button>
