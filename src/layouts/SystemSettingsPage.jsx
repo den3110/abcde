@@ -98,6 +98,16 @@ const hydrateFormState = (source) => ({
     mode: source?.appShell?.mode === "webview" ? "webview" : "native",
     webViewUrl: source?.appShell?.webViewUrl ?? "",
   },
+  ota: {
+    enabled: source?.ota?.enabled ?? true,
+    forceUpdateEnabled: source?.ota?.forceUpdateEnabled ?? false,
+    minAppVersion: source?.ota?.minAppVersion ?? "0.0.0",
+    iosMinBundleVersion: source?.ota?.iosMinBundleVersion ?? "0",
+    androidMinBundleVersion: source?.ota?.androidMinBundleVersion ?? "0",
+    message: source?.ota?.message ?? "",
+    iosStoreUrl: source?.ota?.iosStoreUrl ?? "",
+    androidStoreUrl: source?.ota?.androidStoreUrl ?? "",
+  },
   referee: {
     matchControlLockEnabled: source?.referee?.matchControlLockEnabled ?? true,
   },
@@ -366,7 +376,14 @@ export default function SystemSettingsPage() {
       webViewUrl: source.appShell?.webViewUrl ?? "",
     },
     ota: {
+      enabled: source.ota?.enabled !== false,
       forceUpdateEnabled: !!source.ota?.forceUpdateEnabled,
+      minAppVersion: source.ota?.minAppVersion ?? "0.0.0",
+      iosMinBundleVersion: source.ota?.iosMinBundleVersion ?? "0",
+      androidMinBundleVersion: source.ota?.androidMinBundleVersion ?? "0",
+      message: source.ota?.message ?? "",
+      iosStoreUrl: source.ota?.iosStoreUrl ?? "",
+      androidStoreUrl: source.ota?.androidStoreUrl ?? "",
     },
     referee: {
       matchControlLockEnabled: source.referee?.matchControlLockEnabled ?? true,
@@ -935,10 +952,17 @@ export default function SystemSettingsPage() {
 
           <Section
             title="OTA"
-            desc="Bật để chặn app và bắt buộc người dùng cập nhật trước khi vào."
+            desc="Quản lý việc app mobile có được phép kiểm tra OTA và có bắt buộc cập nhật hay không."
           >
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Tooltip title="Khi bật, backend sẽ chặn app cũ và yêu cầu cập nhật.">
+              <Tooltip title="Tắt đi thì app mobile sẽ bỏ qua kiểm tra OTA, không còn hiện thông báo có bản cập nhật mới.">
+                <Typography>Cho phép kiểm tra OTA</Typography>
+              </Tooltip>
+              <Switch checked={form.ota?.enabled !== false} onChange={onToggle("ota.enabled")} />
+            </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Tooltip title="Khi bật, app sẽ coi bản OTA tìm thấy là bắt buộc cập nhật thay vì cho bỏ qua.">
                 <Typography>Bắt buộc cập nhật OTA</Typography>
               </Tooltip>
               <Switch
@@ -946,6 +970,14 @@ export default function SystemSettingsPage() {
                 onChange={onToggle("ota.forceUpdateEnabled")}
               />
             </Stack>
+
+            <Alert severity={form.ota?.enabled === false ? "info" : "success"}>
+              {form.ota?.enabled === false
+                ? "OTA đang bị tắt từ admin. App mobile sẽ không check bundle mới cho đến khi bạn bật lại."
+                : form.ota?.forceUpdateEnabled
+                  ? "OTA đang bật và ở chế độ bắt buộc cập nhật nếu có bundle mới phù hợp."
+                  : "OTA đang bật ở chế độ tùy chọn. Nếu có bundle mới, app sẽ cho người dùng chọn cập nhật hoặc để sau."}
+            </Alert>
           </Section>
 
           <Section
