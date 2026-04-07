@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import {
@@ -24,9 +24,29 @@ import {
 } from "slices/azureAdminApiSlice";
 
 export default function AzureManagerPage() {
-  const { data: vmsData, isLoading: loadingVms, refetch: refetchVms } = useGetAzureVmStatusesQuery();
+  const { data: vmsData, isLoading: loadingVms, refetch: refetchVms } = useGetAzureVmStatusesQuery(undefined, { pollingInterval: 5000 });
   const { data: billingData, isLoading: loadingBilling, refetch: refetchBilling } = useGetAzureBillingQuery();
   const [toggleVm, { isLoading: isToggling }] = useToggleAzureVmMutation();
+  const [pendingActions, setPendingActions] = useState({});
+
+  useEffect(() => {
+    if (vmsData?.vms) {
+      setPendingActions(prev => {
+        const next = { ...prev };
+        let changed = false;
+        vmsData.vms.forEach(vm => {
+          const pStateLower = String(vm.powerState).toLowerCase();
+          // If Azure recognized the transition, or it reached the final state, clear optimistic state
+          if (next[vm.accountId] && (pStateLower.includes("starting") || pStateLower.includes("deallocating") || pStateLower.includes("running") || pStateLower === "vm deallocated")) {
+            // Azure is aware, so we can drop the local optimistic override
+            delete next[vm.accountId];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [vmsData]);
 
   const statuses = vmsData?.vms || [];
   const billing = billingData?.billing || [];
@@ -40,11 +60,21 @@ export default function AzureManagerPage() {
   const handleToggleVm = async (accountId, action) => {
     if (!window.confirm(`Bạn có chắc chắn muốn ${action.toUpperCase()} máy ảo này?`)) return;
     
+    setPendingActions(prev => ({
+      ...prev,
+      [accountId]: action === "start" ? "VM starting" : "VM deallocating"
+    }));
+
     try {
-      const res = await toggleVm({ accountId, action }).unwrap();
-      alert("Thành công: " + res.message);
+      await toggleVm({ accountId, action }).unwrap();
+      refetchVms();
     } catch (err) {
       alert("Lỗi: " + (err?.data?.message || err.message || "Kết nối thất bại."));
+      setPendingActions(prev => {
+        const next = { ...prev };
+        delete next[accountId];
+        return next;
+      });
     }
   };
 
@@ -88,17 +118,27 @@ export default function AzureManagerPage() {
 
           {statuses.map((vm, index) => {
             const billInfo = billing.find(b => b.accountId === vm.accountId) || {};
-            const isRunning = String(vm.powerState).toLowerCase().includes("running");
             
+            // Mix with local optimistic state
+            const currentPowerState = pendingActions[vm.accountId] || vm.powerState || "unknown";
+            const pStateLower = String(currentPowerState).toLowerCase();
+            
+            const isRunning = pStateLower.includes("running");
+            const isTransitioning = pStateLower.includes("starting") || pStateLower.includes("deallocating") || pStateLower.includes("stopping");
+            
+            let chipColor = "default";
+            if (isRunning) chipColor = "success";
+            else if (isTransitioning) chipColor = "warning";
+
             return (
               <Grid item xs={12} md={6} lg={4} key={vm.accountId || index}>
                 <Card sx={{ p: 3, position: 'relative', overflow: 'visible' }}>
-                  {isRunning && (
+                  {(isRunning || isTransitioning) && (
                     <Box sx={{
                       position: 'absolute', top: -10, right: -10,
                       width: 20, height: 20, borderRadius: '50%',
-                      backgroundColor: '#4CAF50',
-                      boxShadow: '0 0 10px #4CAF50',
+                      backgroundColor: isTransitioning ? '#FF9800' : '#4CAF50',
+                      boxShadow: `0 0 10px ${isTransitioning ? '#FF9800' : '#4CAF50'}`,
                       animation: 'pulse 1.5s infinite'
                     }} />
                   )}
@@ -107,7 +147,7 @@ export default function AzureManagerPage() {
                   </Typography>
                   <Typography variant="body2" color="textSecondary" mb={2}>
                     <strong>VM Name:</strong> {vm.vmName} <br />
-                    <strong>Trạng thái:</strong> <Chip size="small" label={vm.powerState || "Loading..."} color={isRunning ? "success" : "default"} />
+                    <strong>Trạng thái:</strong> <Chip size="small" label={currentPowerState} color={chipColor} />
                   </Typography>
                   
                   <Box sx={{ backgroundColor: '#f5f5f5', p: 2, borderRadius: 2, mb: 2 }}>
@@ -122,8 +162,8 @@ export default function AzureManagerPage() {
                       variant="contained" 
                       color="success" 
                       fullWidth 
-                      startIcon={<PlayArrowIcon />}
-                      disabled={isRunning || isToggling}
+                      startIcon={pendingActions[vm.accountId] === "VM starting" ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />}
+                      disabled={isRunning || isTransitioning || isToggling}
                       onClick={() => handleToggleVm(vm.accountId, "start")}
                     >
                       Start VM
@@ -132,8 +172,8 @@ export default function AzureManagerPage() {
                       variant="contained" 
                       color="error" 
                       fullWidth 
-                      startIcon={<StopIcon />}
-                      disabled={!isRunning || isToggling}
+                      startIcon={pendingActions[vm.accountId] === "VM deallocating" ? <CircularProgress size={20} color="inherit" /> : <StopIcon />}
+                      disabled={!isRunning || isTransitioning || isToggling}
                       onClick={() => handleToggleVm(vm.accountId, "deallocate")}
                     >
                       Deallocate
