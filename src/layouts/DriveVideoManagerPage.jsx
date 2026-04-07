@@ -1,12 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -56,6 +49,7 @@ import { useSocket } from "context/SocketContext";
 import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
 import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
+  useBulkTrashLiveRecordingDriveAssetsMutation,
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingAiCommentaryMonitorQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
@@ -193,9 +187,7 @@ function rowNeedsAction(row) {
 function canQueueAiCommentary(row, commentaryGlobalEnabled) {
   const status = String(row?.aiCommentary?.status || "idle").toLowerCase();
   return (
-    commentaryGlobalEnabled &&
-    row?.status === "ready" &&
-    !["queued", "running"].includes(status)
+    commentaryGlobalEnabled && row?.status === "ready" && !["queued", "running"].includes(status)
   );
 }
 
@@ -428,7 +420,10 @@ function DriveAssetActionDialog({
   const file = assetQuery?.data?.file || null;
   const fileId = getDriveAssetFileId(row, target);
   const errorMessage =
-    assetQuery?.error?.data?.message || assetQuery?.error?.error || assetQuery?.error?.message || "";
+    assetQuery?.error?.data?.message ||
+    assetQuery?.error?.error ||
+    assetQuery?.error?.message ||
+    "";
 
   return (
     <Dialog open={open} onClose={submitting ? undefined : onClose} maxWidth="sm" fullWidth>
@@ -448,7 +443,9 @@ function DriveAssetActionDialog({
           <InfoBox label="Tên hiện tại" value={file?.name || "-"} />
           <InfoBox
             label="Folder hiện tại"
-            value={Array.isArray(file?.parents) && file.parents.length ? file.parents.join(", ") : "-"}
+            value={
+              Array.isArray(file?.parents) && file.parents.length ? file.parents.join(", ") : "-"
+            }
           />
 
           {assetQuery?.isFetching ? (
@@ -501,11 +498,7 @@ function DriveAssetActionDialog({
           onClick={onSubmit}
           color={mode === "trash" ? "error" : "primary"}
           variant="contained"
-          disabled={
-            submitting ||
-            !fileId ||
-            (mode === "rename" && !String(draftName || "").trim())
-          }
+          disabled={submitting || !fileId || (mode === "rename" && !String(draftName || "").trim())}
           startIcon={
             submitting ? (
               <CircularProgress size={16} color="inherit" />
@@ -525,6 +518,40 @@ function DriveAssetActionDialog({
             : mode === "move"
             ? "Chuyển folder"
             : "Xóa vĩnh viễn"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function BulkTrashSourceDialog({ open, count, submitting, onClose, onSubmit }) {
+  return (
+    <Dialog open={open} onClose={submitting ? undefined : onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Xóa vĩnh viễn video gốc đã chọn</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={1.5}>
+          <Alert severity="warning">
+            Thao tác này sẽ xóa hẳn file video gốc trên Google Drive và đồng bộ lại DB recording.
+          </Alert>
+          <Typography variant="body2" sx={{ opacity: 0.82 }}>
+            {`Bạn sắp xóa ${count} video gốc đã chọn. Thao tác này không thể hoàn tác.`}
+          </Typography>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={submitting}>
+          Hủy
+        </Button>
+        <Button
+          onClick={onSubmit}
+          color="error"
+          variant="contained"
+          disabled={submitting || !count}
+          startIcon={
+            submitting ? <CircularProgress size={16} color="inherit" /> : <DeleteOutlineIcon />
+          }
+        >
+          {submitting ? "Đang xóa..." : "Xóa gốc"}
         </Button>
       </DialogActions>
     </Dialog>
@@ -574,7 +601,11 @@ function RecordingDetailDialog({
             <StatusChip row={row} />
             <CommentaryChip commentary={ai} />
             <Chip size="small" variant="outlined" label={`Mode: ${row.modeLabel || "-"}`} />
-            <Chip size="small" variant="outlined" label={`Created: ${formatDateTime(row.createdAt)}`} />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`Created: ${formatDateTime(row.createdAt)}`}
+            />
             <Chip
               size="small"
               variant="outlined"
@@ -811,7 +842,10 @@ function RecordingDetailDialog({
               <InfoBox
                 label="Export pipeline"
                 value={
-                  [row.exportPipeline?.label || row.exportPipeline?.stage, row.exportPipeline?.detail]
+                  [
+                    row.exportPipeline?.label || row.exportPipeline?.stage,
+                    row.exportPipeline?.detail,
+                  ]
                     .filter(Boolean)
                     .join(" • ") || "-"
                 }
@@ -887,7 +921,11 @@ function RecordingDetailDialog({
           ) : (
             <Stack spacing={1.25}>
               {segments.map((segment) => (
-                <Card key={`${row.id}-segment-${segment.index}`} variant="outlined" sx={{ borderRadius: 2.5 }}>
+                <Card
+                  key={`${row.id}-segment-${segment.index}`}
+                  variant="outlined"
+                  sx={{ borderRadius: 2.5 }}
+                >
                   <CardContent>
                     <Stack spacing={0.9}>
                       <Stack
@@ -900,12 +938,16 @@ function RecordingDetailDialog({
                           Segment #{segment.index}
                           {segment.isFinal ? " (final)" : ""}
                         </Typography>
-                        <Chip size="small" variant="outlined" label={segment.uploadStatus || "unknown"} />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={segment.uploadStatus || "unknown"}
+                        />
                       </Stack>
 
                       <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                        {formatBytes(segment.sizeBytes)} • {formatDuration(segment.durationSeconds)} •{" "}
-                        {segment.completedPartCount || 0}/{segment.totalParts || 0} parts
+                        {formatBytes(segment.sizeBytes)} • {formatDuration(segment.durationSeconds)}{" "}
+                        • {segment.completedPartCount || 0}/{segment.totalParts || 0} parts
                       </Typography>
 
                       <Box>
@@ -916,7 +958,9 @@ function RecordingDetailDialog({
                         />
                         <Typography variant="caption" sx={{ opacity: 0.68 }}>
                           {Math.max(0, Math.min(100, Number(segment.percent) || 0))}% • target{" "}
-                          {[segment.storageTargetId, segment.bucketName].filter(Boolean).join(" • ") || "-"}
+                          {[segment.storageTargetId, segment.bucketName]
+                            .filter(Boolean)
+                            .join(" • ") || "-"}
                         </Typography>
                       </Box>
 
@@ -969,6 +1013,8 @@ export default function DriveVideoManagerPage() {
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
   const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
   const [bulkAction, setBulkAction] = useState(null);
+  const [bulkTrashSourceDialogOpen, setBulkTrashSourceDialogOpen] = useState(false);
+  const [bulkTrashSourceSubmitting, setBulkTrashSourceSubmitting] = useState(false);
   const [driveActionDialog, setDriveActionDialog] = useState({
     open: false,
     rowId: null,
@@ -1034,11 +1080,11 @@ export default function DriveVideoManagerPage() {
   const [queueAiCommentary] = useQueueLiveRecordingAiCommentaryMutation();
   const [rerenderAiCommentary] = useRerenderLiveRecordingAiCommentaryMutation();
   const [loadDriveAsset, driveAssetQuery] = useLazyGetLiveRecordingDriveAssetQuery();
-  const [loadMonitorRowDetail, monitorRowDetailQuery] =
-    useLazyGetLiveRecordingMonitorRowQuery();
+  const [loadMonitorRowDetail, monitorRowDetailQuery] = useLazyGetLiveRecordingMonitorRowQuery();
   const [renameDriveAsset] = useRenameLiveRecordingDriveAssetMutation();
   const [moveDriveAsset] = useMoveLiveRecordingDriveAssetMutation();
   const [trashDriveAsset] = useTrashLiveRecordingDriveAssetMutation();
+  const [bulkTrashDriveAssets] = useBulkTrashLiveRecordingDriveAssetsMutation();
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
 
@@ -1084,11 +1130,15 @@ export default function DriveVideoManagerPage() {
     () => selectedRows.filter((row) => canRerenderAiCommentary(row, commentaryGlobalEnabled)),
     [commentaryGlobalEnabled, selectedRows]
   );
+  const selectedTrashSourceRows = useMemo(
+    () => selectedRows.filter((row) => Boolean(getDriveAssetFileId(row, "source"))),
+    [selectedRows]
+  );
   const selectedFileIds = useMemo(
     () =>
-      [...new Set(selectedRows.map((row) => String(row.driveFileId || "").trim()).filter(Boolean))].join(
-        "\n"
-      ),
+      [
+        ...new Set(selectedRows.map((row) => String(row.driveFileId || "").trim()).filter(Boolean)),
+      ].join("\n"),
     [selectedRows]
   );
 
@@ -1234,6 +1284,7 @@ export default function DriveVideoManagerPage() {
       forcingRecordingId ||
       queueingCommentaryId ||
       rerenderingCommentaryId ||
+      bulkTrashSourceSubmitting ||
       driveActionSubmitting ||
       bulkAction
   );
@@ -1273,7 +1324,9 @@ export default function DriveVideoManagerPage() {
       }
       if (errorCount > 0) {
         toast.warn(
-          `${label}: ${errorCount}/${targetRows.length} lỗi.${firstErrorMessage ? ` ${firstErrorMessage}` : ""}`
+          `${label}: ${errorCount}/${targetRows.length} lỗi.${
+            firstErrorMessage ? ` ${firstErrorMessage}` : ""
+          }`
         );
       }
     },
@@ -1339,6 +1392,10 @@ export default function DriveVideoManagerPage() {
     });
     setDriveActionName("");
     setDriveActionFolderId("");
+  }, []);
+
+  const closeBulkTrashSourceDialog = useCallback(() => {
+    setBulkTrashSourceDialogOpen(false);
   }, []);
 
   const openDriveActionDialog = useCallback(
@@ -1425,6 +1482,65 @@ export default function DriveVideoManagerPage() {
     renameDriveAsset,
     trashDriveAsset,
   ]);
+
+  const handleSubmitBulkTrashSource = useCallback(async () => {
+    if (!selectedTrashSourceRows.length) {
+      toast.info("Không có video gốc hợp lệ để xóa.");
+      return;
+    }
+
+    const recordingIds = [
+      ...new Set(
+        selectedTrashSourceRows.map((row) => String(row.recordingId || "").trim()).filter(Boolean)
+      ),
+    ];
+
+    try {
+      setBulkTrashSourceSubmitting(true);
+      const result = await bulkTrashDriveAssets({
+        recordingIds,
+        target: "source",
+      }).unwrap();
+      const failedRecordingIds = new Set(
+        (Array.isArray(result?.results) ? result.results : [])
+          .filter((item) => item && item.ok === false)
+          .map((item) => String(item.recordingId || "").trim())
+          .filter(Boolean)
+      );
+      const total = Number(result?.total || recordingIds.length);
+      const deletedCount = Number(result?.deletedCount || 0);
+      const failedCount =
+        Number(result?.failedCount || 0) +
+        (Array.isArray(result?.invalidRecordingIds) ? result.invalidRecordingIds.length : 0);
+      const firstErrorMessage =
+        (Array.isArray(result?.results)
+          ? result.results.find((item) => item && item.ok === false)?.message
+          : "") || "";
+
+      refreshAll();
+      setSelectionModel(
+        selectedTrashSourceRows
+          .filter((row) => failedRecordingIds.has(String(row.recordingId || "").trim()))
+          .map((row) => row.id)
+      );
+      closeBulkTrashSourceDialog();
+
+      if (deletedCount > 0) {
+        toast.success(`Bulk xóa gốc: ${deletedCount}/${total} thành công.`);
+      }
+      if (failedCount > 0) {
+        toast.warn(
+          `Bulk xóa gốc: ${failedCount}/${total} lỗi.${
+            firstErrorMessage ? ` ${firstErrorMessage}` : ""
+          }`
+        );
+      }
+    } catch (apiError) {
+      toast.error(apiError?.data?.message || apiError?.error || "Không thể bulk xóa video gốc.");
+    } finally {
+      setBulkTrashSourceSubmitting(false);
+    }
+  }, [bulkTrashDriveAssets, closeBulkTrashSourceDialog, refreshAll, selectedTrashSourceRows]);
 
   const handlePresetChange = useCallback((_event, nextValue) => {
     setViewMode(nextValue);
@@ -1729,7 +1845,11 @@ export default function DriveVideoManagerPage() {
 
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6} md={4} lg={2}>
-              <SummaryCard title="Tổng video" value={summary.total} hint="Tất cả recording trong monitor" />
+              <SummaryCard
+                title="Tổng video"
+                value={summary.total}
+                hint="Tất cả recording trong monitor"
+              />
             </Grid>
             <Grid item xs={12} sm={6} md={4} lg={2}>
               <SummaryCard
@@ -1849,7 +1969,8 @@ export default function DriveVideoManagerPage() {
                 </Stack>
 
                 <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                  Hiển thị {rows.length}/{count} video. Tab đầu tiên tập trung vào video ready trên Drive để thao tác nhanh.
+                  Hiển thị {rows.length}/{count} video. Tab đầu tiên tập trung vào video ready trên
+                  Drive để thao tác nhanh.
                 </Typography>
 
                 {tournamentFilter ? (
@@ -1869,10 +1990,26 @@ export default function DriveVideoManagerPage() {
                           alignItems={{ xs: "stretch", lg: "center" }}
                         >
                           <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                            <Chip size="small" color="primary" label={`${selectionModel.length} video đã chọn`} />
-                            <Chip size="small" variant="outlined" label={`Retry: ${selectedRetryRows.length}`} />
-                            <Chip size="small" variant="outlined" label={`Force: ${selectedForceRows.length}`} />
-                            <Chip size="small" variant="outlined" label={`AI queue: ${selectedQueueAiRows.length}`} />
+                            <Chip
+                              size="small"
+                              color="primary"
+                              label={`${selectionModel.length} video đã chọn`}
+                            />
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`Retry: ${selectedRetryRows.length}`}
+                            />
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`Force: ${selectedForceRows.length}`}
+                            />
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`AI queue: ${selectedQueueAiRows.length}`}
+                            />
                             <Chip
                               size="small"
                               variant="outlined"
@@ -1953,6 +2090,16 @@ export default function DriveVideoManagerPage() {
                               }
                             >
                               Render lại
+                            </Button>
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              disabled={busy || !selectedTrashSourceRows.length}
+                              startIcon={<DeleteOutlineIcon />}
+                              onClick={() => setBulkTrashSourceDialogOpen(true)}
+                            >
+                              Xóa gốc
                             </Button>
                             <Button
                               size="small"
@@ -2085,6 +2232,13 @@ export default function DriveVideoManagerPage() {
             onChangeFolderId={setDriveActionFolderId}
             onClose={closeDriveActionDialog}
             onSubmit={handleSubmitDriveAction}
+          />
+          <BulkTrashSourceDialog
+            open={bulkTrashSourceDialogOpen}
+            count={selectedTrashSourceRows.length}
+            submitting={bulkTrashSourceSubmitting}
+            onClose={closeBulkTrashSourceDialog}
+            onSubmit={handleSubmitBulkTrashSource}
           />
         </Stack>
       </Box>

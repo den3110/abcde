@@ -174,6 +174,17 @@ export const liveApiSlice = apiSlice.injectEndpoints({
         { type: "LiveRecordingAiCommentaryMonitor", id: "LIST" },
       ],
     }),
+    bulkTrashLiveRecordingDriveAssets: builder.mutation({
+      query: ({ recordingIds = [], target = "source" }) => ({
+        url: "/live/recordings/v2/admin/drive-asset/trash/bulk",
+        method: "POST",
+        body: { recordingIds, target },
+      }),
+      invalidatesTags: [
+        { type: "LiveRecordingMonitor", id: "LIST" },
+        { type: "LiveRecordingAiCommentaryMonitor", id: "LIST" },
+      ],
+    }),
   }),
   overrideExisting: false,
 });
@@ -191,6 +202,7 @@ export const {
   useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useMoveLiveRecordingDriveAssetMutation,
+  useBulkTrashLiveRecordingDriveAssetsMutation,
   useQueueLiveRecordingAiCommentaryMutation,
   useRenameLiveRecordingDriveAssetMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
