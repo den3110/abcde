@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import {
   Box,
   Button,
@@ -175,3 +176,29 @@ export default function SystemSettingsAzureEditor({ form, setForm }) {
     </Paper>
   );
 }
+
+SystemSettingsAzureEditor.propTypes = {
+  form: PropTypes.shape({
+    azure: PropTypes.shape({
+      enabled: PropTypes.bool,
+      accounts: PropTypes.arrayOf(
+        PropTypes.shape({
+          id: PropTypes.string,
+          label: PropTypes.string,
+          isActive: PropTypes.bool,
+          capabilities: PropTypes.shape({
+            useForVmWorker: PropTypes.bool,
+            useForTts: PropTypes.bool,
+          }),
+          clientId: PropTypes.string,
+          clientSecret: PropTypes.string,
+          tenantId: PropTypes.string,
+          subscriptionId: PropTypes.string,
+          resourceGroup: PropTypes.string,
+          vmName: PropTypes.string,
+        })
+      ),
+    }),
+  }).isRequired,
+  setForm: PropTypes.func.isRequired,
+};
