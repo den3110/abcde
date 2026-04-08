@@ -37,7 +37,8 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
 import {
   useForceLiveRecordingExportMutation,
-  useGetLiveRecordingMonitorQuery,
+  useGetLiveRecordingMonitorOverviewQuery,
+  useGetLiveRecordingMonitorRowsQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useLazyGetLiveRecordingMonitorRowQuery,
   useTrashLiveRecordingR2AssetsMutation,
@@ -933,7 +934,17 @@ export default function LiveRecordingMonitorPage() {
   const [loadMonitorRowDetail, monitorRowDetailQuery] =
     useLazyGetLiveRecordingMonitorRowQuery();
 
-  const queryArgs = useMemo(
+  const overviewQueryArgs = useMemo(
+    () => ({
+      section: "all",
+      status: statusFilter,
+      q: deferredSearch.trim(),
+      tournament: tournamentFilter || "",
+    }),
+    [deferredSearch, statusFilter, tournamentFilter]
+  );
+
+  const rowsQueryArgs = useMemo(
     () => ({
       section: "all",
       status: statusFilter,
@@ -946,24 +957,39 @@ export default function LiveRecordingMonitorPage() {
   );
 
   const {
-    data: monitorData,
-    error: queryError,
-    isLoading: isInitialLoading,
-    isFetching,
-    refetch,
-  } = useGetLiveRecordingMonitorQuery(queryArgs, {
+    data: overviewData,
+    error: overviewError,
+    isLoading: isOverviewInitialLoading,
+    isFetching: isOverviewFetching,
+    refetch: refetchOverview,
+  } = useGetLiveRecordingMonitorOverviewQuery(overviewQueryArgs, {
+    pollingInterval: monitorPollingInterval,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+  });
+  const {
+    data: rowsData,
+    error: rowsError,
+    isLoading: isRowsInitialLoading,
+    isFetching: isRowsFetching,
+    refetch: refetchRows,
+  } = useGetLiveRecordingMonitorRowsQuery(rowsQueryArgs, {
     pollingInterval: monitorPollingInterval,
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });
 
   const rows = useMemo(() => {
-    return Array.isArray(monitorData?.rows) ? monitorData.rows : [];
-  }, [monitorData?.rows]);
-  const summary = monitorData?.summary || {};
-  const meta = monitorData?.meta || {};
-  const count = Number(monitorData?.count || 0);
-  const isRefreshing = isFetching && !isInitialLoading;
+    return Array.isArray(rowsData?.rows) ? rowsData.rows : [];
+  }, [rowsData?.rows]);
+  const summary = overviewData?.summary || {};
+  const meta = overviewData?.meta || {};
+  const count = Number(rowsData?.count || 0);
+  const queryError = rowsError || overviewError;
+  const isInitialLoading = isRowsInitialLoading || isOverviewInitialLoading;
+  const isRefreshing =
+    (isRowsFetching && !isRowsInitialLoading) ||
+    (isOverviewFetching && !isOverviewInitialLoading);
 
   const [forceLiveRecordingExport] = useForceLiveRecordingExportMutation();
   const [trashLiveRecordingR2Assets] = useTrashLiveRecordingR2AssetsMutation();
@@ -972,7 +998,9 @@ export default function LiveRecordingMonitorPage() {
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });
-  const refresh = useCallback(() => refetch(), [refetch]);
+  const refresh = useCallback(async () => {
+    await Promise.allSettled([refetchOverview(), refetchRows()]);
+  }, [refetchOverview, refetchRows]);
 
   useEffect(() => {
     setPaginationModel((current) =>

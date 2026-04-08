@@ -90,6 +90,66 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
       providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
     }),
+    getLiveRecordingMonitorOverview: builder.query({
+      query: ({
+        section = "all",
+        status = "ALL",
+        commentary = "all",
+        view = "all",
+        q = "",
+        tournament = "",
+        forceRefresh = false,
+      } = {}) => {
+        const params = new URLSearchParams();
+        if (section) params.set("section", String(section));
+        if (status) params.set("status", String(status));
+        if (commentary) params.set("commentary", String(commentary));
+        if (view) params.set("view", String(view));
+        if (q) params.set("q", q);
+        if (tournament) params.set("tournament", tournament);
+        if (forceRefresh) params.set("forceRefresh", "true");
+        return {
+          url: `/live/recordings/v2/admin/monitor/overview?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      keepUnusedDataFor: 5,
+      providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
+    getLiveRecordingMonitorRows: builder.query({
+      query: ({
+        section = "all",
+        status = "ALL",
+        commentary = "all",
+        view = "all",
+        q = "",
+        tournament = "",
+        page = 1,
+        limit = 40,
+        forceRefresh = false,
+      } = {}) => {
+        const params = new URLSearchParams();
+        if (section) params.set("section", String(section));
+        if (status) params.set("status", String(status));
+        if (commentary) params.set("commentary", String(commentary));
+        if (view) params.set("view", String(view));
+        if (q) params.set("q", q);
+        if (tournament) params.set("tournament", tournament);
+        if (page !== undefined && page !== null && page !== "") {
+          params.set("page", String(page));
+        }
+        if (limit !== undefined && limit !== null && limit !== "") {
+          params.set("limit", String(limit));
+        }
+        if (forceRefresh) params.set("forceRefresh", "true");
+        return {
+          url: `/live/recordings/v2/admin/monitor/rows?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      keepUnusedDataFor: 5,
+      providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
     getLiveRecordingMonitorRow: builder.query({
       query: (recordingId) => ({
         url: `/live/recordings/v2/admin/${recordingId}/monitor-row`,
@@ -202,11 +262,13 @@ export const {
   useForceLiveRecordingExportMutation,
   useGetFbVodDriveMonitorQuery,
   useGetLiveRecordingAiCommentaryMonitorQuery,
+  useGetLiveRecordingMonitorOverviewQuery,
   useLazyGetFbVodDriveMonitorQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
   useLazyGetLiveRecordingMonitorQuery,
   useLazyGetLiveRecordingMonitorRowQuery,
   useGetLiveRecordingMonitorQuery,
+  useGetLiveRecordingMonitorRowsQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useMoveLiveRecordingDriveAssetMutation,
   useBulkTrashLiveRecordingDriveAssetsMutation,
