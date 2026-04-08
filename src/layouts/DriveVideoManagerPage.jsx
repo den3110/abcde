@@ -50,7 +50,9 @@ import {
   useBulkTrashLiveRecordingDriveAssetsMutation,
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingAiCommentaryMonitorQuery,
-  useGetLiveRecordingMonitorQuery,
+  useGetLiveRecordingMonitorRowsQuery,
+  useGetLiveRecordingMonitorSummaryQuery,
+  useGetLiveRecordingMonitorTournamentsQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
   useLazyGetLiveRecordingMonitorRowQuery,
   useMoveLiveRecordingDriveAssetMutation,
@@ -1031,7 +1033,7 @@ export default function DriveVideoManagerPage() {
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
 
-  const queryArgs = useMemo(
+  const rowsQueryArgs = useMemo(
     () => ({
       section: "all",
       status: statusFilter,
@@ -1053,15 +1055,38 @@ export default function DriveVideoManagerPage() {
     ]
   );
   const {
-    data: monitorPage,
-    error: queryError,
-    isLoading: isMonitorLoading,
-    isFetching: isMonitorFetching,
-    refetch: refetchMonitor,
-  } = useGetLiveRecordingMonitorQuery(queryArgs, {
+    data: rowsPage,
+    error: rowsError,
+    isLoading: isRowsLoading,
+    isFetching: isRowsFetching,
+    refetch: refetchRows,
+  } = useGetLiveRecordingMonitorRowsQuery(rowsQueryArgs, {
     pollingInterval: socketOn ? 0 : 15000,
     refetchOnMountOrArgChange: true,
   });
+  const {
+    data: summaryData,
+    error: summaryError,
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+  } = useGetLiveRecordingMonitorSummaryQuery(
+    { section: "all" },
+    {
+      pollingInterval: socketOn ? 0 : 15000,
+      refetchOnMountOrArgChange: true,
+    }
+  );
+  const {
+    data: tournamentsData,
+    isFetching: isTournamentsFetching,
+    refetch: refetchTournaments,
+  } = useGetLiveRecordingMonitorTournamentsQuery(
+    { section: "all" },
+    {
+      pollingInterval: 60000,
+      refetchOnMountOrArgChange: true,
+    }
+  );
   const {
     data: commentaryMonitor,
     isFetching: commentaryFetching,
@@ -1083,20 +1108,17 @@ export default function DriveVideoManagerPage() {
   const [bulkTrashDriveAssets] = useBulkTrashLiveRecordingDriveAssetsMutation();
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
-  const rows = Array.isArray(monitorPage?.rows) ? monitorPage.rows : [];
+  const queryError = rowsError || summaryError || null;
+  const rows = Array.isArray(rowsPage?.rows) ? rowsPage.rows : [];
   const summary =
-    monitorPage?.summary &&
-    typeof monitorPage.summary === "object" &&
-    !Array.isArray(monitorPage.summary)
-      ? monitorPage.summary
+    summaryData?.summary &&
+    typeof summaryData.summary === "object" &&
+    !Array.isArray(summaryData.summary)
+      ? summaryData.summary
       : {};
-  const meta =
-    monitorPage?.meta && typeof monitorPage.meta === "object" && !Array.isArray(monitorPage.meta)
-      ? monitorPage.meta
-      : {};
-  const count = Number(monitorPage?.count || 0);
-  const pageCount = Math.max(1, Number(monitorPage?.pages || 1));
-  const currentPageNumber = Number(monitorPage?.page || paginationModel.page + 1);
+  const count = Number(rowsPage?.count || 0);
+  const pageCount = Math.max(1, Number(rowsPage?.pages || 1));
+  const currentPageNumber = Number(rowsPage?.page || paginationModel.page + 1);
 
   useEffect(() => {
     setSelectionModel((previous) =>
@@ -1110,15 +1132,15 @@ export default function DriveVideoManagerPage() {
   }, [commentaryFilter, deferredSearch, statusFilter, tournamentFilter, viewMode]);
 
   useEffect(() => {
-    if (!monitorPage?.page) return;
-    const nextPageIndex = Math.max(0, Number(monitorPage.page || 1) - 1);
+    if (!rowsPage?.page) return;
+    const nextPageIndex = Math.max(0, Number(rowsPage.page || 1) - 1);
     setPaginationModel((previous) =>
       previous.page === nextPageIndex ? previous : { ...previous, page: nextPageIndex }
     );
-  }, [monitorPage?.page]);
+  }, [rowsPage?.page]);
 
   const tournamentOptions = useMemo(() => {
-    const items = Array.isArray(meta?.tournaments) ? meta.tournaments : [];
+    const items = Array.isArray(tournamentsData?.tournaments) ? tournamentsData.tournaments : [];
     return items
       .map((item) => ({
         value: String(item?.name || "").trim(),
@@ -1126,7 +1148,7 @@ export default function DriveVideoManagerPage() {
         count: Number(item?.count || 0),
       }))
       .filter((item) => item.value);
-  }, [meta?.tournaments]);
+  }, [tournamentsData?.tournaments]);
 
   const selectedRows = useMemo(
     () => rows.filter((row) => selectionModel.includes(row.id)),
@@ -1237,10 +1259,16 @@ export default function DriveVideoManagerPage() {
     void loadMonitorRowDetail(selectedRow.recordingId, true);
   }, [loadMonitorRowDetail, selectedRow?.recordingId]);
 
-  const refreshAll = useCallback(() => {
-    refetchMonitor();
+  const refreshRealtime = useCallback(() => {
+    refetchRows();
+    refetchSummary();
     refetchCommentaryMonitor();
-  }, [refetchCommentaryMonitor, refetchMonitor]);
+  }, [refetchCommentaryMonitor, refetchRows, refetchSummary]);
+
+  const refreshAll = useCallback(() => {
+    refreshRealtime();
+    refetchTournaments();
+  }, [refreshRealtime, refetchTournaments]);
 
   const scheduleRealtimeRefetch = useCallback(
     (delayMs = 200) => {
@@ -1251,10 +1279,10 @@ export default function DriveVideoManagerPage() {
       realtimeTimerRef.current = setTimeout(() => {
         realtimeTimerRef.current = null;
         lastRealtimeRefetchAtRef.current = Date.now();
-        refreshAll();
+        refreshRealtime();
       }, waitMs);
     },
-    [refreshAll]
+    [refreshRealtime]
   );
 
   useEffect(
@@ -1840,9 +1868,17 @@ export default function DriveVideoManagerPage() {
               <Button
                 variant="outlined"
                 onClick={refreshAll}
-                disabled={isMonitorFetching || commentaryFetching}
+                disabled={
+                  isRowsFetching ||
+                  isSummaryFetching ||
+                  isTournamentsFetching ||
+                  commentaryFetching
+                }
                 startIcon={
-                  isMonitorFetching || commentaryFetching ? (
+                  isRowsFetching ||
+                  isSummaryFetching ||
+                  isTournamentsFetching ||
+                  commentaryFetching ? (
                     <CircularProgress size={16} color="inherit" />
                   ) : (
                     <RefreshIcon />
@@ -2176,7 +2212,7 @@ export default function DriveVideoManagerPage() {
                   paginationModel={paginationModel}
                   onPaginationModelChange={setPaginationModel}
                   pageSizeOptions={PAGE_SIZE_OPTIONS}
-                  loading={isMonitorLoading || isMonitorFetching}
+                  loading={isRowsLoading || isRowsFetching}
                   getRowHeight={() => "auto"}
                   selectionModel={selectionModel}
                   onSelectionModelChange={(nextModel) =>
