@@ -1687,7 +1687,7 @@ export default function DriveExportMonitorPage() {
     isError: workerHealthError,
     refetch: refetchWorkerHealth,
   } = useGetLiveRecordingWorkerHealthQuery(undefined, {
-    pollingInterval: 30000,
+    pollingInterval: socketOn ? 60000 : 30000,
     refetchOnMountOrArgChange: true,
   });
   const {
@@ -1696,7 +1696,7 @@ export default function DriveExportMonitorPage() {
     isError: commentaryMonitorError,
     refetch: refetchCommentaryMonitor,
   } = useGetLiveRecordingAiCommentaryMonitorQuery(undefined, {
-    pollingInterval: 15000,
+    pollingInterval: socketOn ? 0 : 15000,
     refetchOnMountOrArgChange: true,
   });
 
@@ -1749,6 +1749,8 @@ export default function DriveExportMonitorPage() {
     },
     [refreshRealtime]
   );
+  const selectedRowRecordingIdRef = useRef("");
+  const selectedRowDetailRefetchRef = useRef(() => Promise.resolve());
 
   useEffect(
     () => () => {
@@ -1788,7 +1790,18 @@ export default function DriveExportMonitorPage() {
       void refreshAll();
     };
     const handleDisconnect = () => setSocketOn(false);
-    const handleUpdate = () => scheduleRealtimeRefetch();
+    const handleUpdate = (payload = {}) => {
+      const changedRecordingIds = Array.isArray(payload?.recordingIds)
+        ? payload.recordingIds.map((value) => String(value || "").trim())
+        : [];
+      if (
+        selectedRowRecordingIdRef.current &&
+        changedRecordingIds.includes(selectedRowRecordingIdRef.current)
+      ) {
+        void selectedRowDetailRefetchRef.current?.();
+      }
+      scheduleRealtimeRefetch();
+    };
 
     try {
       socket.on("connect", handleConnect);
@@ -1824,6 +1837,7 @@ export default function DriveExportMonitorPage() {
     data: selectedRowDetailData,
     error: selectedRowDetailError,
     isFetching: isSelectedRowDetailFetching,
+    refetch: refetchSelectedRowDetail,
   } = useGetLiveRecordingMonitorRowQuery(selectedRow?.recordingId, {
     skip: !selectedRow?.recordingId,
     refetchOnFocus: true,
@@ -1834,6 +1848,11 @@ export default function DriveExportMonitorPage() {
   const selectedRowDetailLoading = Boolean(
     selectedRow && !selectedRowDetail && isSelectedRowDetailFetching
   );
+
+  useEffect(() => {
+    selectedRowRecordingIdRef.current = String(selectedRow?.recordingId || "").trim();
+    selectedRowDetailRefetchRef.current = refetchSelectedRowDetail;
+  }, [refetchSelectedRowDetail, selectedRow?.recordingId]);
 
   const effectiveWorkerHealth = workerHealth || null;
 
@@ -2236,11 +2255,15 @@ export default function DriveExportMonitorPage() {
               </Button>
               <Button
                 variant="outlined"
-                startIcon={<RefreshIcon />}
-                onClick={refreshAll}
-                disabled={
-                  isInitialLoading || isRefreshing || isCommentaryMonitorFetching
+                startIcon={
+                  isRefreshing || isCommentaryMonitorFetching ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <RefreshIcon />
+                  )
                 }
+                onClick={refreshAll}
+                disabled={isInitialLoading}
               >
                 Làm mới
               </Button>
@@ -2372,7 +2395,7 @@ export default function DriveExportMonitorPage() {
                   autoHeight
                   rows={rows}
                   columns={columns}
-                  loading={isRowsInitialLoading || isRowsFetching}
+                  loading={isRowsInitialLoading && rows.length === 0}
                   disableRowSelectionOnClick
                   pagination
                   paginationMode="server"

@@ -253,7 +253,7 @@ export default function AiCommentaryMonitorPage() {
     isError: isCommentaryError,
     refetch: refetchCommentaryMonitor,
   } = useGetLiveRecordingAiCommentaryMonitorQuery(undefined, {
-    pollingInterval: 5000,
+    pollingInterval: socketOn ? 0 : 5000,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
   });

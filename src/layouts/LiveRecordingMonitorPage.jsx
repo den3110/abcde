@@ -31,12 +31,14 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { DataGrid, GridToolbar } from "@mui/x-data-grid";
+import { useDispatch } from "react-redux";
 import { toast } from "react-toastify";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
 import {
+  liveApiSlice,
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingMonitorMetaQuery,
   useGetLiveRecordingMonitorRowsQuery,
@@ -53,6 +55,19 @@ dayjs.extend(relativeTime);
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const MONITOR_AUXILIARY_POLLING_INTERVAL = 60000;
+const MONITOR_SOCKET_SOFT_SYNC_MIN_GAP_MS = 8000;
+const MONITOR_SOCKET_HARD_SYNC_MIN_GAP_MS = 1200;
+const MONITOR_SOCKET_AUXILIARY_POLLING_INTERVAL = 5 * 60000;
+const MONITOR_SOCKET_WORKER_HEALTH_POLLING_INTERVAL = 60000;
+
+const MONITOR_STATUS_PRIORITY = {
+  recording: 0,
+  uploading: 1,
+  pending_export_window: 2,
+  exporting: 3,
+  failed: 4,
+  ready: 5,
+};
 
 const STATUS_META = {
   recording: { color: "error", label: "Đang ghi" },
@@ -61,6 +76,143 @@ const STATUS_META = {
   ready: { color: "success", label: "Sẵn sàng" },
   failed: { color: "error", label: "Lỗi" },
 };
+
+function normalizeRealtimeRecordingId(value) {
+  return String(value || "").trim();
+}
+
+function sortMonitorRows(rows = []) {
+  return [...rows].sort((a, b) => {
+    const priorityA = MONITOR_STATUS_PRIORITY[String(a?.status || "").toLowerCase()] ?? 99;
+    const priorityB = MONITOR_STATUS_PRIORITY[String(b?.status || "").toLowerCase()] ?? 99;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    return new Date(b?.updatedAt || 0).getTime() - new Date(a?.updatedAt || 0).getTime();
+  });
+}
+
+function buildMonitorRowSearchText(row) {
+  return [
+    row?.recordingId,
+    row?.recordingSessionId,
+    row?.matchCode,
+    row?.participantsLabel,
+    row?.tournamentName,
+    row?.bracketName,
+    row?.bracketStage,
+    row?.courtLabel,
+    row?.competitionLabel,
+    row?.error,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function rowMatchesMonitorFilters(
+  row,
+  { status = "ALL", search = "", tournament = "" } = {}
+) {
+  if (!row) return false;
+
+  const normalizedStatus = String(status || "ALL").trim();
+  if (
+    normalizedStatus &&
+    normalizedStatus !== "ALL" &&
+    String(row?.status || "").trim().toLowerCase() !== normalizedStatus.toLowerCase()
+  ) {
+    return false;
+  }
+
+  const normalizedTournament = String(tournament || "")
+    .trim()
+    .toLowerCase();
+  if (
+    normalizedTournament &&
+    String(row?.tournamentName || "")
+      .trim()
+      .toLowerCase() !== normalizedTournament
+  ) {
+    return false;
+  }
+
+  const normalizedSearch = String(search || "")
+    .trim()
+    .toLowerCase();
+  if (normalizedSearch && !buildMonitorRowSearchText(row).includes(normalizedSearch)) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildMonitorSummaryContribution(row) {
+  const status = String(row?.status || "").trim().toLowerCase();
+  const commentaryStatus = String(row?.aiCommentary?.status || "").trim().toLowerCase();
+  const commentaryReady = Boolean(row?.aiCommentary?.ready);
+  const totalSegments = Number(row?.segmentSummary?.totalSegments || 0);
+  const uploadedSegments = Number(row?.segmentSummary?.uploadedSegments || 0);
+  const hasDriveLinks = Boolean(
+    row?.playbackUrl ||
+      row?.drivePreviewUrl ||
+      row?.driveRawUrl ||
+      row?.rawStreamAvailable ||
+      row?.rawStreamUrl
+  );
+
+  return {
+    total: 1,
+    active: ["recording", "uploading", "pending_export_window", "exporting"].includes(status)
+      ? 1
+      : 0,
+    recording: status === "recording" ? 1 : 0,
+    uploading: status === "uploading" ? 1 : 0,
+    pendingExportWindow: status === "pending_export_window" ? 1 : 0,
+    exporting: status === "exporting" ? 1 : 0,
+    ready: status === "ready" ? 1 : 0,
+    failed: status === "failed" ? 1 : 0,
+    commentaryReady: commentaryReady ? 1 : 0,
+    commentaryMissing:
+      status === "ready" && !commentaryReady && !["queued", "running"].includes(commentaryStatus)
+        ? 1
+        : 0,
+    needsAction: status !== "ready" || !hasDriveLinks ? 1 : 0,
+    totalDurationSeconds: Number(row?.durationSeconds || 0),
+    totalSizeBytes: Number(row?.sizeBytes || 0),
+    totalSegments,
+    uploadedSegments,
+    pendingSegments: Math.max(0, totalSegments - uploadedSegments),
+  };
+}
+
+function applyMonitorSummaryDelta(summary = {}, previousRow = null, nextRow = null) {
+  const previous = previousRow ? buildMonitorSummaryContribution(previousRow) : null;
+  const next = nextRow ? buildMonitorSummaryContribution(nextRow) : null;
+  const keys = [
+    "total",
+    "active",
+    "recording",
+    "uploading",
+    "pendingExportWindow",
+    "exporting",
+    "ready",
+    "failed",
+    "commentaryReady",
+    "commentaryMissing",
+    "needsAction",
+    "totalDurationSeconds",
+    "totalSizeBytes",
+    "totalSegments",
+    "uploadedSegments",
+    "pendingSegments",
+  ];
+
+  for (const key of keys) {
+    const currentValue = Number(summary?.[key] || 0);
+    const previousValue = Number(previous?.[key] || 0);
+    const nextValue = Number(next?.[key] || 0);
+    summary[key] = Math.max(0, currentValue - previousValue + nextValue);
+  }
+}
 
 function formatRelative(ts) {
   if (!ts) return "-";
@@ -919,6 +1071,7 @@ function RecordingDetailDialog({
 }
 
 export default function LiveRecordingMonitorPage() {
+  const dispatch = useDispatch();
   const socket = useSocket();
   const [socketOn, setSocketOn] = useState(Boolean(socket?.connected));
   const [search, setSearch] = useState("");
@@ -933,9 +1086,17 @@ export default function LiveRecordingMonitorPage() {
   const [cleaningR2Id, setCleaningR2Id] = useState(null);
   const [actionError, setActionError] = useState("");
   const deferredSearch = useDeferredValue(search);
+  const trimmedSearch = deferredSearch.trim();
   const monitorPollingInterval = socketOn ? 0 : 15000;
+  const monitorAuxiliaryPollingInterval = socketOn
+    ? MONITOR_SOCKET_AUXILIARY_POLLING_INTERVAL
+    : MONITOR_AUXILIARY_POLLING_INTERVAL;
+  const workerHealthPollingInterval = socketOn
+    ? MONITOR_SOCKET_WORKER_HEALTH_POLLING_INTERVAL
+    : 30000;
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
+  const selectedRowDetailRefreshTimerRef = useRef(null);
   const [loadMonitorRowDetail, monitorRowDetailQuery] =
     useLazyGetLiveRecordingMonitorRowQuery();
 
@@ -943,12 +1104,12 @@ export default function LiveRecordingMonitorPage() {
     () => ({
       section: "all",
       status: statusFilter,
-      q: deferredSearch.trim(),
+      q: trimmedSearch,
       tournament: tournamentFilter || "",
       page: paginationModel.page + 1,
       limit: paginationModel.pageSize,
     }),
-    [deferredSearch, paginationModel.page, paginationModel.pageSize, statusFilter, tournamentFilter]
+    [paginationModel.page, paginationModel.pageSize, statusFilter, tournamentFilter, trimmedSearch]
   );
 
   const {
@@ -987,7 +1148,7 @@ export default function LiveRecordingMonitorPage() {
       section: "all",
     },
     {
-      pollingInterval: MONITOR_AUXILIARY_POLLING_INTERVAL,
+      pollingInterval: monitorAuxiliaryPollingInterval,
       refetchOnFocus: true,
       refetchOnReconnect: true,
     }
@@ -997,7 +1158,7 @@ export default function LiveRecordingMonitorPage() {
     error: storageError,
     refetch: refetchStorage,
   } = useGetLiveRecordingMonitorStorageQuery(undefined, {
-    pollingInterval: MONITOR_AUXILIARY_POLLING_INTERVAL,
+    pollingInterval: monitorAuxiliaryPollingInterval,
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });
@@ -1030,14 +1191,22 @@ export default function LiveRecordingMonitorPage() {
 
   const [forceLiveRecordingExport] = useForceLiveRecordingExportMutation();
   const [trashLiveRecordingR2Assets] = useTrashLiveRecordingR2AssetsMutation();
-  const { data: workerHealthPoll } = useGetLiveRecordingWorkerHealthQuery(undefined, {
-    pollingInterval: 30000,
+  const {
+    data: workerHealthPoll,
+    refetch: refetchWorkerHealth,
+  } = useGetLiveRecordingWorkerHealthQuery(undefined, {
+    pollingInterval: workerHealthPollingInterval,
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });
   const refreshRealtime = useCallback(async () => {
-    await Promise.allSettled([refetchSummary(), refetchMeta(), refetchRows()]);
-  }, [refetchMeta, refetchRows, refetchSummary]);
+    await Promise.allSettled([
+      refetchSummary(),
+      refetchMeta(),
+      refetchRows(),
+      refetchWorkerHealth(),
+    ]);
+  }, [refetchMeta, refetchRows, refetchSummary, refetchWorkerHealth]);
   const refresh = useCallback(async () => {
     await Promise.allSettled([
       refetchSummary(),
@@ -1045,8 +1214,156 @@ export default function LiveRecordingMonitorPage() {
       refetchRows(),
       refetchTournaments(),
       refetchStorage(),
+      refetchWorkerHealth(),
     ]);
-  }, [refetchMeta, refetchRows, refetchStorage, refetchSummary, refetchTournaments]);
+  }, [
+    refetchMeta,
+    refetchRows,
+    refetchStorage,
+    refetchSummary,
+    refetchTournaments,
+    refetchWorkerHealth,
+  ]);
+
+  const applyRealtimeUpdate = useCallback(
+    (payload = {}) => {
+      const normalizedRecordingIds = Array.from(
+        new Set(
+          (Array.isArray(payload?.recordingIds) ? payload.recordingIds : [])
+            .map(normalizeRealtimeRecordingId)
+            .filter(Boolean)
+        )
+      );
+      const missingRecordingIds = new Set(
+        (Array.isArray(payload?.missingRecordingIds) ? payload.missingRecordingIds : [])
+          .map(normalizeRealtimeRecordingId)
+          .filter(Boolean)
+      );
+      const incomingRows = Array.isArray(payload?.rows) ? payload.rows : [];
+      const incomingRowsById = new Map(
+        incomingRows
+          .map((row) => [normalizeRealtimeRecordingId(row?.recordingId || row?.id), row])
+          .filter(([recordingId]) => recordingId)
+      );
+      let shouldSync = payload?.mode === "reconcile";
+      const filterState = {
+        status: statusFilter,
+        search: trimmedSearch,
+        tournament: tournamentFilter || "",
+      };
+      const summaryChanges = [];
+
+      if (payload?.meta && typeof payload.meta === "object") {
+        dispatch(
+          liveApiSlice.util.updateQueryData("getLiveRecordingMonitorMeta", undefined, (draft) => {
+            if (!draft || typeof draft !== "object") return;
+            draft.meta = {
+              ...(draft.meta || {}),
+              ...payload.meta,
+            };
+          })
+        );
+      }
+
+      if (incomingRowsById.size || missingRecordingIds.size) {
+        dispatch(
+          liveApiSlice.util.updateQueryData("getLiveRecordingMonitorRows", rowsQueryArgs, (draft) => {
+            if (!draft || !Array.isArray(draft.rows)) return;
+
+            let changed = false;
+            const nextRows = [];
+
+            for (const currentRow of draft.rows) {
+              const recordingId = normalizeRealtimeRecordingId(
+                currentRow?.recordingId || currentRow?.id
+              );
+              if (!recordingId) {
+                nextRows.push(currentRow);
+                continue;
+              }
+
+              if (missingRecordingIds.has(recordingId)) {
+                changed = true;
+                shouldSync = true;
+                continue;
+              }
+
+              const incomingRow = incomingRowsById.get(recordingId);
+              if (!incomingRow) {
+                nextRows.push(currentRow);
+                continue;
+              }
+
+              incomingRowsById.delete(recordingId);
+              changed = true;
+
+              if (!rowMatchesMonitorFilters(incomingRow, filterState)) {
+                shouldSync = true;
+                continue;
+              }
+
+              summaryChanges.push({
+                previousRow: currentRow,
+                nextRow: incomingRow,
+              });
+              nextRows.push(incomingRow);
+            }
+
+            if (changed) {
+              draft.rows = sortMonitorRows(nextRows);
+            }
+          })
+        );
+      }
+
+      if (summaryChanges.length) {
+        dispatch(
+          liveApiSlice.util.updateQueryData(
+            "getLiveRecordingMonitorSummary",
+            { section: "all" },
+            (draft) => {
+              if (!draft || typeof draft !== "object") return;
+              draft.summary = {
+                ...(draft.summary || {}),
+              };
+              summaryChanges.forEach(({ previousRow, nextRow }) => {
+                applyMonitorSummaryDelta(draft.summary, previousRow, nextRow);
+              });
+            }
+          )
+        );
+      }
+
+      if (incomingRowsById.size) {
+        shouldSync = true;
+      }
+
+      if (
+        selectedRowId &&
+        (normalizedRecordingIds.includes(normalizeRealtimeRecordingId(selectedRowId)) ||
+          incomingRowsById.has(normalizeRealtimeRecordingId(selectedRowId)) ||
+          missingRecordingIds.has(normalizeRealtimeRecordingId(selectedRowId)))
+      ) {
+        if (!selectedRowDetailRefreshTimerRef.current) {
+          selectedRowDetailRefreshTimerRef.current = setTimeout(() => {
+            selectedRowDetailRefreshTimerRef.current = null;
+            void loadMonitorRowDetail(selectedRowId, true);
+          }, 250);
+        }
+      }
+
+      return shouldSync;
+    },
+    [
+      dispatch,
+      loadMonitorRowDetail,
+      rowsQueryArgs,
+      selectedRowId,
+      statusFilter,
+      tournamentFilter,
+      trimmedSearch,
+    ]
+  );
 
   useEffect(() => {
     setPaginationModel((current) =>
@@ -1066,9 +1383,12 @@ export default function LiveRecordingMonitorPage() {
   }, [count, paginationModel.page, paginationModel.pageSize]);
 
   const scheduleRealtimeRefetch = useCallback(
-    (delayMs = 200) => {
+    (delayMs = 200, { urgent = false } = {}) => {
       const now = Date.now();
-      const gapMs = Math.max(0, 1500 - (now - lastRealtimeRefetchAtRef.current));
+      const minGapMs = urgent
+        ? MONITOR_SOCKET_HARD_SYNC_MIN_GAP_MS
+        : MONITOR_SOCKET_SOFT_SYNC_MIN_GAP_MS;
+      const gapMs = Math.max(0, minGapMs - (now - lastRealtimeRefetchAtRef.current));
       const waitMs = Math.max(delayMs, gapMs);
       if (realtimeTimerRef.current) return;
       realtimeTimerRef.current = setTimeout(() => {
@@ -1086,6 +1406,10 @@ export default function LiveRecordingMonitorPage() {
         clearTimeout(realtimeTimerRef.current);
         realtimeTimerRef.current = null;
       }
+      if (selectedRowDetailRefreshTimerRef.current) {
+        clearTimeout(selectedRowDetailRefreshTimerRef.current);
+        selectedRowDetailRefreshTimerRef.current = null;
+      }
     },
     []
   );
@@ -1098,10 +1422,17 @@ export default function LiveRecordingMonitorPage() {
       try {
         socket.emit("recordings-v2:watch");
       } catch (_) {}
-      scheduleRealtimeRefetch(100);
+      scheduleRealtimeRefetch(100, { urgent: true });
     };
     const handleDisconnect = () => setSocketOn(false);
-    const handleUpdate = () => scheduleRealtimeRefetch();
+    const handleUpdate = (payload = {}) => {
+      const shouldSync = applyRealtimeUpdate(payload);
+      if (shouldSync) {
+        scheduleRealtimeRefetch(250, {
+          urgent: true,
+        });
+      }
+    };
 
     try {
       socket.on("connect", handleConnect);
@@ -1120,7 +1451,7 @@ export default function LiveRecordingMonitorPage() {
         socket.off("recordings-v2:update", handleUpdate);
       } catch (_) {}
     };
-  }, [scheduleRealtimeRefetch, socket]);
+  }, [applyRealtimeUpdate, scheduleRealtimeRefetch, socket]);
 
   const r2Storage = storageData?.storage || {};
   const workerHealth = workerHealthPoll || meta?.workerHealth || null;
@@ -1373,9 +1704,11 @@ export default function LiveRecordingMonitorPage() {
               />
               <Button
                 variant="outlined"
-                startIcon={<RefreshIcon />}
+                startIcon={
+                  isRefreshing ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />
+                }
                 onClick={() => void refresh()}
-                disabled={isInitialLoading || isRefreshing}
+                disabled={isInitialLoading}
               >
                 Làm mới
               </Button>
@@ -1542,7 +1875,7 @@ export default function LiveRecordingMonitorPage() {
                     autoHeight
                     rows={rows}
                     columns={columns}
-                    loading={isInitialLoading || isRefreshing}
+                    loading={isInitialLoading && rows.length === 0}
                     disableRowSelectionOnClick
                     onRowClick={(params) => setSelectedRowId(params.row.id)}
                     getRowHeight={() => 112}

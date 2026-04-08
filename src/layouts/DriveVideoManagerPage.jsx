@@ -1083,7 +1083,7 @@ export default function DriveVideoManagerPage() {
   } = useGetLiveRecordingMonitorTournamentsQuery(
     { section: "all" },
     {
-      pollingInterval: 60000,
+      pollingInterval: socketOn ? 300000 : 60000,
       refetchOnMountOrArgChange: true,
     }
   );
@@ -1092,7 +1092,7 @@ export default function DriveVideoManagerPage() {
     isFetching: commentaryFetching,
     refetch: refetchCommentaryMonitor,
   } = useGetLiveRecordingAiCommentaryMonitorQuery(undefined, {
-    pollingInterval: 15000,
+    pollingInterval: socketOn ? 0 : 15000,
     refetchOnMountOrArgChange: true,
   });
 
@@ -1306,7 +1306,18 @@ export default function DriveVideoManagerPage() {
       scheduleRealtimeRefetch(100);
     };
     const handleDisconnect = () => setSocketOn(false);
-    const handleUpdate = () => scheduleRealtimeRefetch();
+    const handleUpdate = (payload = {}) => {
+      const changedRecordingIds = Array.isArray(payload?.recordingIds)
+        ? payload.recordingIds.map((value) => String(value || "").trim())
+        : [];
+      if (
+        selectedRow?.recordingId &&
+        changedRecordingIds.includes(String(selectedRow.recordingId))
+      ) {
+        void loadMonitorRowDetail(selectedRow.recordingId, true);
+      }
+      scheduleRealtimeRefetch();
+    };
 
     setSocketOn(Boolean(socket.connected));
     socket.on("connect", handleConnect);
@@ -1324,7 +1335,7 @@ export default function DriveVideoManagerPage() {
       socket.off("disconnect", handleDisconnect);
       socket.off("recordings-v2:update", handleUpdate);
     };
-  }, [scheduleRealtimeRefetch, socket]);
+  }, [loadMonitorRowDetail, scheduleRealtimeRefetch, selectedRow?.recordingId, socket]);
 
   const busy = Boolean(
     retryingRecordingId ||
@@ -2212,7 +2223,7 @@ export default function DriveVideoManagerPage() {
                   paginationModel={paginationModel}
                   onPaginationModelChange={setPaginationModel}
                   pageSizeOptions={PAGE_SIZE_OPTIONS}
-                  loading={isRowsLoading || isRowsFetching}
+                  loading={isRowsLoading && rows.length === 0}
                   getRowHeight={() => "auto"}
                   selectionModel={selectionModel}
                   onSelectionModelChange={(nextModel) =>
