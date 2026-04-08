@@ -151,6 +151,25 @@ function canForceRowToExport(row) {
   return row?.status === "uploading" && totalSegments > 0 && uploadedSegments === totalSegments;
 }
 
+function canCleanR2Row(row) {
+  if (!row?.recordingId) return false;
+
+  const status = String(row?.status || "").trim().toLowerCase();
+  if (["recording", "uploading", "exporting"].includes(status)) {
+    return false;
+  }
+
+  if (Number(row?.r2SourceBytes) > 0) {
+    return true;
+  }
+
+  if (Number(row?.segmentSummary?.totalSegments || 0) > 0) {
+    return true;
+  }
+
+  return Boolean(String(row?.error || "").trim());
+}
+
 function StatusChip({ status }) {
   const meta = STATUS_META[status] || {
     color: "default",
@@ -514,6 +533,7 @@ function ActionsCell({ row, onForceExport, forceExportingId, onCleanR2, cleaning
     ? row.rawStreamUrl || row.driveRawUrl
     : row.driveRawUrl || null;
   const canForceExport = canForceRowToExport(row);
+  const canCleanR2 = canCleanR2Row(row);
   const forcingThisRow = forceExportingId === row.recordingId;
 
   return (
@@ -581,7 +601,7 @@ function ActionsCell({ row, onForceExport, forceExportingId, onCleanR2, cleaning
           Xem trước
         </Button>
       ) : null}
-      {Number(row.r2SourceBytes) > 0 ? (
+      {canCleanR2 ? (
         <Button
           size="small"
           color="error"
