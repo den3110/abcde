@@ -35,19 +35,18 @@ import { DataGrid, GridToolbar } from "@mui/x-data-grid";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
-import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
-import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
   useForceLiveRecordingExportMutation,
+  useGetLiveRecordingMonitorQuery,
   useGetLiveRecordingWorkerHealthQuery,
-  useLazyGetLiveRecordingMonitorQuery,
   useLazyGetLiveRecordingMonitorRowQuery,
   useTrashLiveRecordingR2AssetsMutation,
 } from "slices/liveApiSlice";
 
 dayjs.extend(relativeTime);
 
-const PAGE_SIZE = 0;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const STATUS_META = {
   recording: { color: "error", label: "Đang ghi" },
@@ -614,7 +613,7 @@ function ActionsCell({ row, onForceExport, forceExportingId, onCleanR2, cleaning
           startIcon={<DeleteOutlineIcon />}
           sx={{ minWidth: 0 }}
         >
-          {cleaningR2Id === row.recordingId ? "Đang dọn..." : "Dọn R2"}
+          {cleaningR2Id === row.recordingId ? "Đang xóa..." : "Xóa R2"}
         </Button>
       ) : null}
     </Stack>
@@ -919,6 +918,10 @@ export default function LiveRecordingMonitorPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [tournamentFilter, setTournamentFilter] = useState(null);
+  const [paginationModel, setPaginationModel] = useState({
+    page: 0,
+    pageSize: DEFAULT_PAGE_SIZE,
+  });
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [forceExportingId, setForceExportingId] = useState(null);
   const [cleaningR2Id, setCleaningR2Id] = useState(null);
@@ -927,7 +930,6 @@ export default function LiveRecordingMonitorPage() {
   const monitorPollingInterval = socketOn ? 0 : 15000;
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
-  const [triggerMonitorQuery] = useLazyGetLiveRecordingMonitorQuery();
   const [loadMonitorRowDetail, monitorRowDetailQuery] =
     useLazyGetLiveRecordingMonitorRowQuery();
 
@@ -937,35 +939,32 @@ export default function LiveRecordingMonitorPage() {
       status: statusFilter,
       q: deferredSearch.trim(),
       tournament: tournamentFilter || "",
+      page: paginationModel.page + 1,
+      limit: paginationModel.pageSize,
     }),
-    [deferredSearch, statusFilter, tournamentFilter]
+    [deferredSearch, paginationModel.page, paginationModel.pageSize, statusFilter, tournamentFilter]
   );
 
   const {
-    rows,
-    summary,
-    meta,
-    count,
+    data: monitorData,
     error: queryError,
-    hasMore,
-    isInitialLoading,
-    isLoadingMore,
-    isRefreshing,
-    loadMore,
-    refresh,
-  } = useInfinitePagedQuery({
-    trigger: triggerMonitorQuery,
-    baseArgs: queryArgs,
-    pageSize: PAGE_SIZE,
-    getRowId: (row) => row?.id,
+    isLoading: isInitialLoading,
+    isFetching,
+    refetch,
+  } = useGetLiveRecordingMonitorQuery(queryArgs, {
     pollingInterval: monitorPollingInterval,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
   });
-  const sentinelRef = useInfiniteScrollSentinel({
-    enabled: true,
-    hasMore,
-    loading: isInitialLoading || isLoadingMore || isRefreshing,
-    onLoadMore: loadMore,
-  });
+
+  const rows = useMemo(() => {
+    return Array.isArray(monitorData?.rows) ? monitorData.rows : [];
+  }, [monitorData?.rows]);
+  const summary = monitorData?.summary || {};
+  const meta = monitorData?.meta || {};
+  const count = Number(monitorData?.count || 0);
+  const isRefreshing = isFetching && !isInitialLoading;
+
   const [forceLiveRecordingExport] = useForceLiveRecordingExportMutation();
   const [trashLiveRecordingR2Assets] = useTrashLiveRecordingR2AssetsMutation();
   const { data: workerHealthPoll } = useGetLiveRecordingWorkerHealthQuery(undefined, {
@@ -973,6 +972,24 @@ export default function LiveRecordingMonitorPage() {
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });
+  const refresh = useCallback(() => refetch(), [refetch]);
+
+  useEffect(() => {
+    setPaginationModel((current) =>
+      current.page === 0 ? current : { ...current, page: 0 }
+    );
+  }, [deferredSearch, statusFilter, tournamentFilter]);
+
+  useEffect(() => {
+    const lastPage = Math.max(0, Math.ceil(count / paginationModel.pageSize) - 1);
+    if (paginationModel.page <= lastPage) return;
+    setPaginationModel((current) => {
+      const safeLastPage = Math.max(0, Math.ceil(count / current.pageSize) - 1);
+      return current.page <= safeLastPage
+        ? current
+        : { ...current, page: safeLastPage };
+    });
+  }, [count, paginationModel.page, paginationModel.pageSize]);
 
   const scheduleRealtimeRefetch = useCallback(
     (delayMs = 200) => {
@@ -1268,7 +1285,7 @@ export default function LiveRecordingMonitorPage() {
                 variant="outlined"
                 startIcon={<RefreshIcon />}
                 onClick={() => void refresh()}
-                disabled={isInitialLoading || isLoadingMore || isRefreshing}
+                disabled={isInitialLoading || isRefreshing}
               >
                 Làm mới
               </Button>
@@ -1428,12 +1445,31 @@ export default function LiveRecordingMonitorPage() {
                     autoHeight
                     rows={rows}
                     columns={columns}
-                    loading={isInitialLoading && rows.length === 0}
+                    loading={isInitialLoading || isRefreshing}
                     disableRowSelectionOnClick
                     onRowClick={(params) => setSelectedRowId(params.row.id)}
                     getRowHeight={() => 112}
                     slots={{ toolbar: GridToolbar }}
-                    hideFooter
+                    pagination
+                    paginationMode="server"
+                    rowCount={count}
+                    page={paginationModel.page}
+                    pageSize={paginationModel.pageSize}
+                    rowsPerPageOptions={PAGE_SIZE_OPTIONS}
+                    onPageChange={(nextPage) => {
+                      setPaginationModel((current) =>
+                        current.page === nextPage
+                          ? current
+                          : { ...current, page: nextPage }
+                      );
+                    }}
+                    onPageSizeChange={(nextPageSize) => {
+                      setPaginationModel({
+                        page: 0,
+                        pageSize: nextPageSize,
+                      });
+                    }}
+                    hideFooterSelectedRowCount
                     initialState={{
                       sorting: {
                         sortModel: [{ field: "updatedAt", sort: "desc" }],
@@ -1460,28 +1496,10 @@ export default function LiveRecordingMonitorPage() {
                     Hiển thị {rows.length}/{count} bản ghi
                   </Typography>
                   <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                    {hasMore ? "Kéo xuống để tải thêm" : "Đã tải hết dữ liệu"}
+                    Trang {Math.max(1, paginationModel.page + 1)}/
+                    {Math.max(1, Math.ceil(count / paginationModel.pageSize) || 1)}
                   </Typography>
                 </Stack>
-
-                <Box
-                  ref={sentinelRef}
-                  sx={{
-                    minHeight: 28,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {isLoadingMore ? (
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <CircularProgress size={16} />
-                      <Typography variant="caption" sx={{ opacity: 0.72 }}>
-                        Đang tải thêm dữ liệu...
-                      </Typography>
-                    </Stack>
-                  ) : null}
-                </Box>
               </Stack>
             </CardContent>
           </Card>
