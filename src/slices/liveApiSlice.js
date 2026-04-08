@@ -174,6 +174,13 @@ export const liveApiSlice = apiSlice.injectEndpoints({
         { type: "LiveRecordingAiCommentaryMonitor", id: "LIST" },
       ],
     }),
+    trashLiveRecordingR2Assets: builder.mutation({
+      query: (recordingId) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/r2-clean`,
+        method: "POST",
+      }),
+      invalidatesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
     bulkTrashLiveRecordingDriveAssets: builder.mutation({
       query: ({ recordingIds = [], target = "source" }) => ({
         url: "/live/recordings/v2/admin/drive-asset/trash/bulk",
@@ -208,4 +215,5 @@ export const {
   useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
   useTrashLiveRecordingDriveAssetMutation,
+  useTrashLiveRecordingR2AssetsMutation,
 } = liveApiSlice;

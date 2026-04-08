@@ -46,14 +46,12 @@ import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
-import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
-import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
   useBulkTrashLiveRecordingDriveAssetsMutation,
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingAiCommentaryMonitorQuery,
+  useGetLiveRecordingMonitorQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
-  useLazyGetLiveRecordingMonitorQuery,
   useLazyGetLiveRecordingMonitorRowQuery,
   useMoveLiveRecordingDriveAssetMutation,
   useQueueLiveRecordingAiCommentaryMutation,
@@ -65,7 +63,8 @@ import {
 
 dayjs.extend(relativeTime);
 
-const PAGE_SIZE = 0;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const STATUS_OPTIONS = [
   { value: "ready", label: "Ready trên Drive" },
@@ -1006,6 +1005,10 @@ export default function DriveVideoManagerPage() {
   const [statusFilter, setStatusFilter] = useState("ready");
   const [commentaryFilter, setCommentaryFilter] = useState("all");
   const [tournamentFilter, setTournamentFilter] = useState("");
+  const [paginationModel, setPaginationModel] = useState({
+    page: 0,
+    pageSize: DEFAULT_PAGE_SIZE,
+  });
   const [selectionModel, setSelectionModel] = useState([]);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
@@ -1027,7 +1030,6 @@ export default function DriveVideoManagerPage() {
   const deferredSearch = useDeferredValue(search);
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
-  const [triggerMonitorQuery] = useLazyGetLiveRecordingMonitorQuery();
 
   const queryArgs = useMemo(
     () => ({
@@ -1037,34 +1039,28 @@ export default function DriveVideoManagerPage() {
       view: viewMode,
       tournament: tournamentFilter,
       q: deferredSearch.trim(),
+      page: paginationModel.page + 1,
+      limit: paginationModel.pageSize,
     }),
-    [commentaryFilter, deferredSearch, statusFilter, tournamentFilter, viewMode]
+    [
+      commentaryFilter,
+      deferredSearch,
+      paginationModel.page,
+      paginationModel.pageSize,
+      statusFilter,
+      tournamentFilter,
+      viewMode,
+    ]
   );
-
   const {
-    rows,
-    summary,
-    meta,
-    count,
+    data: monitorPage,
     error: queryError,
-    hasMore,
-    isInitialLoading,
-    isLoadingMore,
-    isRefreshing,
-    loadMore,
-    refresh,
-  } = useInfinitePagedQuery({
-    trigger: triggerMonitorQuery,
-    baseArgs: queryArgs,
-    pageSize: PAGE_SIZE,
-    getRowId: (row) => row?.id,
+    isLoading: isMonitorLoading,
+    isFetching: isMonitorFetching,
+    refetch: refetchMonitor,
+  } = useGetLiveRecordingMonitorQuery(queryArgs, {
     pollingInterval: socketOn ? 0 : 15000,
-  });
-  const sentinelRef = useInfiniteScrollSentinel({
-    enabled: true,
-    hasMore,
-    loading: isInitialLoading || isLoadingMore || isRefreshing,
-    onLoadMore: loadMore,
+    refetchOnMountOrArgChange: true,
   });
   const {
     data: commentaryMonitor,
@@ -1087,6 +1083,20 @@ export default function DriveVideoManagerPage() {
   const [bulkTrashDriveAssets] = useBulkTrashLiveRecordingDriveAssetsMutation();
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
+  const rows = Array.isArray(monitorPage?.rows) ? monitorPage.rows : [];
+  const summary =
+    monitorPage?.summary &&
+    typeof monitorPage.summary === "object" &&
+    !Array.isArray(monitorPage.summary)
+      ? monitorPage.summary
+      : {};
+  const meta =
+    monitorPage?.meta && typeof monitorPage.meta === "object" && !Array.isArray(monitorPage.meta)
+      ? monitorPage.meta
+      : {};
+  const count = Number(monitorPage?.count || 0);
+  const pageCount = Math.max(1, Number(monitorPage?.pages || 1));
+  const currentPageNumber = Number(monitorPage?.page || paginationModel.page + 1);
 
   useEffect(() => {
     setSelectionModel((previous) =>
@@ -1096,7 +1106,16 @@ export default function DriveVideoManagerPage() {
 
   useEffect(() => {
     setSelectionModel([]);
+    setPaginationModel((previous) => (previous.page === 0 ? previous : { ...previous, page: 0 }));
   }, [commentaryFilter, deferredSearch, statusFilter, tournamentFilter, viewMode]);
+
+  useEffect(() => {
+    if (!monitorPage?.page) return;
+    const nextPageIndex = Math.max(0, Number(monitorPage.page || 1) - 1);
+    setPaginationModel((previous) =>
+      previous.page === nextPageIndex ? previous : { ...previous, page: nextPageIndex }
+    );
+  }, [monitorPage?.page]);
 
   const tournamentOptions = useMemo(() => {
     const items = Array.isArray(meta?.tournaments) ? meta.tournaments : [];
@@ -1219,9 +1238,9 @@ export default function DriveVideoManagerPage() {
   }, [loadMonitorRowDetail, selectedRow?.recordingId]);
 
   const refreshAll = useCallback(() => {
-    refresh();
+    refetchMonitor();
     refetchCommentaryMonitor();
-  }, [refresh, refetchCommentaryMonitor]);
+  }, [refetchCommentaryMonitor, refetchMonitor]);
 
   const scheduleRealtimeRefetch = useCallback(
     (delayMs = 200) => {
@@ -1821,9 +1840,9 @@ export default function DriveVideoManagerPage() {
               <Button
                 variant="outlined"
                 onClick={refreshAll}
-                disabled={isInitialLoading || isLoadingMore || isRefreshing || commentaryFetching}
+                disabled={isMonitorFetching || commentaryFetching}
                 startIcon={
-                  isInitialLoading || isLoadingMore || isRefreshing || commentaryFetching ? (
+                  isMonitorFetching || commentaryFetching ? (
                     <CircularProgress size={16} color="inherit" />
                   ) : (
                     <RefreshIcon />
@@ -1969,8 +1988,8 @@ export default function DriveVideoManagerPage() {
                 </Stack>
 
                 <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                  Hiển thị {rows.length}/{count} video. Tab đầu tiên tập trung vào video ready trên
-                  Drive để thao tác nhanh.
+                  Hiển thị {rows.length}/{count} video. Trang {currentPageNumber}/{pageCount}. Tab
+                  đầu tiên tập trung vào video ready trên Drive để thao tác nhanh.
                 </Typography>
 
                 {tournamentFilter ? (
@@ -2152,13 +2171,17 @@ export default function DriveVideoManagerPage() {
                   disableRowSelectionOnClick
                   rows={rows}
                   columns={columns}
-                  loading={isInitialLoading && rows.length === 0}
+                  rowCount={count}
+                  paginationMode="server"
+                  paginationModel={paginationModel}
+                  onPaginationModelChange={setPaginationModel}
+                  pageSizeOptions={PAGE_SIZE_OPTIONS}
+                  loading={isMonitorLoading || isMonitorFetching}
                   getRowHeight={() => "auto"}
                   selectionModel={selectionModel}
                   onSelectionModelChange={(nextModel) =>
                     setSelectionModel(Array.isArray(nextModel) ? nextModel : [])
                   }
-                  hideFooter
                   onRowClick={(params) => setSelectedRowId(params.row.id)}
                   sx={{
                     border: 0,
@@ -2180,31 +2203,12 @@ export default function DriveVideoManagerPage() {
                   justifyContent="space-between"
                 >
                   <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                    {hasMore ? "Kéo xuống để tải thêm" : "Đã tải hết dữ liệu"}
+                    Chọn hàng chỉ áp dụng trên trang hiện tại.
                   </Typography>
                   <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                    Chọn hàng chỉ áp dụng trên các video đã tải xuống bảng hiện tại.
+                    Đổi trang và số dòng/trang bằng thanh pagination bên dưới bảng.
                   </Typography>
                 </Stack>
-
-                <Box
-                  ref={sentinelRef}
-                  sx={{
-                    minHeight: 28,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {isLoadingMore ? (
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <CircularProgress size={16} />
-                      <Typography variant="caption" sx={{ opacity: 0.72 }}>
-                        Đang tải thêm dữ liệu...
-                      </Typography>
-                    </Stack>
-                  ) : null}
-                </Box>
               </Stack>
             </CardContent>
           </Card>
