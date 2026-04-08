@@ -37,8 +37,11 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
 import {
   useForceLiveRecordingExportMutation,
-  useGetLiveRecordingMonitorOverviewQuery,
+  useGetLiveRecordingMonitorMetaQuery,
   useGetLiveRecordingMonitorRowsQuery,
+  useGetLiveRecordingMonitorStorageQuery,
+  useGetLiveRecordingMonitorSummaryQuery,
+  useGetLiveRecordingMonitorTournamentsQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useLazyGetLiveRecordingMonitorRowQuery,
   useTrashLiveRecordingR2AssetsMutation,
@@ -48,6 +51,7 @@ dayjs.extend(relativeTime);
 
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const MONITOR_AUXILIARY_POLLING_INTERVAL = 60000;
 
 const STATUS_META = {
   recording: { color: "error", label: "Đang ghi" },
@@ -934,16 +938,6 @@ export default function LiveRecordingMonitorPage() {
   const [loadMonitorRowDetail, monitorRowDetailQuery] =
     useLazyGetLiveRecordingMonitorRowQuery();
 
-  const overviewQueryArgs = useMemo(
-    () => ({
-      section: "all",
-      status: statusFilter,
-      q: deferredSearch.trim(),
-      tournament: tournamentFilter || "",
-    }),
-    [deferredSearch, statusFilter, tournamentFilter]
-  );
-
   const rowsQueryArgs = useMemo(
     () => ({
       section: "all",
@@ -957,13 +951,52 @@ export default function LiveRecordingMonitorPage() {
   );
 
   const {
-    data: overviewData,
-    error: overviewError,
-    isLoading: isOverviewInitialLoading,
-    isFetching: isOverviewFetching,
-    refetch: refetchOverview,
-  } = useGetLiveRecordingMonitorOverviewQuery(overviewQueryArgs, {
+    data: summaryData,
+    error: summaryError,
+    isLoading: isSummaryInitialLoading,
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+  } = useGetLiveRecordingMonitorSummaryQuery(
+    {
+      section: "all",
+    },
+    {
+      pollingInterval: monitorPollingInterval,
+      refetchOnFocus: true,
+      refetchOnReconnect: true,
+    }
+  );
+  const {
+    data: metaData,
+    error: metaError,
+    isLoading: isMetaInitialLoading,
+    isFetching: isMetaFetching,
+    refetch: refetchMeta,
+  } = useGetLiveRecordingMonitorMetaQuery(undefined, {
     pollingInterval: monitorPollingInterval,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+  });
+  const {
+    data: tournamentData,
+    error: tournamentError,
+    refetch: refetchTournaments,
+  } = useGetLiveRecordingMonitorTournamentsQuery(
+    {
+      section: "all",
+    },
+    {
+      pollingInterval: MONITOR_AUXILIARY_POLLING_INTERVAL,
+      refetchOnFocus: true,
+      refetchOnReconnect: true,
+    }
+  );
+  const {
+    data: storageData,
+    error: storageError,
+    refetch: refetchStorage,
+  } = useGetLiveRecordingMonitorStorageQuery(undefined, {
+    pollingInterval: MONITOR_AUXILIARY_POLLING_INTERVAL,
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });
@@ -982,14 +1015,17 @@ export default function LiveRecordingMonitorPage() {
   const rows = useMemo(() => {
     return Array.isArray(rowsData?.rows) ? rowsData.rows : [];
   }, [rowsData?.rows]);
-  const summary = overviewData?.summary || {};
-  const meta = overviewData?.meta || {};
+  const summary = summaryData?.summary || {};
+  const meta = metaData?.meta || {};
   const count = Number(rowsData?.count || 0);
-  const queryError = rowsError || overviewError;
-  const isInitialLoading = isRowsInitialLoading || isOverviewInitialLoading;
+  const queryError = rowsError || summaryError || metaError;
+  const auxiliaryError = tournamentError || storageError;
+  const isInitialLoading =
+    isRowsInitialLoading || isSummaryInitialLoading || isMetaInitialLoading;
   const isRefreshing =
     (isRowsFetching && !isRowsInitialLoading) ||
-    (isOverviewFetching && !isOverviewInitialLoading);
+    (isSummaryFetching && !isSummaryInitialLoading) ||
+    (isMetaFetching && !isMetaInitialLoading);
 
   const [forceLiveRecordingExport] = useForceLiveRecordingExportMutation();
   const [trashLiveRecordingR2Assets] = useTrashLiveRecordingR2AssetsMutation();
@@ -998,9 +1034,18 @@ export default function LiveRecordingMonitorPage() {
     refetchOnFocus: true,
     refetchOnReconnect: true,
   });
+  const refreshRealtime = useCallback(async () => {
+    await Promise.allSettled([refetchSummary(), refetchMeta(), refetchRows()]);
+  }, [refetchMeta, refetchRows, refetchSummary]);
   const refresh = useCallback(async () => {
-    await Promise.allSettled([refetchOverview(), refetchRows()]);
-  }, [refetchOverview, refetchRows]);
+    await Promise.allSettled([
+      refetchSummary(),
+      refetchMeta(),
+      refetchRows(),
+      refetchTournaments(),
+      refetchStorage(),
+    ]);
+  }, [refetchMeta, refetchRows, refetchStorage, refetchSummary, refetchTournaments]);
 
   useEffect(() => {
     setPaginationModel((current) =>
@@ -1028,10 +1073,10 @@ export default function LiveRecordingMonitorPage() {
       realtimeTimerRef.current = setTimeout(() => {
         realtimeTimerRef.current = null;
         lastRealtimeRefetchAtRef.current = Date.now();
-        void refresh();
+        void refreshRealtime();
       }, waitMs);
     },
-    [refresh]
+    [refreshRealtime]
   );
 
   useEffect(
@@ -1076,12 +1121,12 @@ export default function LiveRecordingMonitorPage() {
     };
   }, [scheduleRealtimeRefetch, socket]);
 
-  const r2Storage = summary?.r2Storage || {};
+  const r2Storage = storageData?.storage || {};
   const workerHealth = workerHealthPoll || meta?.workerHealth || null;
 
   const tournamentOptions = useMemo(() => {
-    return Array.isArray(meta?.tournaments) ? meta.tournaments : [];
-  }, [meta?.tournaments]);
+    return Array.isArray(tournamentData?.tournaments) ? tournamentData.tournaments : [];
+  }, [tournamentData?.tournaments]);
 
   const selectedRow = useMemo(
     () => rows.find((row) => row.id === selectedRowId) || null,
@@ -1327,6 +1372,13 @@ export default function LiveRecordingMonitorPage() {
 
           {queryError ? (
             <Alert severity="error">Không tải được dữ liệu monitor bản ghi.</Alert>
+          ) : null}
+
+          {auxiliaryError ? (
+            <Alert severity="warning">
+              Không tải được một phần dữ liệu phụ trợ monitor. Danh sách chính vẫn tiếp tục
+              hoạt động.
+            </Alert>
           ) : null}
 
           {actionError ? <Alert severity="error">{actionError}</Alert> : null}

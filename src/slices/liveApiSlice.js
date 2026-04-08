@@ -116,6 +116,50 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 5,
       providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
     }),
+    getLiveRecordingMonitorSummary: builder.query({
+      query: ({ section = "all" } = {}) => {
+        const params = new URLSearchParams();
+        if (section) params.set("section", String(section));
+        return {
+          url: `/live/recordings/v2/admin/monitor/summary?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      keepUnusedDataFor: 5,
+      providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
+    getLiveRecordingMonitorMeta: builder.query({
+      query: () => ({
+        url: "/live/recordings/v2/admin/monitor/meta",
+        method: "GET",
+      }),
+      keepUnusedDataFor: 5,
+      providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
+    getLiveRecordingMonitorTournaments: builder.query({
+      query: ({ section = "all" } = {}) => {
+        const params = new URLSearchParams();
+        if (section) params.set("section", String(section));
+        return {
+          url: `/live/recordings/v2/admin/monitor/tournaments?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      keepUnusedDataFor: 15,
+      providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
+    getLiveRecordingMonitorStorage: builder.query({
+      query: ({ forceRefresh = false } = {}) => {
+        const params = new URLSearchParams();
+        if (forceRefresh) params.set("forceRefresh", "true");
+        return {
+          url: `/live/recordings/v2/admin/monitor/storage?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      keepUnusedDataFor: 15,
+      providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
     getLiveRecordingMonitorRows: builder.query({
       query: ({
         section = "all",
@@ -262,7 +306,11 @@ export const {
   useForceLiveRecordingExportMutation,
   useGetFbVodDriveMonitorQuery,
   useGetLiveRecordingAiCommentaryMonitorQuery,
+  useGetLiveRecordingMonitorMetaQuery,
   useGetLiveRecordingMonitorOverviewQuery,
+  useGetLiveRecordingMonitorStorageQuery,
+  useGetLiveRecordingMonitorSummaryQuery,
+  useGetLiveRecordingMonitorTournamentsQuery,
   useLazyGetFbVodDriveMonitorQuery,
   useLazyGetLiveRecordingDriveAssetQuery,
   useLazyGetLiveRecordingMonitorQuery,
