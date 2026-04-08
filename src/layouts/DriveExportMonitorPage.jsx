@@ -35,14 +35,14 @@ import { Link as RouterLink } from "react-router-dom";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { useSocket } from "context/SocketContext";
-import useInfinitePagedQuery from "hooks/useInfinitePagedQuery";
-import useInfiniteScrollSentinel from "hooks/useInfiniteScrollSentinel";
 import {
   useForceLiveRecordingExportMutation,
   useGetLiveRecordingAiCommentaryMonitorQuery,
+  useGetLiveRecordingMonitorExportQueueQuery,
+  useGetLiveRecordingMonitorRowQuery,
+  useGetLiveRecordingMonitorRowsQuery,
+  useGetLiveRecordingMonitorSummaryQuery,
   useGetLiveRecordingWorkerHealthQuery,
-  useLazyGetLiveRecordingMonitorQuery,
-  useLazyGetLiveRecordingMonitorRowQuery,
   useQueueLiveRecordingAiCommentaryMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
@@ -50,7 +50,8 @@ import {
 
 dayjs.extend(relativeTime);
 
-const PAGE_SIZE = 0;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const STATUS_META = {
   pending_export_window: { color: "secondary", label: "Chờ khung giờ đêm" },
@@ -1620,46 +1621,62 @@ export default function DriveExportMonitorPage() {
   const [forcingRecordingId, setForcingRecordingId] = useState(null);
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
   const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
+  const [paginationModel, setPaginationModel] = useState({
+    page: 0,
+    pageSize: DEFAULT_PAGE_SIZE,
+  });
   const deferredSearch = useDeferredValue(search);
+  const monitorPollingInterval = socketOn ? 0 : 15000;
   const realtimeTimerRef = useRef(null);
   const lastRealtimeRefetchAtRef = useRef(0);
-  const [triggerMonitorQuery] = useLazyGetLiveRecordingMonitorQuery();
-  const [loadMonitorRowDetail, monitorRowDetailQuery] =
-    useLazyGetLiveRecordingMonitorRowQuery();
 
-  const queryArgs = useMemo(
+  const rowsQueryArgs = useMemo(
     () => ({
       section: "export",
       status: statusFilter,
       q: deferredSearch.trim(),
+      page: paginationModel.page + 1,
+      limit: paginationModel.pageSize,
     }),
-    [deferredSearch, statusFilter]
+    [deferredSearch, paginationModel.page, paginationModel.pageSize, statusFilter]
   );
 
   const {
-    rows,
-    summary,
-    meta,
-    count,
-    error: queryError,
-    hasMore,
-    isInitialLoading,
-    isLoadingMore,
-    isRefreshing,
-    loadMore,
-    refresh,
-  } = useInfinitePagedQuery({
-    trigger: triggerMonitorQuery,
-    baseArgs: queryArgs,
-    pageSize: PAGE_SIZE,
-    getRowId: (row) => row?.id,
-    pollingInterval: socketOn ? 0 : 15000,
+    data: summaryData,
+    error: summaryError,
+    isLoading: isSummaryInitialLoading,
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+  } = useGetLiveRecordingMonitorSummaryQuery(
+    {
+      section: "export",
+    },
+    {
+      pollingInterval: monitorPollingInterval,
+      refetchOnFocus: true,
+      refetchOnReconnect: true,
+    }
+  );
+  const {
+    data: rowsData,
+    error: rowsError,
+    isLoading: isRowsInitialLoading,
+    isFetching: isRowsFetching,
+    refetch: refetchRows,
+  } = useGetLiveRecordingMonitorRowsQuery(rowsQueryArgs, {
+    pollingInterval: monitorPollingInterval,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
   });
-  const sentinelRef = useInfiniteScrollSentinel({
-    enabled: true,
-    hasMore,
-    loading: isInitialLoading || isLoadingMore || isRefreshing,
-    onLoadMore: loadMore,
+  const {
+    data: exportQueueData,
+    error: exportQueueError,
+    isFetching: isExportQueueFetching,
+    refetch: refetchExportQueue,
+  } = useGetLiveRecordingMonitorExportQueueQuery(undefined, {
+    pollingInterval: monitorPollingInterval,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
   });
   const [retryExport] = useRetryLiveRecordingExportMutation();
   const [forceExport] = useForceLiveRecordingExportMutation();
@@ -1683,6 +1700,41 @@ export default function DriveExportMonitorPage() {
     refetchOnMountOrArgChange: true,
   });
 
+  const rows = useMemo(() => {
+    return Array.isArray(rowsData?.rows) ? rowsData.rows : [];
+  }, [rowsData?.rows]);
+  const summary = summaryData?.summary || {};
+  const count = Number(rowsData?.count || 0);
+  const exportQueueRows = useMemo(() => {
+    return Array.isArray(exportQueueData?.rows) ? exportQueueData.rows : [];
+  }, [exportQueueData?.rows]);
+  const isInitialLoading = isRowsInitialLoading || isSummaryInitialLoading;
+  const isRefreshing =
+    (isRowsFetching && !isRowsInitialLoading) ||
+    (isSummaryFetching && !isSummaryInitialLoading) ||
+    isExportQueueFetching;
+  const queryError = rowsError || summaryError;
+
+  const refreshRealtime = useCallback(async () => {
+    await Promise.allSettled([
+      refetchRows(),
+      refetchSummary(),
+      refetchExportQueue(),
+      refetchWorkerHealth(),
+      refetchCommentaryMonitor(),
+    ]);
+  }, [
+    refetchCommentaryMonitor,
+    refetchExportQueue,
+    refetchRows,
+    refetchSummary,
+    refetchWorkerHealth,
+  ]);
+
+  const refreshAll = useCallback(async () => {
+    await refreshRealtime();
+  }, [refreshRealtime]);
+
   const scheduleRealtimeRefetch = useCallback(
     (delayMs = 200) => {
       const now = Date.now();
@@ -1692,11 +1744,10 @@ export default function DriveExportMonitorPage() {
       realtimeTimerRef.current = setTimeout(() => {
         realtimeTimerRef.current = null;
         lastRealtimeRefetchAtRef.current = Date.now();
-        void refresh();
-        void refetchCommentaryMonitor();
+        void refreshRealtime();
       }, waitMs);
     },
-    [refresh, refetchCommentaryMonitor]
+    [refreshRealtime]
   );
 
   useEffect(
@@ -1710,6 +1761,23 @@ export default function DriveExportMonitorPage() {
   );
 
   useEffect(() => {
+    setPaginationModel((current) =>
+      current.page === 0 ? current : { ...current, page: 0 }
+    );
+  }, [deferredSearch, statusFilter]);
+
+  useEffect(() => {
+    const lastPage = Math.max(0, Math.ceil(count / paginationModel.pageSize) - 1);
+    if (paginationModel.page <= lastPage) return;
+    setPaginationModel((current) => {
+      const safeLastPage = Math.max(0, Math.ceil(count / current.pageSize) - 1);
+      return current.page <= safeLastPage
+        ? current
+        : { ...current, page: safeLastPage };
+    });
+  }, [count, paginationModel.page, paginationModel.pageSize]);
+
+  useEffect(() => {
     if (!socket) return undefined;
 
     const handleConnect = () => {
@@ -1717,9 +1785,7 @@ export default function DriveExportMonitorPage() {
       try {
         socket.emit("recordings-v2:watch");
       } catch (_) {}
-      void refresh();
-      void refetchWorkerHealth();
-      void refetchCommentaryMonitor();
+      void refreshAll();
     };
     const handleDisconnect = () => setSocketOn(false);
     const handleUpdate = () => scheduleRealtimeRefetch();
@@ -1743,78 +1809,67 @@ export default function DriveExportMonitorPage() {
     };
   }, [
     socket,
-    refresh,
-    refetchCommentaryMonitor,
-    refetchWorkerHealth,
+    refreshAll,
     scheduleRealtimeRefetch,
   ]);
 
   const selectedRow = useMemo(
-    () => rows.find((row) => row.id === selectedRowId) || null,
-    [rows, selectedRowId]
+    () =>
+      rows.find((row) => row.id === selectedRowId) ||
+      exportQueueRows.find((row) => row.id === selectedRowId) ||
+      null,
+    [exportQueueRows, rows, selectedRowId]
   );
-  const selectedRowDetail = useMemo(() => {
-    const requestedRecordingId = String(monitorRowDetailQuery?.originalArgs || "").trim();
-    const detailRow = monitorRowDetailQuery?.data?.row || null;
-    if (!selectedRow?.recordingId || !detailRow) return null;
-    return requestedRecordingId === String(selectedRow.recordingId) ? detailRow : null;
-  }, [
-    monitorRowDetailQuery?.data?.row,
-    monitorRowDetailQuery?.originalArgs,
-    selectedRow?.recordingId,
-  ]);
-  const selectedRowDetailError = useMemo(() => {
-    const requestedRecordingId = String(monitorRowDetailQuery?.originalArgs || "").trim();
-    if (!selectedRow?.recordingId) return null;
-    return requestedRecordingId === String(selectedRow.recordingId)
-      ? monitorRowDetailQuery?.error || null
-      : null;
-  }, [monitorRowDetailQuery?.error, monitorRowDetailQuery?.originalArgs, selectedRow?.recordingId]);
+  const {
+    data: selectedRowDetailData,
+    error: selectedRowDetailError,
+    isFetching: isSelectedRowDetailFetching,
+  } = useGetLiveRecordingMonitorRowQuery(selectedRow?.recordingId, {
+    skip: !selectedRow?.recordingId,
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+  });
+  const selectedRowDetail = selectedRowDetailData?.row || null;
   const selectedRowForDialog = selectedRowDetail || selectedRow;
   const selectedRowDetailLoading = Boolean(
-    selectedRow && !selectedRowDetail && monitorRowDetailQuery?.isFetching
+    selectedRow && !selectedRowDetail && isSelectedRowDetailFetching
   );
 
-  useEffect(() => {
-    if (!selectedRow?.recordingId) return;
-    void loadMonitorRowDetail(selectedRow.recordingId, true);
-  }, [loadMonitorRowDetail, selectedRow?.recordingId]);
-
-  const effectiveWorkerHealth = useMemo(() => {
-    const snapshotWorkerHealth = meta?.workerHealth || null;
-    const snapshotHeartbeatAt = new Date(snapshotWorkerHealth?.lastHeartbeatAt || 0).getTime();
-    const queryHeartbeatAt = new Date(workerHealth?.lastHeartbeatAt || 0).getTime();
-    if (queryHeartbeatAt > snapshotHeartbeatAt) {
-      return workerHealth || snapshotWorkerHealth || null;
-    }
-    return snapshotWorkerHealth || workerHealth || null;
-  }, [meta?.workerHealth, workerHealth]);
+  const effectiveWorkerHealth = workerHealth || null;
 
   const currentExportRow = useMemo(() => {
     const currentRecordingId = effectiveWorkerHealth?.worker?.currentRecordingId;
     if (!currentRecordingId) return null;
-    return rows.find((row) => row.recordingId === currentRecordingId) || null;
-  }, [effectiveWorkerHealth, rows]);
-  const queueSnapshot = meta?.exportQueue || null;
+    return exportQueueRows.find((row) => row.recordingId === currentRecordingId) || null;
+  }, [effectiveWorkerHealth, exportQueueRows]);
+  const queueSnapshot = exportQueueData?.queueSnapshot || null;
 
   const workerAlertVisible =
     ["stale", "offline"].includes(effectiveWorkerHealth?.status || "offline") &&
     Number(summary.exporting || 0) > 0;
   const commentaryGlobalEnabled = Boolean(commentaryMonitor?.settings?.enabled);
   const commentaryAutoEnabled = Boolean(commentaryMonitor?.settings?.autoGenerateAfterDriveUpload);
-  const commentaryCurrentRow = useMemo(() => {
-    const activeRecordingId = commentaryMonitor?.activeJob?.recordingId;
-    if (!activeRecordingId) return null;
-    return rows.find((row) => row.recordingId === activeRecordingId) || null;
-  }, [commentaryMonitor, rows]);
+  const activeCommentaryRecordingId = String(
+    commentaryMonitor?.activeJob?.recordingId || ""
+  ).trim();
+  const { data: commentaryCurrentRowData } = useGetLiveRecordingMonitorRowQuery(
+    activeCommentaryRecordingId,
+    {
+      skip: !activeCommentaryRecordingId,
+      refetchOnFocus: true,
+      refetchOnReconnect: true,
+    }
+  );
+  const commentaryCurrentRow = commentaryCurrentRowData?.row || null;
 
   const handleRetryExport = async (recordingId) => {
     try {
       setRetryingRecordingId(recordingId);
       await retryExport(recordingId).unwrap();
-      refresh();
-      refetchWorkerHealth();
-    } catch (_) {
+      toast.success("Đã đưa video vào hàng đợi retry export.");
+      await refreshAll();
+    } catch (apiError) {
+      toast.error(apiError?.data?.message || apiError?.error || "Không thể retry export.");
     } finally {
       setRetryingRecordingId(null);
     }
@@ -1824,18 +1879,13 @@ export default function DriveExportMonitorPage() {
     try {
       setForcingRecordingId(recordingId);
       await forceExport(recordingId).unwrap();
-      refresh();
-      refetchWorkerHealth();
-    } catch (_) {
+      toast.success("Đã force export ngay.");
+      await refreshAll();
+    } catch (apiError) {
+      toast.error(apiError?.data?.message || apiError?.error || "Không thể force export.");
     } finally {
       setForcingRecordingId(null);
     }
-  };
-
-  const refreshAll = () => {
-    refresh();
-    refetchWorkerHealth();
-    refetchCommentaryMonitor();
   };
 
   const handleOpenQueueDetail = useCallback((row) => {
@@ -1855,7 +1905,7 @@ export default function DriveExportMonitorPage() {
         await queueAiCommentary(recordingId).unwrap();
         toast.success("Đã đưa job BLV AI vào hàng đợi.");
       }
-      refreshAll();
+      await refreshAll();
     } catch (error) {
       toast.error(
         error?.data?.message ||
@@ -2189,7 +2239,7 @@ export default function DriveExportMonitorPage() {
                 startIcon={<RefreshIcon />}
                 onClick={refreshAll}
                 disabled={
-                  isInitialLoading || isLoadingMore || isRefreshing || isCommentaryMonitorFetching
+                  isInitialLoading || isRefreshing || isCommentaryMonitorFetching
                 }
               >
                 Làm mới
@@ -2205,6 +2255,11 @@ export default function DriveExportMonitorPage() {
 
           {queryError ? (
             <Alert severity="error">Không tải được dữ liệu export bản ghi.</Alert>
+          ) : null}
+          {exportQueueError ? (
+            <Alert severity="warning">
+              Không tải được snapshot hàng chờ export. Bảng chính vẫn tiếp tục hoạt động.
+            </Alert>
           ) : null}
           {workerHealthError && !effectiveWorkerHealth ? (
             <Alert severity="error">Không tải được trạng thái worker.</Alert>
@@ -2317,13 +2372,32 @@ export default function DriveExportMonitorPage() {
                   autoHeight
                   rows={rows}
                   columns={columns}
-                  loading={isInitialLoading && rows.length === 0}
+                  loading={isRowsInitialLoading || isRowsFetching}
                   disableRowSelectionOnClick
-                  hideFooter
+                  pagination
+                  paginationMode="server"
+                  rowCount={count}
+                  page={paginationModel.page}
+                  pageSize={paginationModel.pageSize}
+                  rowsPerPageOptions={PAGE_SIZE_OPTIONS}
                   initialState={{
                     sorting: { sortModel: [{ field: "updatedAt", sort: "desc" }] },
                   }}
                   onRowClick={(params) => setSelectedRowId(params.row.id)}
+                  onPageChange={(nextPage) => {
+                    setPaginationModel((current) =>
+                      current.page === nextPage
+                        ? current
+                        : { ...current, page: nextPage }
+                    );
+                  }}
+                  onPageSizeChange={(nextPageSize) => {
+                    setPaginationModel({
+                      page: 0,
+                      pageSize: nextPageSize,
+                    });
+                  }}
+                  hideFooterSelectedRowCount
                   sx={{
                     border: "none",
                     "& .MuiDataGrid-cell": {
@@ -2347,28 +2421,13 @@ export default function DriveExportMonitorPage() {
                     Hiển thị {rows.length}/{count} bản ghi
                   </Typography>
                   <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                    {hasMore ? "Kéo xuống để tải thêm" : "Đã tải hết dữ liệu"}
+                    {`Trang ${paginationModel.page + 1}/${Math.max(
+                      1,
+                      Math.ceil(count / paginationModel.pageSize)
+                    )}`}
                   </Typography>
                 </Stack>
 
-                <Box
-                  ref={sentinelRef}
-                  sx={{
-                    minHeight: 28,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {isLoadingMore ? (
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <CircularProgress size={16} />
-                      <Typography variant="caption" sx={{ opacity: 0.72 }}>
-                        Đang tải thêm dữ liệu...
-                      </Typography>
-                    </Stack>
-                  ) : null}
-                </Box>
               </Stack>
             </CardContent>
           </Card>
@@ -2382,10 +2441,10 @@ export default function DriveExportMonitorPage() {
             onRetryExport={handleRetryExport}
             forcingRecordingId={forcingRecordingId}
             retryingRecordingId={retryingRecordingId}
-            rows={rows}
+            rows={exportQueueRows}
             currentExportRow={currentExportRow}
             queueSnapshot={queueSnapshot}
-            generatedAt={meta?.generatedAt}
+            generatedAt={exportQueueData?.generatedAt}
           />
 
           <RecordingDetailDialog

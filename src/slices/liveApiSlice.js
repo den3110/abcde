@@ -160,6 +160,14 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       keepUnusedDataFor: 15,
       providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
     }),
+    getLiveRecordingMonitorExportQueue: builder.query({
+      query: () => ({
+        url: "/live/recordings/v2/admin/monitor/export-queue",
+        method: "GET",
+      }),
+      keepUnusedDataFor: 5,
+      providesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
     getLiveRecordingMonitorRows: builder.query({
       query: ({
         section = "all",
@@ -306,8 +314,10 @@ export const {
   useForceLiveRecordingExportMutation,
   useGetFbVodDriveMonitorQuery,
   useGetLiveRecordingAiCommentaryMonitorQuery,
+  useGetLiveRecordingMonitorExportQueueQuery,
   useGetLiveRecordingMonitorMetaQuery,
   useGetLiveRecordingMonitorOverviewQuery,
+  useGetLiveRecordingMonitorRowQuery,
   useGetLiveRecordingMonitorStorageQuery,
   useGetLiveRecordingMonitorSummaryQuery,
   useGetLiveRecordingMonitorTournamentsQuery,

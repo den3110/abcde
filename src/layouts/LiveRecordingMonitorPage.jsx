@@ -31,6 +31,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { DataGrid, GridToolbar } from "@mui/x-data-grid";
+import { toast } from "react-toastify";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -618,7 +619,7 @@ function ActionsCell({ row, onForceExport, forceExportingId, onCleanR2, cleaning
           startIcon={<DeleteOutlineIcon />}
           sx={{ minWidth: 0 }}
         >
-          {cleaningR2Id === row.recordingId ? "Đang xóa..." : "Xóa R2"}
+          {cleaningR2Id === row.recordingId ? "Đang xóa..." : "Xóa R2 + record"}
         </Button>
       ) : null}
     </Stack>
@@ -1169,8 +1170,14 @@ export default function LiveRecordingMonitorPage() {
       setForceExportingId(row.recordingId);
       try {
         await forceLiveRecordingExport(row.recordingId).unwrap();
+        toast.success("Đã chuyển recording sang hàng đợi export.");
         await refresh();
       } catch (error) {
+        toast.error(
+          error?.data?.message ||
+            error?.error ||
+            "Không thể chuyển recording sang trạng thái exporting."
+        );
         setActionError(
           error?.data?.message ||
             error?.error ||
@@ -1186,16 +1193,26 @@ export default function LiveRecordingMonitorPage() {
   const handleCleanR2 = React.useCallback(
     async (row) => {
       if (!row?.recordingId || cleaningR2Id) return;
-      if (!window.confirm("Bạn có chắc chắn muốn xoá toàn bộ dữ liệu R2 của trận này? Dữ liệu không thể phục hồi!")) return;
+      if (
+        !window.confirm(
+          "Bạn có chắc chắn muốn xóa toàn bộ dữ liệu R2 và xóa luôn bản ghi này khỏi DB? Dữ liệu không thể phục hồi!"
+        )
+      ) {
+        return;
+      }
 
       setActionError("");
       setCleaningR2Id(row.recordingId);
       try {
-        await trashLiveRecordingR2Assets(row.recordingId).unwrap();
+        const result = await trashLiveRecordingR2Assets(row.recordingId).unwrap();
+        toast.success(
+          result?.message || "Đã xóa dữ liệu R2 và xóa luôn bản ghi khỏi DB."
+        );
         await refresh();
       } catch (error) {
+        toast.error(error?.data?.message || error?.error || "Không thể xóa R2 + record.");
         setActionError(
-          error?.data?.message || error?.error || "Không thể dọn dẹp R2."
+          error?.data?.message || error?.error || "Không thể xóa R2 + record."
         );
       } finally {
         setCleaningR2Id(null);
