@@ -1,5 +1,13 @@
 /* eslint-disable react/prop-types */
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   Autocomplete,
@@ -59,6 +67,7 @@ const MONITOR_SOCKET_SOFT_SYNC_MIN_GAP_MS = 8000;
 const MONITOR_SOCKET_HARD_SYNC_MIN_GAP_MS = 1200;
 const MONITOR_SOCKET_AUXILIARY_POLLING_INTERVAL = 5 * 60000;
 const MONITOR_SOCKET_WORKER_HEALTH_POLLING_INTERVAL = 60000;
+const DETAIL_SEGMENTS_PAGE_SIZE = 20;
 
 const MONITOR_STATUS_PRIORITY = {
   recording: 0,
@@ -212,6 +221,36 @@ function applyMonitorSummaryDelta(summary = {}, previousRow = null, nextRow = nu
     const nextValue = Number(next?.[key] || 0);
     summary[key] = Math.max(0, currentValue - previousValue + nextValue);
   }
+}
+
+function getSegmentDisplayCompletedBytes(segment) {
+  const completedBytes = Number(segment?.completedBytes || 0);
+  if (completedBytes > 0) return completedBytes;
+
+  if (String(segment?.uploadStatus || "").trim().toLowerCase() === "uploaded") {
+    return Number(segment?.totalSizeBytes || segment?.sizeBytes || 0);
+  }
+
+  return 0;
+}
+
+function formatSegmentPartLabel(segment, { short = false } = {}) {
+  const totalParts = Number(segment?.totalParts || 0);
+  const completedPartCount = Number(segment?.completedPartCount || 0);
+
+  if (totalParts > 0) {
+    return `${completedPartCount}/${totalParts} parts`;
+  }
+
+  if (String(segment?.uploadStatus || "").trim().toLowerCase() === "uploaded") {
+    return short ? "Tải đơn" : "Đã tải đơn";
+  }
+
+  if (completedPartCount > 0) {
+    return `${completedPartCount} parts`;
+  }
+
+  return short ? "Chưa có part" : "Chưa có part nào";
 }
 
 function formatRelative(ts) {
@@ -616,11 +655,8 @@ function ProgressCell({ row }) {
   const { displaySegment, totalSegments, uploadedSegments, segmentPercent, overallPercent } =
     getRowProgressSummary(row);
   const hasKnownBytes = Number(displaySegment?.totalSizeBytes || 0) > 0;
-  const totalParts = Number(displaySegment?.totalParts || 0);
-  const partText =
-    totalParts > 0
-      ? `${displaySegment?.completedPartCount || 0}/${totalParts} parts`
-      : `${displaySegment?.completedPartCount || 0} parts`;
+  const partText = formatSegmentPartLabel(displaySegment, { short: true });
+  const completedBytes = getSegmentDisplayCompletedBytes(displaySegment);
 
   let helperText = "Đang ghi, chưa có đoạn cắt nào";
   if (displaySegment) {
@@ -628,7 +664,7 @@ function ProgressCell({ row }) {
       helperText = "Đang đợi part đầu tiên";
     } else if (hasKnownBytes) {
       helperText = `${segmentPercent}% - ${formatBytes(
-        displaySegment.completedBytes || 0
+        completedBytes
       )} / ${formatBytes(displaySegment.totalSizeBytes || 0)} - ${partText}`;
     } else {
       helperText = `${formatSegmentUploadStatus(displaySegment.uploadStatus)} - ${partText}`;
@@ -684,7 +720,14 @@ function MatchCell({ row }) {
   );
 }
 
-function ActionsCell({ row, onForceExport, forceExportingId, onCleanR2, cleaningR2Id }) {
+function ActionsCell({
+  row,
+  onForceExport,
+  forceExportingId,
+  onCleanR2,
+  cleaningR2Id,
+  bulkBusy = false,
+}) {
   const canPlay = row.status === "ready" && Boolean(row.playbackUrl);
   const rawHref = row.rawStreamAvailable
     ? row.rawStreamUrl || row.driveRawUrl
@@ -700,7 +743,7 @@ function ActionsCell({ row, onForceExport, forceExportingId, onCleanR2, cleaning
           size="small"
           color="warning"
           variant={canForceExport ? "contained" : "outlined"}
-          disabled={!canForceExport || forcingThisRow}
+          disabled={!canForceExport || forcingThisRow || bulkBusy}
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
@@ -767,7 +810,7 @@ function ActionsCell({ row, onForceExport, forceExportingId, onCleanR2, cleaning
             event.stopPropagation();
             onCleanR2?.(row);
           }}
-          disabled={cleaningR2Id === row.recordingId}
+          disabled={cleaningR2Id === row.recordingId || bulkBusy}
           startIcon={<DeleteOutlineIcon />}
           sx={{ minWidth: 0 }}
         >
@@ -786,12 +829,46 @@ function RecordingDetailDialog({
   detailError = null,
 }) {
   const segments = row?.segmentSummary?.segments || [];
+  const [visibleSegmentCount, setVisibleSegmentCount] = useState(DETAIL_SEGMENTS_PAGE_SIZE);
+  const dialogContentRef = useRef(null);
   const rawHref = row?.rawStreamAvailable
     ? row?.rawStreamUrl || row?.driveRawUrl
     : row?.driveRawUrl || null;
   const { totalSegments, uploadedSegments, overallPercent } = row
     ? getRowProgressSummary(row)
     : { totalSegments: 0, uploadedSegments: 0, overallPercent: 0 };
+  const visibleSegments = useMemo(
+    () => segments.slice(0, visibleSegmentCount),
+    [segments, visibleSegmentCount]
+  );
+  const hasMoreSegments = visibleSegmentCount < segments.length;
+
+  const loadMoreSegments = useCallback(() => {
+    if (!hasMoreSegments) return;
+    startTransition(() => {
+      setVisibleSegmentCount((current) =>
+        Math.min(segments.length, current + DETAIL_SEGMENTS_PAGE_SIZE)
+      );
+    });
+  }, [hasMoreSegments, segments.length]);
+
+  const handleDialogScroll = useCallback(
+    (event) => {
+      if (!hasMoreSegments) return;
+      const target = event.currentTarget;
+      if (target.scrollTop + target.clientHeight >= target.scrollHeight - 320) {
+        loadMoreSegments();
+      }
+    },
+    [hasMoreSegments, loadMoreSegments]
+  );
+
+  useEffect(() => {
+    setVisibleSegmentCount(DETAIL_SEGMENTS_PAGE_SIZE);
+    if (dialogContentRef.current) {
+      dialogContentRef.current.scrollTop = 0;
+    }
+  }, [open, row?.recordingId]);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth scroll="paper">
@@ -809,7 +886,7 @@ function RecordingDetailDialog({
         </Stack>
       </DialogTitle>
 
-      <DialogContent dividers>
+      <DialogContent dividers ref={dialogContentRef} onScroll={handleDialogScroll}>
         <Stack spacing={2.5}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1} flexWrap="wrap">
             <StatusChip status={row?.status} />
@@ -942,18 +1019,25 @@ function RecordingDetailDialog({
             <Alert severity="info">Chưa có đoạn cắt nào được lưu vào DB.</Alert>
           ) : (
             <Stack spacing={1.25}>
-              <Typography variant="h6" fontWeight={700}>
-                Danh sách segment
-              </Typography>
-              {segments.map((segment) => {
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                spacing={1}
+                justifyContent="space-between"
+                alignItems={{ xs: "flex-start", md: "center" }}
+              >
+                <Typography variant="h6" fontWeight={700}>
+                  Danh sách segment
+                </Typography>
+                <Typography variant="caption" sx={{ opacity: 0.72 }}>
+                  Hiển thị {visibleSegments.length}/{segments.length} segment. Cuộn xuống để tải thêm.
+                </Typography>
+              </Stack>
+              {visibleSegments.map((segment) => {
                 const percent =
                   segment.uploadStatus === "uploaded" ? 100 : Number(segment.percent || 0);
                 const hasKnownBytes = Number(segment.totalSizeBytes || 0) > 0;
-                const totalParts = Number(segment.totalParts || 0);
-                const partLabel =
-                  totalParts > 0
-                    ? `${segment.completedPartCount || 0}/${totalParts} parts`
-                    : `${segment.completedPartCount || 0} parts`;
+                const partLabel = formatSegmentPartLabel(segment, { short: true });
+                const completedBytes = getSegmentDisplayCompletedBytes(segment);
 
                 return (
                   <Card
@@ -1006,7 +1090,7 @@ function RecordingDetailDialog({
                             </Typography>
                             <Typography variant="body2" fontWeight={600}>
                               {hasKnownBytes
-                                ? `${formatBytes(segment.completedBytes || 0)} / ${formatBytes(
+                                ? `${formatBytes(completedBytes)} / ${formatBytes(
                                     segment.totalSizeBytes || 0
                                   )}`
                                 : "Đang đợi part đầu tiên"}
@@ -1058,6 +1142,18 @@ function RecordingDetailDialog({
                   </Card>
                 );
               })}
+              {hasMoreSegments ? (
+                <Box sx={{ display: "flex", justifyContent: "center", pt: 0.5 }}>
+                  <Button variant="outlined" size="small" onClick={loadMoreSegments}>
+                    Tải thêm{" "}
+                    {Math.min(
+                      DETAIL_SEGMENTS_PAGE_SIZE,
+                      Math.max(0, segments.length - visibleSegments.length)
+                    )}{" "}
+                    segment
+                  </Button>
+                </Box>
+              ) : null}
             </Stack>
           )}
         </Stack>
@@ -1081,9 +1177,11 @@ export default function LiveRecordingMonitorPage() {
     page: 0,
     pageSize: DEFAULT_PAGE_SIZE,
   });
+  const [selectionModel, setSelectionModel] = useState([]);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [forceExportingId, setForceExportingId] = useState(null);
   const [cleaningR2Id, setCleaningR2Id] = useState(null);
+  const [bulkAction, setBulkAction] = useState(null);
   const [actionError, setActionError] = useState("");
   const deferredSearch = useDeferredValue(search);
   const trimmedSearch = deferredSearch.trim();
@@ -1460,6 +1558,25 @@ export default function LiveRecordingMonitorPage() {
     return Array.isArray(tournamentData?.tournaments) ? tournamentData.tournaments : [];
   }, [tournamentData?.tournaments]);
 
+  useEffect(() => {
+    setSelectionModel((previous) =>
+      previous.filter((id) => rows.some((row) => String(row.id) === String(id)))
+    );
+  }, [rows]);
+
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectionModel.includes(row.id)),
+    [rows, selectionModel]
+  );
+  const selectedForceRows = useMemo(
+    () => selectedRows.filter((row) => canForceRowToExport(row)),
+    [selectedRows]
+  );
+  const selectedCleanR2Rows = useMemo(
+    () => selectedRows.filter((row) => canCleanR2Row(row)),
+    [selectedRows]
+  );
+
   const selectedRow = useMemo(
     () => rows.find((row) => row.id === selectedRowId) || null,
     [rows, selectedRowId]
@@ -1551,6 +1668,73 @@ export default function LiveRecordingMonitorPage() {
     },
     [cleaningR2Id, trashLiveRecordingR2Assets, refresh]
   );
+
+  const runBulkAction = useCallback(
+    async ({ rows: targetRows, label, runner, confirmMessage = "" }) => {
+      if (!targetRows.length) {
+        toast.info(`Không có bản ghi hợp lệ cho "${label}".`);
+        return;
+      }
+
+      if (confirmMessage && !window.confirm(confirmMessage)) {
+        return;
+      }
+
+      setActionError("");
+      setBulkAction({ label, total: targetRows.length, done: 0 });
+      let successCount = 0;
+      let errorCount = 0;
+      let firstErrorMessage = "";
+
+      for (let index = 0; index < targetRows.length; index += 1) {
+        try {
+          await runner(targetRows[index], index);
+          successCount += 1;
+        } catch (error) {
+          errorCount += 1;
+          if (!firstErrorMessage) {
+            firstErrorMessage =
+              error?.data?.message || error?.error || error?.message || "Lỗi không xác định";
+          }
+        } finally {
+          setBulkAction({ label, total: targetRows.length, done: index + 1 });
+        }
+      }
+
+      setBulkAction(null);
+      await refresh();
+
+      if (successCount > 0) {
+        toast.success(`${label}: ${successCount}/${targetRows.length} bản ghi thành công.`);
+      }
+      if (errorCount > 0) {
+        toast.warn(
+          `${label}: ${errorCount}/${targetRows.length} lỗi.${
+            firstErrorMessage ? ` ${firstErrorMessage}` : ""
+          }`
+        );
+      }
+    },
+    [refresh]
+  );
+
+  const handleBulkForceExport = useCallback(async () => {
+    await runBulkAction({
+      rows: selectedForceRows,
+      label: "Xuất batch",
+      runner: (row) => forceLiveRecordingExport(row.recordingId).unwrap(),
+    });
+  }, [forceLiveRecordingExport, runBulkAction, selectedForceRows]);
+
+  const handleBulkCleanR2 = useCallback(async () => {
+    await runBulkAction({
+      rows: selectedCleanR2Rows,
+      label: "Xóa batch R2",
+      confirmMessage: `Bạn có chắc muốn xóa R2 và record cho ${selectedCleanR2Rows.length} bản ghi đã chọn? Dữ liệu không thể phục hồi.`,
+      runner: (row) => trashLiveRecordingR2Assets(row.recordingId).unwrap(),
+    });
+  }, [runBulkAction, selectedCleanR2Rows, trashLiveRecordingR2Assets]);
+  const busy = Boolean(forceExportingId || cleaningR2Id || bulkAction);
 
   const columns = React.useMemo(
     () => [
@@ -1655,11 +1839,12 @@ export default function LiveRecordingMonitorPage() {
             forceExportingId={forceExportingId}
             onCleanR2={handleCleanR2}
             cleaningR2Id={cleaningR2Id}
+            bulkBusy={Boolean(bulkAction)}
           />
         ),
       },
     ],
-    [forceExportingId, handleForceExport, cleaningR2Id, handleCleanR2]
+    [bulkAction, forceExportingId, handleForceExport, cleaningR2Id, handleCleanR2]
   );
 
   return (
@@ -1870,14 +2055,107 @@ export default function LiveRecordingMonitorPage() {
 
                 <Divider />
 
+                {selectionModel.length > 0 ? (
+                  <Card variant="outlined" sx={{ borderRadius: 3 }}>
+                    <CardContent sx={{ py: 2 }}>
+                      <Stack spacing={1.5}>
+                        <Stack
+                          direction={{ xs: "column", md: "row" }}
+                          spacing={1}
+                          justifyContent="space-between"
+                          alignItems={{ xs: "flex-start", md: "center" }}
+                        >
+                          <Stack direction="row" spacing={1} flexWrap="wrap">
+                            <Chip
+                              color="primary"
+                              variant="outlined"
+                              label={`${selectionModel.length} bản ghi đã chọn`}
+                            />
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`Xuất được: ${selectedForceRows.length}`}
+                            />
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`Xóa được: ${selectedCleanR2Rows.length}`}
+                            />
+                          </Stack>
+
+                          <Stack direction="row" spacing={1} flexWrap="wrap">
+                            <Button
+                              size="small"
+                              color="warning"
+                              variant="contained"
+                              onClick={() => void handleBulkForceExport()}
+                              disabled={busy || selectedForceRows.length === 0}
+                            >
+                              Xuất batch
+                            </Button>
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              onClick={() => void handleBulkCleanR2()}
+                              disabled={busy || selectedCleanR2Rows.length === 0}
+                            >
+                              Xóa batch
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="text"
+                              onClick={() => setSelectionModel([])}
+                              disabled={Boolean(bulkAction)}
+                            >
+                              Bỏ chọn
+                            </Button>
+                          </Stack>
+                        </Stack>
+
+                        {bulkAction ? (
+                          <Box>
+                            <Stack
+                              direction={{ xs: "column", md: "row" }}
+                              spacing={1}
+                              justifyContent="space-between"
+                              sx={{ mb: 0.75 }}
+                            >
+                              <Typography variant="caption" sx={{ opacity: 0.78 }}>
+                                {bulkAction.label}: {bulkAction.done}/{bulkAction.total}
+                              </Typography>
+                              <Typography variant="caption" sx={{ opacity: 0.65 }}>
+                                Chạy tuần tự để tránh spam API
+                              </Typography>
+                            </Stack>
+                            <LinearProgress
+                              variant="determinate"
+                              value={
+                                bulkAction.total > 0
+                                  ? Math.round((bulkAction.done / bulkAction.total) * 100)
+                                  : 0
+                              }
+                              sx={{ height: 8, borderRadius: 999 }}
+                            />
+                          </Box>
+                        ) : null}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
                 <Box sx={{ width: "100%" }}>
                   <DataGrid
                     autoHeight
+                    checkboxSelection
                     rows={rows}
                     columns={columns}
                     loading={isInitialLoading && rows.length === 0}
                     disableRowSelectionOnClick
-                    onRowClick={(params) => setSelectedRowId(params.row.id)}
+                    onCellClick={(params) => {
+                      if (params.field === "__check__") return;
+                      setSelectedRowId(params.row.id);
+                    }}
                     getRowHeight={() => 112}
                     slots={{ toolbar: GridToolbar }}
                     pagination
@@ -1899,6 +2177,10 @@ export default function LiveRecordingMonitorPage() {
                         pageSize: nextPageSize,
                       });
                     }}
+                    selectionModel={selectionModel}
+                    onSelectionModelChange={(nextModel) =>
+                      setSelectionModel(Array.isArray(nextModel) ? nextModel : [])
+                    }
                     hideFooterSelectedRowCount
                     initialState={{
                       sorting: {
