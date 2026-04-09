@@ -327,6 +327,8 @@ export default function SystemSettingsPage() {
 
   const [form, setForm] = useState(null);
   const [showFab, setShowFab] = useState(false);
+  const [showRecordingDriveAdvancedControls, setShowRecordingDriveAdvancedControls] =
+    useState(false);
   const topSaveRef = useRef(null);
   const recordingDrivePopupRef = useRef(null);
   const commentaryGateway = commentaryMonitor?.gatewayHealth || {};
@@ -1157,7 +1159,20 @@ export default function SystemSettingsPage() {
               </Button>
             </Stack>
 
-            {form.recordingDrive?.mode === "oauthUser" ? (
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Box>
+                <Typography>Hiện tùy chọn nâng cao</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Mặc định đang ẩn tạm phần chuyển giữa flow mới và flow fallback cũ.
+                </Typography>
+              </Box>
+              <Switch
+                checked={showRecordingDriveAdvancedControls}
+                onChange={(event) => setShowRecordingDriveAdvancedControls(event.target.checked)}
+              />
+            </Stack>
+
+            {form.recordingDrive?.mode === "oauthUser" && showRecordingDriveAdvancedControls ? (
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Box>
                   <Typography>Dùng phiên bản mới (`drive.file` + Google Picker)</Typography>
