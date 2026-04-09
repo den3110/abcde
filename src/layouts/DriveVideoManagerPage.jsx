@@ -2041,7 +2041,7 @@ export default function DriveVideoManagerPage() {
 
                 {tournamentFilter ? (
                   <Typography variant="caption" sx={{ opacity: 0.68 }}>
-                    {`Äang lá»c theo giáº£i: ${tournamentFilter}`}
+                    {`Đang lọc theo giải đấu: ${tournamentFilter}`}
                   </Typography>
                 ) : null}
 
