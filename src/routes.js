@@ -74,6 +74,7 @@ import AdminAvatarOptimizationPage from "layouts/AdminAvatarOptimizationPage";
 import CacheManagerPage from "layouts/CacheManagerPage";
 import AdminLivePlaybackPage from "layouts/AdminLivePlaybackPage";
 import PeakRuntimePage from "layouts/PeakRuntimePage";
+import ObserverVpsPage from "layouts/ObserverVpsPage";
 import CourtFreeManagerPage from "layouts/CourtFreeManagerPage";
 
 // 🆕 Live đang phát (Admin)
@@ -703,6 +704,18 @@ const routes = [
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Observer VPS",
+    key: "admin-observer-vps",
+    icon: <Icon fontSize="small">sensors</Icon>,
+    route: "/admin/observer-vps",
+    component: <ObserverVpsPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperUser: true,
     show: true,
   },
   {

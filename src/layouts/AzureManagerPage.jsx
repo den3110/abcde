@@ -155,6 +155,11 @@ export default function AzureManagerPage() {
                     <Typography variant="h4" color="error" fontWeight="bold">
                       {billInfo.totalCost ? `${billInfo.totalCost} ${billInfo.currency || 'USD'}` : (loadingBilling ? "Đang tính..." : "?")} 
                     </Typography>
+                    {billInfo.error ? (
+                      <Typography variant="caption" color="error.main" display="block" mt={1}>
+                        {billInfo.error}
+                      </Typography>
+                    ) : null}
                   </Box>
 
                   <Box display="flex" gap={2}>
