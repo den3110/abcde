@@ -94,6 +94,10 @@ const getInitialRecordingDriveMode = (value) =>
 
 const hydrateFormState = (source) => ({
   ...structuredClone(source || {}),
+  links: {
+    guideUrl: source?.links?.guideUrl ?? "",
+    liveObserverUrl: source?.links?.liveObserverUrl ?? "",
+  },
   appShell: {
     mode: source?.appShell?.mode === "webview" ? "webview" : "native",
     webViewUrl: source?.appShell?.webViewUrl ?? "",
@@ -372,6 +376,7 @@ export default function SystemSettingsPage() {
     },
     links: {
       guideUrl: source.links?.guideUrl ?? "",
+      liveObserverUrl: source.links?.liveObserverUrl ?? "",
     },
     appShell: {
       mode: source.appShell?.mode === "webview" ? "webview" : "native",
@@ -1356,6 +1361,14 @@ export default function SystemSettingsPage() {
               value={form.links?.guideUrl ?? ""}
               onChange={onChange("links.guideUrl")}
               placeholder="https://docs.pickletour.vn/huong-dan"
+              fullWidth
+            />
+            <TextField
+              label="URL observer VPS cho app live"
+              value={form.links?.liveObserverUrl ?? ""}
+              onChange={onChange("links.liveObserverUrl")}
+              placeholder="http://10.0.0.5:8787/"
+              helperText="App PickleTour Live sẽ lấy link này từ bootstrap để gửi telemetry thiết bị trực tiếp lên VPS. Để trống nếu muốn tắt luồng này."
               fullWidth
             />
           </Section>
