@@ -5,6 +5,7 @@ export const observerAdminApiSlice = apiSlice.injectEndpoints({
     getObserverOverview: builder.query({
       query: ({
         source = "",
+        deviceId = "",
         minutes = 60,
         onlineOnly = false,
         deviceLimit = 50,
@@ -13,6 +14,7 @@ export const observerAdminApiSlice = apiSlice.injectEndpoints({
       } = {}) => {
         const params = new URLSearchParams();
         if (source) params.set("source", source);
+        if (deviceId) params.set("deviceId", deviceId);
         params.set("minutes", String(minutes));
         params.set("onlineOnly", onlineOnly ? "true" : "false");
         params.set("deviceLimit", String(deviceLimit));

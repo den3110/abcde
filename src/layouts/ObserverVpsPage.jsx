@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Alert,
@@ -94,12 +94,52 @@ function chipColorFromBackupStatus(value) {
   return "default";
 }
 
+function chipColorFromAvailability(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["success", "online"].includes(normalized)) return "success";
+  if (["info", "azure_stopped"].includes(normalized)) return "info";
+  if (["warning", "azure_transitioning", "unreachable"].includes(normalized)) return "warning";
+  if (["error", "failed"].includes(normalized)) return "error";
+  return "default";
+}
+
 function pickText(...values) {
   for (const value of values) {
     const normalized = String(value || "").trim();
     if (normalized) return normalized;
   }
   return "";
+}
+
+function isRawModelName(value) {
+  const normalized = String(value || "").trim();
+  return /^(SM|SC|SHV|GT|SCH|SGH|LM|XT|CPH|VOG|LYA|MHA)[-_ ]?[A-Z0-9]/i.test(normalized);
+}
+
+function formatDeviceTitle(item) {
+  const deviceName = pickText(item?.deviceName, item?.device?.name);
+  const model = pickText(item?.deviceModel, item?.device?.model);
+  const manufacturer = pickText(item?.deviceManufacturer, item?.device?.manufacturer);
+  const brand = pickText(item?.deviceBrand, item?.device?.brand, manufacturer);
+
+  if (deviceName && !isRawModelName(deviceName)) {
+    return deviceName;
+  }
+
+  const normalizedBrand = brand && !model.toLowerCase().includes(brand.toLowerCase()) ? brand : "";
+  return pickText([normalizedBrand, model].filter(Boolean).join(" "), deviceName, item?.deviceId, "Thiết bị không tên");
+}
+
+function formatDeviceSubtitle(item) {
+  const platform = pickText(item?.platform, "-");
+  const model = pickText(item?.deviceModel, item?.device?.model);
+  const product = pickText(item?.deviceProduct, item?.device?.product);
+  const manufacturer = pickText(item?.deviceManufacturer, item?.device?.manufacturer);
+  const pieces = [platform];
+  const hardware = [manufacturer, model].filter(Boolean).join(" ").trim();
+  if (hardware) pieces.push(hardware);
+  if (product && product !== model) pieces.push(product);
+  return pieces.join(" • ");
 }
 
 function extractEventText(item) {
@@ -166,6 +206,95 @@ function SectionCard({ title, subtitle, children, action = null }) {
   );
 }
 
+function ObserverStoppedPanel({ availability = {}, azureVm = null, onRefresh = () => {} }) {
+  return (
+    <Card
+      sx={{
+        borderRadius: 4,
+        border: "1px solid",
+        borderColor: "info.light",
+        background:
+          "linear-gradient(135deg, rgba(3,169,244,0.12), rgba(255,255,255,0.95) 48%, rgba(76,175,80,0.10))",
+      }}
+    >
+      <CardContent>
+        <Stack spacing={2.2}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1.5}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", md: "center" }}
+          >
+            <Box>
+              <Typography variant="h4" fontWeight={900}>
+                {availability.title || "Observer VPS Azure đã tắt"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8, maxWidth: 760 }}>
+                {availability.message ||
+                  "Azure VM đang stopped/deallocated nên dashboard observer tạm không có dữ liệu realtime."}
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Chip
+                color={chipColorFromAvailability(availability.severity || availability.state)}
+                label={availability.state || "azure_stopped"}
+              />
+              <Button variant="contained" color="info" onClick={onRefresh}>
+                Kiểm tra lại
+              </Button>
+              <Button variant="outlined" href="/admin/azure-manager">
+                Mở Azure Manager
+              </Button>
+            </Stack>
+          </Stack>
+
+          <Divider />
+
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={3}>
+              <MetricCard
+                title="Azure VM"
+                value={pickText(azureVm?.label, azureVm?.vmName, "Observer VPS")}
+                hint={`Power state: ${pickText(azureVm?.powerState, "unknown")}`}
+                color="info.main"
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <MetricCard
+                title="Resource group"
+                value={pickText(azureVm?.resourceGroup, "-")}
+                hint={`VM name: ${pickText(azureVm?.vmName, "-")}`}
+                color="text.primary"
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <MetricCard
+                title="Kiểm tra lúc"
+                value={formatDateTime(availability.checkedAt || azureVm?.checkedAt)}
+                hint="Server chính đọc trạng thái từ Azure API"
+                color="text.primary"
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <MetricCard
+                title="Log realtime"
+                value="Đang tạm dừng"
+                hint="App live vẫn chạy, chỉ observer sidecar đang tắt"
+                color="warning.main"
+              />
+            </Grid>
+          </Grid>
+
+          <Alert severity="info">
+            Khi cần theo dõi lại log realtime, bật VM trong Azure Manager rồi bấm “Kiểm tra lại”.
+            Nếu vừa bật VPS, chờ Docker observer khởi động xong trước khi dữ liệu quay lại.
+          </Alert>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ObserverEventList({ items = [], emptyText }) {
   if (!items.length) {
     return (
@@ -226,7 +355,7 @@ function ObserverEventList({ items = [], emptyText }) {
   );
 }
 
-function LiveDeviceGrid({ items = [] }) {
+function LiveDeviceGrid({ items = [], selectedDeviceId = "", onSelectDevice = () => {} }) {
   if (!items.length) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -247,10 +376,41 @@ function LiveDeviceGrid({ items = [] }) {
         );
         const diagnostics = Array.isArray(item?.diagnostics) ? item.diagnostics : [];
         const warnings = Array.isArray(item?.warnings) ? item.warnings : [];
+        const suspectedCrash = Boolean(item?.suspectedCrash);
+        const lastCrashRecoveredAt = item?.lastCrashRecoveredAt;
+        const isSelected = pickText(item?.deviceId) === selectedDeviceId;
+        const deviceTitle = formatDeviceTitle(item);
+        const deviceSubtitle = formatDeviceSubtitle(item);
 
         return (
           <Grid item xs={12} md={6} xl={4} key={item.id || item.deviceId}>
-            <Card sx={{ borderRadius: 3, height: "100%" }}>
+            <Card
+              role="button"
+              tabIndex={item?.deviceId ? 0 : -1}
+              onClick={() => item?.deviceId && onSelectDevice(item.deviceId)}
+              onKeyDown={(event) => {
+                if (!item?.deviceId) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectDevice(item.deviceId);
+                }
+              }}
+              sx={{
+                borderRadius: 3,
+                height: "100%",
+                cursor: item?.deviceId ? "pointer" : "default",
+                border: "2px solid",
+                borderColor: isSelected ? "primary.main" : "transparent",
+                boxShadow: isSelected ? 4 : undefined,
+                transition: "border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease",
+                "&:hover": item?.deviceId
+                  ? {
+                      transform: "translateY(-2px)",
+                      boxShadow: isSelected ? 5 : 2,
+                    }
+                  : undefined,
+              }}
+            >
               <CardContent>
                 <Stack spacing={1.2}>
                   <Stack
@@ -261,17 +421,22 @@ function LiveDeviceGrid({ items = [] }) {
                   >
                     <Box>
                       <Typography variant="h6" fontWeight={800}>
-                        {pickText(item.deviceName, item.deviceId, "Thiết bị không tên")}
+                        {deviceTitle}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {pickText(item.platform, "-")} • {pickText(item.deviceModel, "-")}
+                        {deviceSubtitle}
                       </Typography>
                     </Box>
-                    <Chip
-                      size="small"
-                      color={item.isOnline ? "success" : "default"}
-                      label={item.isOnline ? "Đang online" : "Mất heartbeat"}
-                    />
+                    <Stack direction="row" spacing={0.8} flexWrap="wrap">
+                      {isSelected ? (
+                        <Chip size="small" color="primary" label="Đang xem log" />
+                      ) : null}
+                      <Chip
+                        size="small"
+                        color={item.isOnline ? "success" : "default"}
+                        label={item.isOnline ? "Đang online" : "Mất heartbeat"}
+                      />
+                    </Stack>
                   </Stack>
 
                   <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -291,6 +456,12 @@ function LiveDeviceGrid({ items = [] }) {
                         color={chipColorFromSeverity(item.recoverySeverity)}
                         label={`Recovery: ${item.recoverySeverity}`}
                       />
+                    ) : null}
+                    {suspectedCrash ? (
+                      <Chip size="small" color="error" label="Có thể crash / văng app" />
+                    ) : null}
+                    {lastCrashRecoveredAt ? (
+                      <Chip size="small" color="warning" variant="outlined" label="Đã xác nhận crash trước đó" />
                     ) : null}
                   </Stack>
 
@@ -319,6 +490,21 @@ function LiveDeviceGrid({ items = [] }) {
                     <Typography variant="body2">
                       <strong>Cập nhật cuối:</strong> {formatDateTime(item.lastSeenAt)}
                     </Typography>
+                    {!item.isOnline && Number.isFinite(Number(item?.offlineForMs)) ? (
+                      <Typography variant="body2">
+                        <strong>Mất heartbeat:</strong> {formatSeconds(Number(item.offlineForMs) / 1000)}
+                      </Typography>
+                    ) : null}
+                    {suspectedCrash ? (
+                      <Typography variant="body2" color="error.main">
+                        <strong>Chẩn đoán:</strong> {pickText(item?.suspectedCrashReason, "heartbeat_timeout_while_live")}
+                      </Typography>
+                    ) : null}
+                    {lastCrashRecoveredAt ? (
+                      <Typography variant="body2" color="warning.main">
+                        <strong>Crash đã xác nhận:</strong> {formatDateTime(lastCrashRecoveredAt)}
+                      </Typography>
+                    ) : null}
                   </Stack>
 
                   {warnings.length ? (
@@ -372,6 +558,12 @@ SectionCard.propTypes = {
   action: PropTypes.node,
 };
 
+ObserverStoppedPanel.propTypes = {
+  availability: PropTypes.object,
+  azureVm: PropTypes.object,
+  onRefresh: PropTypes.func,
+};
+
 ObserverEventList.propTypes = {
   items: PropTypes.array,
   emptyText: PropTypes.string.isRequired,
@@ -379,6 +571,8 @@ ObserverEventList.propTypes = {
 
 LiveDeviceGrid.propTypes = {
   items: PropTypes.array,
+  selectedDeviceId: PropTypes.string,
+  onSelectDevice: PropTypes.func,
 };
 
 export default function ObserverVpsPage() {
@@ -386,17 +580,19 @@ export default function ObserverVpsPage() {
   const [minutes, setMinutes] = useState("60");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [onlineOnly, setOnlineOnly] = useState(false);
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
 
   const queryArgs = useMemo(
     () => ({
       source: source.trim(),
+      deviceId: selectedDeviceId.trim(),
       minutes: Number(minutes || 60),
       onlineOnly,
       deviceLimit: 60,
       deviceEventLimit: 40,
       errorLimit: 24,
     }),
-    [minutes, onlineOnly, source]
+    [minutes, onlineOnly, selectedDeviceId, source]
   );
 
   const { data, error, isLoading, isFetching, refetch } = useGetObserverOverviewQuery(queryArgs, {
@@ -405,6 +601,9 @@ export default function ObserverVpsPage() {
     refetchOnReconnect: true,
   });
 
+  const observerAvailability = data?.observerAvailability || error?.data?.observerAvailability || {};
+  const observerAzureVm = data?.observerAzureVm || error?.data?.observerAzureVm || null;
+  const observerAzureStopped = observerAvailability?.state === "azure_stopped";
   const health = data?.observerHealth || {};
   const summary = data?.summary || {};
   const runtime = summary?.runtime || {};
@@ -419,6 +618,26 @@ export default function ObserverVpsPage() {
   const errorEvents = data?.errorEvents?.items || [];
   const backups = summary?.backups || [];
   const eventBuckets = summary?.events?.buckets || [];
+  const selectedDevice = useMemo(
+    () => liveDevices.find((item) => pickText(item?.deviceId) === selectedDeviceId) || null,
+    [liveDevices, selectedDeviceId]
+  );
+  const selectedDeviceLabel = pickText(
+    selectedDevice ? formatDeviceTitle(selectedDevice) : "",
+    selectedDevice?.deviceId,
+    selectedDeviceId
+  );
+
+  useEffect(() => {
+    const availableDeviceIds = liveDevices.map((item) => pickText(item?.deviceId)).filter(Boolean);
+    if (!availableDeviceIds.length) {
+      if (selectedDeviceId) setSelectedDeviceId("");
+      return;
+    }
+    if (!availableDeviceIds.includes(selectedDeviceId)) {
+      setSelectedDeviceId(availableDeviceIds[0]);
+    }
+  }, [liveDevices, selectedDeviceId]);
 
   const topEndpoints = useMemo(() => {
     const rows = Array.isArray(runtime?.endpoints) ? [...runtime.endpoints] : [];
@@ -500,7 +719,7 @@ export default function ObserverVpsPage() {
 
           {isFetching && data ? <LinearProgress sx={{ borderRadius: 999, height: 6 }} /> : null}
 
-          {error ? (
+          {error && !observerAzureStopped ? (
             <Alert severity="error">
               {error?.data?.message || "Không thể đọc dữ liệu Observer VPS qua server chính."}
             </Alert>
@@ -517,6 +736,12 @@ export default function ObserverVpsPage() {
                 </Stack>
               </CardContent>
             </Card>
+          ) : observerAzureStopped ? (
+            <ObserverStoppedPanel
+              availability={observerAvailability}
+              azureVm={observerAzureVm}
+              onRefresh={() => refetch()}
+            />
           ) : (
             <>
               <Grid container spacing={2}>
@@ -542,9 +767,21 @@ export default function ObserverVpsPage() {
                   <MetricCard
                     title="Overlay đang lỗi"
                     value={formatNumber(liveCounts?.overlayIssues)}
-                    hint={`${formatNumber(liveCounts?.criticalRecoveries)} recovery mức critical`}
+                    hint={`${formatNumber(liveCounts?.criticalRecoveries)} recovery critical • ${formatNumber(
+                      liveCounts?.suspectedCrashes
+                    )} máy ngắt bất thường`}
                     color={
                       Number(liveCounts?.overlayIssues || 0) > 0 ? "error.main" : "success.main"
+                    }
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <MetricCard
+                    title="Ngắt bất thường"
+                    value={formatNumber(liveCounts?.suspectedCrashes)}
+                    hint="Máy đang live rồi mất heartbeat, có thể crash hoặc văng app"
+                    color={
+                      Number(liveCounts?.suspectedCrashes || 0) > 0 ? "error.main" : "success.main"
                     }
                   />
                 </Grid>
@@ -599,38 +836,69 @@ export default function ObserverVpsPage() {
 
               <SectionCard
                 title="Máy live hiện tại"
-                subtitle="Thiết bị đang giữ sân, trạng thái stream, overlay, recovery, pin, nhiệt và chẩn đoán tại hiện trường."
+                subtitle="Bấm vào một máy để log và lỗi bên dưới chỉ hiển thị theo đúng máy đó."
                 action={
-                  <Chip
-                    size="small"
-                    color="info"
-                    label={`${formatNumber(liveDevices.length)} máy hiển thị`}
-                  />
+                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                    <Chip
+                      size="small"
+                      color="info"
+                      label={`${formatNumber(liveDevices.length)} máy hiển thị`}
+                    />
+                    <Chip
+                      size="small"
+                      color={selectedDeviceId ? "primary" : "default"}
+                      label={
+                        selectedDeviceId
+                          ? `Log: ${selectedDeviceLabel || selectedDeviceId}`
+                          : "Log: chưa chọn máy"
+                      }
+                    />
+                  </Stack>
                 }
               >
-                <LiveDeviceGrid items={liveDevices} />
+                <LiveDeviceGrid
+                  items={liveDevices}
+                  selectedDeviceId={selectedDeviceId}
+                  onSelectDevice={(deviceId) => setSelectedDeviceId(pickText(deviceId))}
+                />
               </SectionCard>
 
               <Grid container spacing={2}>
                 <Grid item xs={12} lg={6}>
                   <SectionCard
-                    title="Sự kiện thiết bị"
-                    subtitle="Overlay detach, memory pressure, thermal warning, socket stale, recovery stage."
+                    title={selectedDeviceLabel ? `Sự kiện thiết bị: ${selectedDeviceLabel}` : "Sự kiện thiết bị"}
+                    subtitle={
+                      selectedDeviceId
+                        ? "Đang lọc theo máy được chọn, không trộn log của các máy khác."
+                        : "Chọn một máy phía trên để xem log riêng theo thiết bị."
+                    }
                   >
                     <ObserverEventList
                       items={deviceEvents}
-                      emptyText="Chưa có sự kiện thiết bị nào trong khoảng thời gian đang xem."
+                      emptyText={
+                        selectedDeviceId
+                          ? "Máy này chưa có sự kiện thiết bị nào trong khoảng thời gian đang xem."
+                          : "Chưa chọn máy để xem sự kiện thiết bị."
+                      }
                     />
                   </SectionCard>
                 </Grid>
                 <Grid item xs={12} lg={6}>
                   <SectionCard
-                    title="Lỗi hệ thống gần đây"
-                    subtitle="Các error event mới nhất mà Observer VPS đang lưu."
+                    title={selectedDeviceLabel ? `Lỗi của máy: ${selectedDeviceLabel}` : "Lỗi hệ thống gần đây"}
+                    subtitle={
+                      selectedDeviceId
+                        ? "Chỉ hiển thị error event có deviceId trùng máy đang chọn."
+                        : "Các error event mới nhất mà Observer VPS đang lưu."
+                    }
                   >
                     <ObserverEventList
                       items={errorEvents}
-                      emptyText="Chưa có error event nào trong khoảng thời gian đang xem."
+                      emptyText={
+                        selectedDeviceId
+                          ? "Máy này chưa có error event nào trong khoảng thời gian đang xem."
+                          : "Chưa có error event nào trong khoảng thời gian đang xem."
+                      }
                     />
                   </SectionCard>
                 </Grid>
