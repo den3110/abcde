@@ -97,6 +97,7 @@ const hydrateFormState = (source) => ({
   links: {
     guideUrl: source?.links?.guideUrl ?? "",
     liveObserverUrl: source?.links?.liveObserverUrl ?? "",
+    docsApiBaseUrl: source?.links?.docsApiBaseUrl ?? "",
   },
   appShell: {
     mode: source?.appShell?.mode === "webview" ? "webview" : "native",
@@ -122,6 +123,7 @@ const hydrateFormState = (source) => ({
   recordingDrive: {
     enabled: source?.recordingDrive?.enabled ?? true,
     mode: getInitialRecordingDriveMode(source?.recordingDrive?.mode),
+    showAdvancedControls: source?.recordingDrive?.showAdvancedControls ?? false,
     useModernPickerFlow: source?.recordingDrive?.useModernPickerFlow ?? true,
     folderId: source?.recordingDrive?.folderId ?? "",
     sharedDriveId: source?.recordingDrive?.sharedDriveId ?? "",
@@ -331,8 +333,6 @@ export default function SystemSettingsPage() {
 
   const [form, setForm] = useState(null);
   const [showFab, setShowFab] = useState(false);
-  const [showRecordingDriveAdvancedControls, setShowRecordingDriveAdvancedControls] =
-    useState(false);
   const topSaveRef = useRef(null);
   const recordingDrivePopupRef = useRef(null);
   const commentaryGateway = commentaryMonitor?.gatewayHealth || {};
@@ -377,6 +377,7 @@ export default function SystemSettingsPage() {
     links: {
       guideUrl: source.links?.guideUrl ?? "",
       liveObserverUrl: source.links?.liveObserverUrl ?? "",
+      docsApiBaseUrl: source.links?.docsApiBaseUrl ?? "",
     },
     appShell: {
       mode: source.appShell?.mode === "webview" ? "webview" : "native",
@@ -402,6 +403,7 @@ export default function SystemSettingsPage() {
     recordingDrive: {
       enabled: !!source.recordingDrive?.enabled,
       mode: getInitialRecordingDriveMode(source.recordingDrive?.mode),
+      showAdvancedControls: !!source.recordingDrive?.showAdvancedControls,
       useModernPickerFlow: source.recordingDrive?.useModernPickerFlow ?? true,
       folderId: source.recordingDrive?.folderId ?? "",
       sharedDriveId: source.recordingDrive?.sharedDriveId ?? "",
@@ -1173,16 +1175,14 @@ export default function SystemSettingsPage() {
                   </Typography>
                 </Box>
                 <Switch
-                  checked={showRecordingDriveAdvancedControls}
-                  onChange={(event) =>
-                    setShowRecordingDriveAdvancedControls(event.target.checked)
-                  }
+                  checked={!!form.recordingDrive?.showAdvancedControls}
+                  onChange={onToggle("recordingDrive.showAdvancedControls")}
                 />
               </Stack>
             ) : null}
 
             {form.recordingDrive?.mode === "oauthUser" &&
-            showRecordingDriveAdvancedControls ? (
+            form.recordingDrive?.showAdvancedControls ? (
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Box>
                   <Typography>Dùng phiên bản mới (`drive.file` + Google Picker)</Typography>
@@ -1361,6 +1361,14 @@ export default function SystemSettingsPage() {
               value={form.links?.guideUrl ?? ""}
               onChange={onChange("links.guideUrl")}
               placeholder="https://docs.pickletour.vn/huong-dan"
+              fullWidth
+            />
+            <TextField
+              label="Base URL API cho trang docs"
+              value={form.links?.docsApiBaseUrl ?? ""}
+              onChange={onChange("links.docsApiBaseUrl")}
+              placeholder="https://pickletour.vn"
+              helperText="Trang docs API public sẽ dùng giá trị này làm base URL mặc định cho request mẫu và khung test endpoint. Để trống để quay về fallback theo môi trường hiện tại."
               fullWidth
             />
             <TextField
