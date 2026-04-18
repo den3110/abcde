@@ -103,6 +103,11 @@ const hydrateFormState = (source) => ({
     mode: source?.appShell?.mode === "webview" ? "webview" : "native",
     webViewUrl: source?.appShell?.webViewUrl ?? "",
   },
+  frontendUi: {
+    version: ["v1", "v2", "v3"].includes(source?.frontendUi?.version)
+      ? source.frontendUi.version
+      : "v1",
+  },
   ota: {
     enabled: source?.ota?.enabled ?? true,
     forceUpdateEnabled: source?.ota?.forceUpdateEnabled ?? false,
@@ -164,6 +169,24 @@ const AI_COMMENTARY_TONE_OPTIONS = [
   { value: "professional", label: "Chuyên nghiệp" },
   { value: "energetic", label: "Nhiệt huyết" },
   { value: "dramatic", label: "Kịch tính" },
+];
+
+const FRONTEND_UI_OPTIONS = [
+  {
+    value: "v1",
+    label: "V1",
+    description: "Giữ nguyên giao diện frontend hiện tại.",
+  },
+  {
+    value: "v2",
+    label: "V2",
+    description: "Giao diện frontend mới, vẫn dùng lại routing và data flow hiện có.",
+  },
+  {
+    value: "v3",
+    label: "V3",
+    description: "Slot dự phòng cho đợt UI tiếp theo, hiện tại dùng chung shell với V2.",
+  },
 ];
 
 const normalizeAiGatewayBaseUrl = (value = "") => {
@@ -382,6 +405,11 @@ export default function SystemSettingsPage() {
     appShell: {
       mode: source.appShell?.mode === "webview" ? "webview" : "native",
       webViewUrl: source.appShell?.webViewUrl ?? "",
+    },
+    frontendUi: {
+      version: ["v1", "v2", "v3"].includes(source.frontendUi?.version)
+        ? source.frontendUi.version
+        : "v1",
     },
     ota: {
       enabled: source.ota?.enabled !== false,
@@ -809,6 +837,71 @@ export default function SystemSettingsPage() {
         </Stack>
 
         <Stack spacing={2}>
+          <Section
+            title="Giao diện frontend"
+            desc="Chọn phiên bản giao diện public của website mà không xoá giao diện cũ."
+          >
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+              {FRONTEND_UI_OPTIONS.map((option) => {
+                const isActive = (form.frontendUi?.version || "v1") === option.value;
+
+                return (
+                  <Paper
+                    key={option.value}
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      flex: 1,
+                      borderColor: isActive ? "primary.main" : "divider",
+                      boxShadow: isActive
+                        ? (theme) => `0 0 0 1px ${theme.palette.primary.main}`
+                        : "none",
+                    }}
+                  >
+                    <Stack spacing={1.5} sx={{ height: "100%" }}>
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        spacing={1}
+                      >
+                        <Typography fontWeight={800}>{option.label}</Typography>
+                        {isActive ? (
+                          <Typography variant="body2" color="primary.main" fontWeight={700}>
+                            Đang dùng
+                          </Typography>
+                        ) : null}
+                      </Stack>
+
+                      <Typography variant="body2" color="text.secondary">
+                        {option.description}
+                      </Typography>
+
+                      <Button
+                        variant={isActive ? "contained" : "outlined"}
+                        onClick={() =>
+                          setForm((prev) =>
+                            updateFormPathValue(prev, "frontendUi.version", option.value)
+                          )
+                        }
+                        sx={{ mt: "auto" }}
+                        fullWidth
+                      >
+                        {isActive ? "Đang chọn" : "Chọn giao diện"}
+                      </Button>
+                    </Stack>
+                  </Paper>
+                );
+              })}
+            </Stack>
+
+            <Alert severity={form.frontendUi?.version === "v3" ? "warning" : "info"}>
+              {form.frontendUi?.version === "v3"
+                ? "V3 hiện đang để sẵn slot triển khai. Trong giai đoạn này, frontend sẽ dùng cùng shell với V2 cho đến khi có giao diện V3 riêng."
+                : "Thay đổi này áp dụng cho frontend public và vẫn giữ nguyên toàn bộ giao diện cũ ở V1."}
+            </Alert>
+          </Section>
+
           <Section
             title="KYC"
             desc="Bật/tắt KYC, tự động duyệt và điều chỉnh ngưỡng khớp khuôn mặt (0-1)."
