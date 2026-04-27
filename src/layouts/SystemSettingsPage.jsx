@@ -118,6 +118,9 @@ const hydrateFormState = (source) => ({
     iosStoreUrl: source?.ota?.iosStoreUrl ?? "",
     androidStoreUrl: source?.ota?.androidStoreUrl ?? "",
   },
+  captcha: {
+    enabled: source?.captcha?.enabled ?? true,
+  },
   referee: {
     matchControlLockEnabled: source?.referee?.matchControlLockEnabled ?? true,
   },
@@ -378,6 +381,9 @@ export default function SystemSettingsPage() {
     registration: {
       open: !!source.registration?.open,
       requireOptionalProfileFields: !!source.registration?.requireOptionalProfileFields,
+    },
+    captcha: {
+      enabled: source?.captcha?.enabled !== false,
     },
     kyc: {
       enabled: !!source.kyc?.enabled,
@@ -1136,6 +1142,22 @@ export default function SystemSettingsPage() {
                 onChange={onToggle("registration.requireOptionalProfileFields")}
               />
             </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Tooltip title="Bật hoặc tắt CAPTCHA cho form đăng nhập và đăng ký ở website public. Chỉ có tác dụng khi server đã cấu hình CAP đầy đủ.">
+                <Typography>Bật CAPTCHA cho đăng nhập/đăng ký</Typography>
+              </Tooltip>
+              <Switch
+                checked={form.captcha?.enabled !== false}
+                onChange={onToggle("captcha.enabled")}
+              />
+            </Stack>
+
+            <Alert severity={form.captcha?.enabled === false ? "info" : "success"}>
+              {form.captcha?.enabled === false
+                ? "CAPTCHA đang bị tắt ở mức hệ thống. Frontend public sẽ bỏ qua widget và backend sẽ không bắt buộc xác minh CAPTCHA."
+                : "CAPTCHA đang bật ở mức hệ thống. Frontend public sẽ hiển thị widget nếu các biến CAP env đã được cấu hình."}
+            </Alert>
           </Section>
 
           <Section
