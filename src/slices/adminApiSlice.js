@@ -65,6 +65,53 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["User"],
     }),
+    getSelfAssessments: builder.query({
+      query: ({ page = 1, pageSize = 20, keyword = "" } = {}) => {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
+        if (keyword) params.set("keyword", keyword);
+        return `/admin/self-assessments?${params.toString()}`;
+      },
+      providesTags: ["SelfAssessment"],
+      keepUnusedDataFor: 10,
+    }),
+    resetSelfAssessments: builder.mutation({
+      query: ({ userIds, keyword } = {}) => ({
+        url: "/admin/self-assessments/reset",
+        method: "POST",
+        body: {
+          ...(Array.isArray(userIds) && userIds.length ? { userIds } : {}),
+          ...(keyword ? { keyword } : {}),
+        },
+      }),
+      invalidatesTags: ["SelfAssessment", "User"],
+    }),
+    getAuthLogs: builder.query({
+      query: ({
+        page = 1,
+        pageSize = 30,
+        keyword = "",
+        action = "",
+        channel = "",
+        status = "",
+      } = {}) => {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
+        if (keyword) params.set("keyword", keyword);
+        if (action) params.set("action", action);
+        if (channel) params.set("channel", channel);
+        if (status) params.set("status", status);
+        return `/admin/auth-logs?${params.toString()}`;
+      },
+      providesTags: ["AuthLog"],
+      keepUnusedDataFor: 10,
+    }),
+    getAuthLogDetail: builder.query({
+      query: (id) => `/admin/auth-logs/${id}`,
+      providesTags: (result, error, id) => [{ type: "AuthLog", id }],
+    }),
 
     // =========================
     // EVALUATOR MANAGEMENT (mới)
@@ -201,6 +248,10 @@ export const {
   useReviewKycMutation,
   useUpdateUserInfoMutation,
   useUpdateRankingMutation,
+  useGetSelfAssessmentsQuery,
+  useResetSelfAssessmentsMutation,
+  useGetAuthLogsQuery,
+  useGetAuthLogDetailQuery,
 
   // evaluators
   useGetEvaluatorsQuery,

@@ -7,6 +7,8 @@ import Profile from "layouts/profile";
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
 import UserManagement from "layouts/user/UserListPage";
+import SelfAssessmentManagementPage from "layouts/user/SelfAssessmentManagementPage";
+import AuthLogManagementPage from "layouts/user/AuthLogManagementPage";
 
 // 🆕 Trang quản trị giải đấu
 import TournamentsListPage from "layouts/tournament/TournamentsListPage";
@@ -165,6 +167,26 @@ const routes = [
     icon: <Icon fontSize="small">people</Icon>,
     route: "/users",
     component: <UserManagement />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Tự chấm trình",
+    key: "self-assessment-management",
+    icon: <Icon fontSize="small">fact_check</Icon>,
+    route: "/admin/self-assessments",
+    component: <SelfAssessmentManagementPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Log đăng nhập",
+    key: "auth-log-management",
+    icon: <Icon fontSize="small">manage_search</Icon>,
+    route: "/admin/auth-logs",
+    component: <AuthLogManagementPage />,
     private: true,
     roles: ["admin"],
   },

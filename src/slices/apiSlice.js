@@ -78,6 +78,8 @@ export const apiSlice = createApi({
     "CourtStation",
     "CourtClusterRuntime",
     "CourtFreeManager",
+    "SelfAssessment",
+    "AuthLog",
   ],
   endpoints: () => ({}),
 });
