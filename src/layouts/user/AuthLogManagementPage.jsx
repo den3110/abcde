@@ -48,6 +48,22 @@ const userLabel = (user, fallback = "") =>
 
 const statusColor = (status) => (status === "success" ? "success" : "error");
 
+const tableCellSx = {
+  py: 1.5,
+  px: 2,
+  verticalAlign: "top",
+  whiteSpace: "normal",
+  wordBreak: "break-word",
+};
+
+const ellipsisSx = {
+  display: "block",
+  maxWidth: "100%",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
 export default function AuthLogManagementPage() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
@@ -195,16 +211,27 @@ export default function AuthLogManagementPage() {
                 </Typography>
               )}
 
-              <TableContainer>
-                <Table>
-                  <TableHead>
+              <TableContainer sx={{ overflowX: "hidden" }}>
+                <Table
+                  size="small"
+                  sx={{
+                    width: "100%",
+                    tableLayout: "fixed",
+                    "& .MuiTableCell-root": tableCellSx,
+                  }}
+                >
+                  <TableHead sx={{ display: "table-header-group" }}>
                     <TableRow>
-                      <TableCell>Thời gian</TableCell>
-                      <TableCell>User</TableCell>
-                      <TableCell>API</TableCell>
-                      <TableCell>IP / Thiết bị</TableCell>
-                      <TableCell align="center">Trạng thái</TableCell>
-                      <TableCell align="right">Chi tiết</TableCell>
+                      <TableCell sx={{ width: "15%", fontWeight: 700 }}>Thời gian</TableCell>
+                      <TableCell sx={{ width: "23%", fontWeight: 700 }}>User</TableCell>
+                      <TableCell sx={{ width: "22%", fontWeight: 700 }}>API</TableCell>
+                      <TableCell sx={{ width: "24%", fontWeight: 700 }}>IP / Thiết bị</TableCell>
+                      <TableCell align="center" sx={{ width: "10%", fontWeight: 700 }}>
+                        Trạng thái
+                      </TableCell>
+                      <TableCell align="right" sx={{ width: "6%", fontWeight: 700 }}>
+                        Chi tiết
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -217,15 +244,20 @@ export default function AuthLogManagementPage() {
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Stack direction="row" spacing={1.5} alignItems="center">
+                          <Stack
+                            direction="row"
+                            spacing={1.5}
+                            alignItems="center"
+                            sx={{ minWidth: 0 }}
+                          >
                             <Avatar src={log.user?.avatar || ""}>
                               {userLabel(log.user, log.loginKey).charAt(0).toUpperCase()}
                             </Avatar>
-                            <Box>
-                              <Typography variant="button">
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="button" sx={ellipsisSx}>
                                 {userLabel(log.user, log.loginKey)}
                               </Typography>
-                              <Typography variant="caption" display="block" color="text.secondary">
+                              <Typography variant="caption" color="text.secondary" sx={ellipsisSx}>
                                 {log.email || log.phone || log.loginKey || "-"}
                               </Typography>
                             </Box>
@@ -236,7 +268,7 @@ export default function AuthLogManagementPage() {
                             <Chip size="small" label={log.action} />
                             <Chip size="small" variant="outlined" label={log.channel} />
                           </Stack>
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="caption" color="text.secondary" sx={ellipsisSx}>
                             {log.method} {log.path}
                           </Typography>
                         </TableCell>
@@ -245,8 +277,7 @@ export default function AuthLogManagementPage() {
                           <Typography
                             variant="caption"
                             color="text.secondary"
-                            sx={{ display: "block", maxWidth: 320 }}
-                            noWrap
+                            sx={ellipsisSx}
                           >
                             {log.userAgent || "-"}
                           </Typography>

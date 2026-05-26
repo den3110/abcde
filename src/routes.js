@@ -180,16 +180,6 @@ const routes = [
     private: true,
     roles: ["admin"],
   },
-  {
-    type: "collapse",
-    name: "Log đăng nhập",
-    key: "auth-log-management",
-    icon: <Icon fontSize="small">manage_search</Icon>,
-    route: "/admin/auth-logs",
-    component: <AuthLogManagementPage />,
-    private: true,
-    roles: ["admin"],
-  },
 
   // 🆕 Người chấm trình (Admin)
   {
@@ -536,6 +526,18 @@ const routes = [
   // ─────────────── Quản trị nâng cao (Super Admin) ───────────────
   { type: "divider", key: "divider-advanced" },
   { type: "title", title: "Quản trị nâng cao", key: "title-advanced" },
+  {
+    type: "collapse",
+    name: "Log đăng nhập",
+    key: "auth-log-management",
+    icon: <Icon fontSize="small">manage_search</Icon>,
+    route: "/admin/auth-logs",
+    component: <AuthLogManagementPage />,
+    private: true,
+    roles: ["superadmin", "superuser"],
+    requireAdminAndSuperUser: true,
+    show: true,
+  },
   {
     type: "collapse",
     name: "Azure Credentials",
