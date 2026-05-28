@@ -79,6 +79,7 @@ import PeakRuntimePage from "layouts/PeakRuntimePage";
 import ObserverVpsPage from "layouts/ObserverVpsPage";
 import PrimaryLogsPage from "layouts/PrimaryLogsPage";
 import CourtFreeManagerPage from "layouts/CourtFreeManagerPage";
+import IdentitySecurityPage from "layouts/IdentitySecurityPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -534,6 +535,18 @@ const routes = [
     icon: <Icon fontSize="small">manage_search</Icon>,
     route: "/admin/auth-logs",
     component: <AuthLogManagementPage />,
+    private: true,
+    roles: ["superadmin", "superuser"],
+    requireAdminAndSuperUser: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Identity Security",
+    key: "identity-security",
+    icon: <Icon fontSize="small">security</Icon>,
+    route: "/admin/identity-security",
+    component: <IdentitySecurityPage />,
     private: true,
     roles: ["superadmin", "superuser"],
     requireAdminAndSuperUser: true,
