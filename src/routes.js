@@ -77,6 +77,7 @@ import CacheManagerPage from "layouts/CacheManagerPage";
 import AdminLivePlaybackPage from "layouts/AdminLivePlaybackPage";
 import PeakRuntimePage from "layouts/PeakRuntimePage";
 import ObserverVpsPage from "layouts/ObserverVpsPage";
+import PrimaryLogsPage from "layouts/PrimaryLogsPage";
 import CourtFreeManagerPage from "layouts/CourtFreeManagerPage";
 
 // 🆕 Live đang phát (Admin)
@@ -737,6 +738,18 @@ const routes = [
     icon: <Icon fontSize="small">sensors</Icon>,
     route: "/admin/observer-vps",
     component: <ObserverVpsPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperUser: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Nhật ký hệ thống",
+    key: "admin-primary-logs",
+    icon: <Icon fontSize="small">article</Icon>,
+    route: "/admin/logs",
+    component: <PrimaryLogsPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperUser: true,
