@@ -46,6 +46,22 @@ const fmtDate = (value) => {
 const displayName = (user = {}) =>
   user.nickname || user.name || user.phone || user.email || "Chưa có tên";
 
+const tableCellSx = {
+  py: 1.5,
+  px: 2,
+  verticalAlign: "middle",
+  whiteSpace: "normal",
+  wordBreak: "break-word",
+};
+
+const ellipsisSx = {
+  display: "block",
+  maxWidth: "100%",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
 export default function SelfAssessmentManagementPage() {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
@@ -184,16 +200,39 @@ export default function SelfAssessmentManagementPage() {
                 </Stack>
               )}
 
-              <TableContainer>
-                <Table>
-                  <TableHead>
+              <TableContainer sx={{ overflowX: "hidden" }}>
+                <Table
+                  size="small"
+                  sx={{
+                    width: "100%",
+                    tableLayout: "fixed",
+                    "& .MuiTableCell-root": tableCellSx,
+                  }}
+                >
+                  <colgroup>
+                    <col style={{ width: "26%" }} />
+                    <col style={{ width: "22%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "10%" }} />
+                  </colgroup>
+                  <TableHead sx={{ display: "table-header-group" }}>
                     <TableRow>
-                      <TableCell>VĐV</TableCell>
-                      <TableCell>Liên hệ</TableCell>
-                      <TableCell align="center">Điểm hiện tại</TableCell>
-                      <TableCell align="center">Tự chấm gần nhất</TableCell>
-                      <TableCell align="center">Trạng thái</TableCell>
-                      <TableCell align="right">Thao tác</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>VĐV</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>Liên hệ</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 700 }}>
+                        Điểm hiện tại
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 700 }}>
+                        Tự chấm gần nhất
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 700 }}>
+                        Trạng thái
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>
+                        Thao tác
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -204,21 +243,35 @@ export default function SelfAssessmentManagementPage() {
                       return (
                         <TableRow key={user._id || ranking._id}>
                           <TableCell>
-                            <Stack direction="row" spacing={1.5} alignItems="center">
+                            <Stack
+                              direction="row"
+                              spacing={1.5}
+                              alignItems="center"
+                              sx={{ minWidth: 0 }}
+                            >
                               <Avatar src={user.avatar || ""}>
                                 {displayName(user).charAt(0).toUpperCase()}
                               </Avatar>
-                              <Box>
-                                <Typography variant="button">{displayName(user)}</Typography>
-                                <Typography variant="caption" display="block" color="text.secondary">
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="button" sx={ellipsisSx}>
+                                  {displayName(user)}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  display="block"
+                                  color="text.secondary"
+                                  sx={ellipsisSx}
+                                >
                                   {user.province || "-"}
                                 </Typography>
                               </Box>
                             </Stack>
                           </TableCell>
                           <TableCell>
-                            <Typography variant="body2">{user.phone || "-"}</Typography>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography variant="body2" sx={ellipsisSx}>
+                              {user.phone || "-"}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={ellipsisSx}>
                               {user.email || "-"}
                             </Typography>
                           </TableCell>
