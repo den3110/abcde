@@ -364,6 +364,25 @@ export default function PrimaryLogsPage() {
               }}
               rowsPerPageOptions={[50, 100, 200, 300]}
               labelRowsPerPage="Số dòng"
+              sx={{
+                borderTop: "1px solid",
+                borderColor: "divider",
+                "& .MuiTablePagination-toolbar": {
+                  justifyContent: "flex-start",
+                  gap: 2,
+                  px: 2,
+                  flexWrap: "wrap",
+                },
+                "& .MuiTablePagination-spacer": {
+                  display: "none",
+                },
+                "& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows": {
+                  m: 0,
+                },
+                "& .MuiTablePagination-actions": {
+                  ml: 0,
+                },
+              }}
             />
           </Card>
         </Stack>
