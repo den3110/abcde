@@ -128,6 +128,44 @@ const hydrateFormState = (source) => ({
     hideUserRatings: source?.privacy?.hideUserRatings ?? false,
     hideUserRatingsSelf: source?.privacy?.hideUserRatingsSelf ?? false,
   },
+  observerLogging: {
+    enabled: source?.observerLogging?.enabled !== false,
+    httpAccessEnabled: source?.observerLogging?.httpAccessEnabled !== false,
+    smartMode: ["smart", "primary", "observer", "hybrid"].includes(
+      source?.observerLogging?.smartMode
+    )
+      ? source.observerLogging.smartMode
+      : "smart",
+    primaryLogEnabled: source?.observerLogging?.primaryLogEnabled !== false,
+    minLevel: ["info", "warn", "error"].includes(source?.observerLogging?.minLevel)
+      ? source.observerLogging.minLevel
+      : "info",
+    successSampleRate: source?.observerLogging?.successSampleRate ?? 1,
+    batchSize: source?.observerLogging?.batchSize ?? 100,
+    flushIntervalMs: source?.observerLogging?.flushIntervalMs ?? 5000,
+    maxPendingEvents: source?.observerLogging?.maxPendingEvents ?? 2000,
+    timeoutMs: source?.observerLogging?.timeoutMs ?? 4000,
+    primaryBatchSize: source?.observerLogging?.primaryBatchSize ?? 100,
+    primaryFlushIntervalMs: source?.observerLogging?.primaryFlushIntervalMs ?? 5000,
+    primaryMaxPendingEvents: source?.observerLogging?.primaryMaxPendingEvents ?? 5000,
+    primaryRetentionDays: source?.observerLogging?.primaryRetentionDays ?? 14,
+    primaryQueueBurstThreshold: source?.observerLogging?.primaryQueueBurstThreshold ?? 3000,
+    burstReqPerMinuteThreshold: source?.observerLogging?.burstReqPerMinuteThreshold ?? 1200,
+    burstP95MsThreshold: source?.observerLogging?.burstP95MsThreshold ?? 1500,
+    burst5xxPerMinuteThreshold: source?.observerLogging?.burst5xxPerMinuteThreshold ?? 30,
+    burstCooldownMs: source?.observerLogging?.burstCooldownMs ?? 300000,
+    runtimePushEnabled: source?.observerLogging?.runtimePushEnabled !== false,
+    runtimePushIntervalMs: source?.observerLogging?.runtimePushIntervalMs ?? 15000,
+    nightlySyncEnabled: source?.observerLogging?.nightlySyncEnabled !== false,
+    nightlySyncStartHour: source?.observerLogging?.nightlySyncStartHour ?? 1,
+    nightlySyncEndHour: source?.observerLogging?.nightlySyncEndHour ?? 5,
+    nightlySyncIntervalMs: source?.observerLogging?.nightlySyncIntervalMs ?? 600000,
+    nightlySyncLimit: source?.observerLogging?.nightlySyncLimit ?? 500,
+    nightlySyncLookbackHours: source?.observerLogging?.nightlySyncLookbackHours ?? 24,
+    aiAdvisorEnabled: source?.observerLogging?.aiAdvisorEnabled !== false,
+    aiAdvisorTimeoutMs: source?.observerLogging?.aiAdvisorTimeoutMs ?? 8000,
+    aiAdvisorMinIntervalMs: source?.observerLogging?.aiAdvisorMinIntervalMs ?? 300000,
+  },
   recordingDrive: {
     enabled: source?.recordingDrive?.enabled ?? true,
     mode: getInitialRecordingDriveMode(source?.recordingDrive?.mode),
@@ -402,6 +440,44 @@ export default function SystemSettingsPage() {
       telegramEnabled: !!source.notifications?.telegramEnabled,
       telegramComplaintChatId: source.notifications?.telegramComplaintChatId ?? "",
       systemPushEnabled: !!source.notifications?.systemPushEnabled,
+    },
+    observerLogging: {
+      enabled: source.observerLogging?.enabled !== false,
+      httpAccessEnabled: source.observerLogging?.httpAccessEnabled !== false,
+      smartMode: ["smart", "primary", "observer", "hybrid"].includes(
+        source.observerLogging?.smartMode
+      )
+        ? source.observerLogging.smartMode
+        : "smart",
+      primaryLogEnabled: source.observerLogging?.primaryLogEnabled !== false,
+      minLevel: ["info", "warn", "error"].includes(source.observerLogging?.minLevel)
+        ? source.observerLogging.minLevel
+        : "info",
+      successSampleRate: source.observerLogging?.successSampleRate ?? 1,
+      batchSize: source.observerLogging?.batchSize ?? 100,
+      flushIntervalMs: source.observerLogging?.flushIntervalMs ?? 5000,
+      maxPendingEvents: source.observerLogging?.maxPendingEvents ?? 2000,
+      timeoutMs: source.observerLogging?.timeoutMs ?? 4000,
+      primaryBatchSize: source.observerLogging?.primaryBatchSize ?? 100,
+      primaryFlushIntervalMs: source.observerLogging?.primaryFlushIntervalMs ?? 5000,
+      primaryMaxPendingEvents: source.observerLogging?.primaryMaxPendingEvents ?? 5000,
+      primaryRetentionDays: source.observerLogging?.primaryRetentionDays ?? 14,
+      primaryQueueBurstThreshold: source.observerLogging?.primaryQueueBurstThreshold ?? 3000,
+      burstReqPerMinuteThreshold: source.observerLogging?.burstReqPerMinuteThreshold ?? 1200,
+      burstP95MsThreshold: source.observerLogging?.burstP95MsThreshold ?? 1500,
+      burst5xxPerMinuteThreshold: source.observerLogging?.burst5xxPerMinuteThreshold ?? 30,
+      burstCooldownMs: source.observerLogging?.burstCooldownMs ?? 300000,
+      runtimePushEnabled: source.observerLogging?.runtimePushEnabled !== false,
+      runtimePushIntervalMs: source.observerLogging?.runtimePushIntervalMs ?? 15000,
+      nightlySyncEnabled: source.observerLogging?.nightlySyncEnabled !== false,
+      nightlySyncStartHour: source.observerLogging?.nightlySyncStartHour ?? 1,
+      nightlySyncEndHour: source.observerLogging?.nightlySyncEndHour ?? 5,
+      nightlySyncIntervalMs: source.observerLogging?.nightlySyncIntervalMs ?? 600000,
+      nightlySyncLimit: source.observerLogging?.nightlySyncLimit ?? 500,
+      nightlySyncLookbackHours: source.observerLogging?.nightlySyncLookbackHours ?? 24,
+      aiAdvisorEnabled: source.observerLogging?.aiAdvisorEnabled !== false,
+      aiAdvisorTimeoutMs: source.observerLogging?.aiAdvisorTimeoutMs ?? 8000,
+      aiAdvisorMinIntervalMs: source.observerLogging?.aiAdvisorMinIntervalMs ?? 300000,
     },
     links: {
       guideUrl: source.links?.guideUrl ?? "",
@@ -1056,6 +1132,399 @@ export default function SystemSettingsPage() {
               placeholder="Ví dụ: Hệ thống bảo trì lúc 23:00-01:00."
               fullWidth
             />
+          </Section>
+
+          <Section
+            title="Observer Azure logging"
+            desc="Gửi log vận hành sang Observer VPS trên Azure bằng hàng đợi nền, không ghi log này vào DB của server chính."
+          >
+            <Alert severity="info">
+              Request của server chính không chờ Azure phản hồi. Khi tải cao, queue sẽ tự giới hạn
+              và bỏ bớt log thay vì làm chậm API chính.
+            </Alert>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                select
+                label="Chế độ ghi log"
+                value={form.observerLogging?.smartMode ?? "smart"}
+                onChange={onChange("observerLogging.smartMode")}
+                helperText="smart = DB chính bình thường, Observer khi burst."
+                fullWidth
+              >
+                <MenuItem value="smart">smart - tự chuyển theo tải</MenuItem>
+                <MenuItem value="primary">primary - chỉ DB chính</MenuItem>
+                <MenuItem value="observer">observer - chỉ Observer Azure</MenuItem>
+                <MenuItem value="hybrid">hybrid - ghi cả hai nơi</MenuItem>
+              </TextField>
+              <TextField
+                select
+                label="Mức log tối thiểu"
+                value={form.observerLogging?.minLevel ?? "info"}
+                onChange={onChange("observerLogging.minLevel")}
+                helperText="info = mọi request; warn = 4xx; error = 5xx/lỗi."
+                fullWidth
+              >
+                <MenuItem value="info">info - ghi mọi thứ</MenuItem>
+                <MenuItem value="warn">warn - chỉ cảnh báo trở lên</MenuItem>
+                <MenuItem value="error">error - chỉ lỗi nghiêm trọng</MenuItem>
+              </TextField>
+            </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Bật gửi log sang Observer Azure</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Cần cấu hình OBSERVER_BASE_URL và OBSERVER_API_KEY trên server.
+                </Typography>
+              </Box>
+              <Switch
+                checked={form.observerLogging?.enabled !== false}
+                onChange={onToggle("observerLogging.enabled")}
+              />
+            </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Ghi log vào DB chính</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Khi chế độ smart bình thường, log sẽ vào DB chính bằng batch nền.
+                </Typography>
+              </Box>
+              <Switch
+                checked={form.observerLogging?.primaryLogEnabled !== false}
+                onChange={onToggle("observerLogging.primaryLogEnabled")}
+              />
+            </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Ghi HTTP access log</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Bao gồm method, path, status, duration và user agent. Không ghi request body.
+                </Typography>
+              </Box>
+              <Switch
+                checked={form.observerLogging?.httpAccessEnabled !== false}
+                onChange={onToggle("observerLogging.httpAccessEnabled")}
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="Sampling request thành công"
+                type="number"
+                inputProps={{ min: 0, max: 1, step: 0.05 }}
+                value={form.observerLogging?.successSampleRate ?? 1}
+                onChange={onNumber("observerLogging.successSampleRate", {
+                  min: 0,
+                  max: 1,
+                  step: 0.05,
+                })}
+                helperText="1 = ghi 100%, 0.2 = ghi 20% request 2xx/3xx. 4xx/5xx không bị sampling."
+                fullWidth
+              />
+              <TextField
+                label="Giữ log DB chính (ngày)"
+                type="number"
+                inputProps={{ min: 1, max: 365 }}
+                value={form.observerLogging?.primaryRetentionDays ?? 14}
+                onChange={onNumber("observerLogging.primaryRetentionDays", {
+                  min: 1,
+                  max: 365,
+                })}
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="Observer batch size"
+                type="number"
+                inputProps={{ min: 1, max: 1000 }}
+                value={form.observerLogging?.batchSize ?? 100}
+                onChange={onNumber("observerLogging.batchSize", { min: 1, max: 1000 })}
+                fullWidth
+              />
+              <TextField
+                label="Flush interval (ms)"
+                type="number"
+                inputProps={{ min: 500, max: 60000, step: 500 }}
+                value={form.observerLogging?.flushIntervalMs ?? 5000}
+                onChange={onNumber("observerLogging.flushIntervalMs", {
+                  min: 500,
+                  max: 60000,
+                  step: 500,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="Queue tối đa"
+                type="number"
+                inputProps={{ min: 100, max: 50000, step: 100 }}
+                value={form.observerLogging?.maxPendingEvents ?? 2000}
+                onChange={onNumber("observerLogging.maxPendingEvents", {
+                  min: 100,
+                  max: 50000,
+                  step: 100,
+                })}
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="DB batch size"
+                type="number"
+                inputProps={{ min: 1, max: 1000 }}
+                value={form.observerLogging?.primaryBatchSize ?? 100}
+                onChange={onNumber("observerLogging.primaryBatchSize", { min: 1, max: 1000 })}
+                fullWidth
+              />
+              <TextField
+                label="DB flush interval (ms)"
+                type="number"
+                inputProps={{ min: 500, max: 60000, step: 500 }}
+                value={form.observerLogging?.primaryFlushIntervalMs ?? 5000}
+                onChange={onNumber("observerLogging.primaryFlushIntervalMs", {
+                  min: 500,
+                  max: 60000,
+                  step: 500,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="DB queue tối đa"
+                type="number"
+                inputProps={{ min: 100, max: 100000, step: 100 }}
+                value={form.observerLogging?.primaryMaxPendingEvents ?? 5000}
+                onChange={onNumber("observerLogging.primaryMaxPendingEvents", {
+                  min: 100,
+                  max: 100000,
+                  step: 100,
+                })}
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="Ngưỡng burst req/phút"
+                type="number"
+                inputProps={{ min: 10, max: 100000, step: 10 }}
+                value={form.observerLogging?.burstReqPerMinuteThreshold ?? 1200}
+                onChange={onNumber("observerLogging.burstReqPerMinuteThreshold", {
+                  min: 10,
+                  max: 100000,
+                  step: 10,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="Ngưỡng burst p95 (ms)"
+                type="number"
+                inputProps={{ min: 50, max: 60000, step: 50 }}
+                value={form.observerLogging?.burstP95MsThreshold ?? 1500}
+                onChange={onNumber("observerLogging.burstP95MsThreshold", {
+                  min: 50,
+                  max: 60000,
+                  step: 50,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="DB queue burst"
+                type="number"
+                inputProps={{ min: 100, max: 100000, step: 100 }}
+                value={form.observerLogging?.primaryQueueBurstThreshold ?? 3000}
+                onChange={onNumber("observerLogging.primaryQueueBurstThreshold", {
+                  min: 100,
+                  max: 100000,
+                  step: 100,
+                })}
+                helperText="DB queue vượt ngưỡng thì offload sang Observer."
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="Timeout gửi Azure (ms)"
+                type="number"
+                inputProps={{ min: 500, max: 30000, step: 500 }}
+                value={form.observerLogging?.timeoutMs ?? 4000}
+                onChange={onNumber("observerLogging.timeoutMs", {
+                  min: 500,
+                  max: 30000,
+                  step: 500,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="Ngưỡng burst 5xx/phút"
+                type="number"
+                inputProps={{ min: 1, max: 10000 }}
+                value={form.observerLogging?.burst5xxPerMinuteThreshold ?? 30}
+                onChange={onNumber("observerLogging.burst5xxPerMinuteThreshold", {
+                  min: 1,
+                  max: 10000,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="Giữ chế độ burst (ms)"
+                type="number"
+                inputProps={{ min: 10000, max: 3600000, step: 10000 }}
+                value={form.observerLogging?.burstCooldownMs ?? 300000}
+                onChange={onNumber("observerLogging.burstCooldownMs", {
+                  min: 10000,
+                  max: 3600000,
+                  step: 10000,
+                })}
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="Runtime snapshot interval (ms)"
+                type="number"
+                inputProps={{ min: 5000, max: 300000, step: 5000 }}
+                value={form.observerLogging?.runtimePushIntervalMs ?? 15000}
+                onChange={onNumber("observerLogging.runtimePushIntervalMs", {
+                  min: 5000,
+                  max: 300000,
+                  step: 5000,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="Night sync interval (ms)"
+                type="number"
+                inputProps={{ min: 60000, max: 86400000, step: 60000 }}
+                value={form.observerLogging?.nightlySyncIntervalMs ?? 600000}
+                onChange={onNumber("observerLogging.nightlySyncIntervalMs", {
+                  min: 60000,
+                  max: 86400000,
+                  step: 60000,
+                })}
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="Night sync bắt đầu"
+                type="number"
+                inputProps={{ min: 0, max: 23 }}
+                value={form.observerLogging?.nightlySyncStartHour ?? 1}
+                onChange={onNumber("observerLogging.nightlySyncStartHour", {
+                  min: 0,
+                  max: 23,
+                })}
+                helperText="Giờ theo timezone server."
+                fullWidth
+              />
+              <TextField
+                label="Night sync kết thúc"
+                type="number"
+                inputProps={{ min: 0, max: 23 }}
+                value={form.observerLogging?.nightlySyncEndHour ?? 5}
+                onChange={onNumber("observerLogging.nightlySyncEndHour", {
+                  min: 0,
+                  max: 23,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="Số log kéo mỗi lần"
+                type="number"
+                inputProps={{ min: 1, max: 500 }}
+                value={form.observerLogging?.nightlySyncLimit ?? 500}
+                onChange={onNumber("observerLogging.nightlySyncLimit", {
+                  min: 1,
+                  max: 500,
+                })}
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                label="Lookback sync (giờ)"
+                type="number"
+                inputProps={{ min: 1, max: 168 }}
+                value={form.observerLogging?.nightlySyncLookbackHours ?? 24}
+                onChange={onNumber("observerLogging.nightlySyncLookbackHours", {
+                  min: 1,
+                  max: 168,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="AI timeout (ms)"
+                type="number"
+                inputProps={{ min: 1000, max: 60000, step: 1000 }}
+                value={form.observerLogging?.aiAdvisorTimeoutMs ?? 8000}
+                onChange={onNumber("observerLogging.aiAdvisorTimeoutMs", {
+                  min: 1000,
+                  max: 60000,
+                  step: 1000,
+                })}
+                fullWidth
+              />
+              <TextField
+                label="AI interval tối thiểu (ms)"
+                type="number"
+                inputProps={{ min: 60000, max: 3600000, step: 60000 }}
+                value={form.observerLogging?.aiAdvisorMinIntervalMs ?? 300000}
+                onChange={onNumber("observerLogging.aiAdvisorMinIntervalMs", {
+                  min: 60000,
+                  max: 3600000,
+                  step: 60000,
+                })}
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Đồng bộ log về DB chính ban đêm</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Kéo log đã offload từ Observer Azure về DB chính trong khung giờ ít request.
+                </Typography>
+              </Box>
+              <Switch
+                checked={form.observerLogging?.nightlySyncEnabled !== false}
+                onChange={onToggle("observerLogging.nightlySyncEnabled")}
+              />
+            </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Trợ lý AI xác nhận burst</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Khi chuyển sang Observer burst, AI sẽ phân tích nhanh qua OpenAI-compatible 8317.
+                </Typography>
+              </Box>
+              <Switch
+                checked={form.observerLogging?.aiAdvisorEnabled !== false}
+                onChange={onToggle("observerLogging.aiAdvisorEnabled")}
+              />
+            </Stack>
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+              <Box sx={{ pr: 2 }}>
+                <Typography fontWeight={700}>Gửi runtime snapshot</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Gửi metrics runtime, queue export và heartbeat worker sang Observer Azure theo chu kỳ.
+                </Typography>
+              </Box>
+              <Switch
+                checked={form.observerLogging?.runtimePushEnabled !== false}
+                onChange={onToggle("observerLogging.runtimePushEnabled")}
+              />
+            </Stack>
           </Section>
 
           <Section

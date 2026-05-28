@@ -42,6 +42,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
   const [scanningUserId, setScanningUserId] = useState(null);
   const [fillingUserId, setFillingUserId] = useState(null);
   const [overwritingUserId, setOverwritingUserId] = useState(null);
+  const [autoScanningAll, setAutoScanningAll] = useState(false);
 
   const handle = async (promise, successMsg) => {
     try {
@@ -124,6 +125,55 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
       );
     } finally {
       setScanningUserId(null);
+    }
+  };
+
+  // Tự động quét hết danh sách xem trước, chạy tuần tự để tránh dồn request AI.
+  const scanAllPreviewUsers = async () => {
+    const users = Array.isArray(backfillResult?.users) ? [...backfillResult.users] : [];
+    if (!users.length) {
+      showSnack?.("info", "Không có user nào trong danh sách xem trước để quét");
+      return;
+    }
+
+    // eslint-disable-next-line no-alert
+    const ok = window.confirm(`Tự động quét ${users.length} user trong danh sách xem trước?`);
+    if (!ok) return;
+
+    setAutoScanningAll(true);
+    let successCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+
+    try {
+      for (const u of users) {
+        if (!u.hasFront && !u.hasBack) {
+          skippedCount += 1;
+          continue;
+        }
+
+        setScanningUserId(u.id);
+        try {
+          await fillCccdForUserMut({
+            id: u.id,
+            dryRun: true,
+          }).unwrap();
+          successCount += 1;
+          removeUserFromPreview(u.id);
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      showSnack?.(
+        failedCount ? "warning" : "success",
+        `Đã quét ${successCount} user${
+          skippedCount ? `, bỏ qua ${skippedCount} user thiếu ảnh CCCD` : ""
+        }${failedCount ? `, lỗi ${failedCount} user` : ""}`
+      );
+    } finally {
+      setScanningUserId(null);
+      setAutoScanningAll(false);
     }
   };
 
@@ -259,7 +309,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                 variant="contained"
                 color={backfillDryRun ? "secondary" : "primary"}
                 onClick={runBackfill}
-                disabled={runningBackfill}
+                disabled={runningBackfill || autoScanningAll}
                 startIcon={
                   runningBackfill ? (
                     <CircularProgress size={18} color="inherit" />
@@ -292,9 +342,33 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                   Array.isArray(backfillResult.users) &&
                   backfillResult.users.length > 0 && (
                     <Box sx={{ mt: 1 }}>
-                      <MDTypography variant="caption" sx={{ display: "block", mb: 0.5 }}>
-                        Ví dụ tối đa 10 user sẽ được gửi cho AI:
-                      </MDTypography>
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1}
+                        alignItems={{ xs: "flex-start", sm: "center" }}
+                        justifyContent="space-between"
+                        sx={{ mb: 0.5 }}
+                      >
+                        <MDTypography variant="caption">
+                          Ví dụ tối đa 10 user sẽ được gửi cho AI:
+                        </MDTypography>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="info"
+                          startIcon={
+                            autoScanningAll ? (
+                              <CircularProgress size={14} color="inherit" />
+                            ) : (
+                              <SearchIcon fontSize="small" />
+                            )
+                          }
+                          onClick={scanAllPreviewUsers}
+                          disabled={autoScanningAll || runningBackfill}
+                        >
+                          {autoScanningAll ? "Đang quét hết..." : "Tự động quét hết"}
+                        </Button>
+                      </Stack>
                       <Stack spacing={0.75}>
                         {backfillResult.users.slice(0, 10).map((u) => {
                           const missingFields = Array.isArray(u.missingFields)
@@ -348,7 +422,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                                     )
                                   }
                                   onClick={() => scanCccdForUser(u)}
-                                  disabled={isScanning || isFilling || isOverwriting}
+                                  disabled={autoScanningAll || isScanning || isFilling || isOverwriting}
                                 >
                                   Quét
                                 </Button>
@@ -366,7 +440,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                                     )
                                   }
                                   onClick={() => applyCccdForUser(u)}
-                                  disabled={isScanning || isFilling || isOverwriting}
+                                  disabled={autoScanningAll || isScanning || isFilling || isOverwriting}
                                 >
                                   Tự fill
                                 </Button>
@@ -384,7 +458,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                                     )
                                   }
                                   onClick={() => overwriteCccdForUser(u)}
-                                  disabled={isScanning || isFilling || isOverwriting}
+                                  disabled={autoScanningAll || isScanning || isFilling || isOverwriting}
                                 >
                                   Fill đè
                                 </Button>

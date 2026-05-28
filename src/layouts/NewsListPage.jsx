@@ -10,8 +10,16 @@ import {
   Chip,
   Stack,
   CircularProgress,
+  Button,
+  TextField,
+  FormControlLabel,
+  Switch,
+  Alert,
 } from "@mui/material";
-import { useGetNewsListQuery } from "slices/newsApiSlice";
+import {
+  useGenerateNewsArticlesMutation,
+  useGetNewsListQuery,
+} from "slices/newsApiSlice";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import PropTypes from "prop-types";
@@ -74,7 +82,34 @@ const NewsImage = ({ src, alt }) => {
 
 const NewsListPage = () => {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error } = useGetNewsListQuery(30); // lấy 30 bài mới nhất
+  const [topic, setTopic] = useState("");
+  const [count, setCount] = useState(1);
+  const [publish, setPublish] = useState(true);
+  const [generateResult, setGenerateResult] = useState(null);
+
+  const { data, isLoading, isError, error, refetch } = useGetNewsListQuery(30); // lấy 30 bài mới nhất
+  const [generateNewsArticles, { isLoading: isGenerating }] = useGenerateNewsArticlesMutation();
+
+  const handleGenerate = async () => {
+    setGenerateResult(null);
+    try {
+      const res = await generateNewsArticles({
+        topic: topic.trim(),
+        count: Number(count) || 1,
+        publish,
+      }).unwrap();
+      setGenerateResult({
+        type: "success",
+        message: `Đã tạo ${res?.generated || 0}/${res?.requested || 0} bài AI.`,
+      });
+      await refetch();
+    } catch (err) {
+      setGenerateResult({
+        type: "error",
+        message: err?.data?.message || err?.error || "Không tạo được bài AI.",
+      });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -108,6 +143,57 @@ const NewsListPage = () => {
           Tổng hợp các bài viết liên quan pickleball, giải đấu và hệ sinh thái PickleTour (đã chọn
           lọc tự động).
         </Typography>
+
+        <Card variant="outlined" sx={{ p: 2, mb: 3 }}>
+          <Stack spacing={1.5}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={1.5}
+              alignItems={{ xs: "stretch", md: "center" }}
+            >
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle1" fontWeight={600}>
+                  Tự tạo bài AI
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Dùng gateway OpenAI-compatible tại port 8317 để tạo bài PickleTour.
+                </Typography>
+              </Box>
+              <TextField
+                size="small"
+                label="Chủ đề"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="Để trống để hệ thống tự chọn"
+                sx={{ minWidth: { xs: "100%", md: 300 } }}
+              />
+              <TextField
+                size="small"
+                label="Số bài"
+                type="number"
+                value={count}
+                onChange={(e) =>
+                  setCount(Math.max(1, Math.min(Number(e.target.value) || 1, 5)))
+                }
+                inputProps={{ min: 1, max: 5 }}
+                sx={{ width: { xs: "100%", md: 100 } }}
+              />
+              <FormControlLabel
+                control={
+                  <Switch checked={publish} onChange={(e) => setPublish(e.target.checked)} />
+                }
+                label="Đăng ngay"
+                sx={{ m: 0, whiteSpace: "nowrap" }}
+              />
+              <Button variant="contained" onClick={handleGenerate} disabled={isGenerating}>
+                {isGenerating ? "Đang tạo..." : "Tạo bài"}
+              </Button>
+            </Stack>
+            {generateResult && (
+              <Alert severity={generateResult.type}>{generateResult.message}</Alert>
+            )}
+          </Stack>
+        </Card>
 
         {items.length === 0 && <Typography>Chưa có bài viết nào được xuất bản.</Typography>}
 

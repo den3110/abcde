@@ -61,6 +61,26 @@ function formatNumber(value) {
   return new Intl.NumberFormat("en-US").format(Number(value || 0));
 }
 
+const SKIP_REASON_LABELS = {
+  system_push_disabled: "Push hệ thống đang tắt",
+  empty_audience: "Không có người nhận phù hợp",
+  all_audience_already_notified: "Tất cả người nhận đã nhận thông báo này",
+  no_active_tokens: "Người nhận không có token push đang bật",
+};
+
+function getSkipReasonLabel(dispatch) {
+  if (dispatch?.status !== "skipped") return "";
+
+  const note = String(dispatch?.note || "").trim();
+  if (note) return SKIP_REASON_LABELS[note] || note;
+
+  const audienceCount = Number(dispatch?.target?.audienceCount || 0);
+  const tokens = Number(dispatch?.summary?.tokens || 0);
+  if (audienceCount <= 0) return SKIP_REASON_LABELS.empty_audience;
+  if (tokens <= 0) return "Không có token push hoặc người nhận đã nhận trước đó";
+  return "Đã bị bỏ qua";
+}
+
 function SummaryCard({ title, value, hint, color = "text.primary" }) {
   return (
     <Card sx={{ height: "100%", borderRadius: 3 }}>
@@ -303,6 +323,7 @@ export default function PushRealtimePage() {
     id: item._id,
     ...item,
     title: item?.payload?.title || "",
+    skipReasonText: getSkipReasonLabel(item),
     createdAtText: formatDateTime(item.createdAt),
     progressPercent:
       Number(item?.progress?.totalTokens || 0) > 0
@@ -336,6 +357,22 @@ export default function PushRealtimePage() {
       headerName: "Status",
       minWidth: 120,
       renderCell: ({ value }) => <StatusChip status={value} />,
+    },
+    {
+      field: "skipReasonText",
+      headerName: "Lý do skipped",
+      minWidth: 260,
+      flex: 1,
+      renderCell: ({ row }) =>
+        row.status === "skipped" ? (
+          <Typography variant="body2" title={row.skipReasonText} sx={{ fontWeight: 600 }}>
+            {row.skipReasonText}
+          </Typography>
+        ) : (
+          <Typography variant="body2" sx={{ opacity: 0.48 }}>
+            -
+          </Typography>
+        ),
     },
     {
       field: "sourceKind",
@@ -409,6 +446,9 @@ export default function PushRealtimePage() {
 
   const detailSummaryRows = detail
     ? [
+        ...(detail.status === "skipped"
+          ? [{ label: "Lý do skipped", value: getSkipReasonLabel(detail) }]
+          : []),
         { label: "Tokens", value: formatNumber(detail?.summary?.tokens || 0) },
         { label: "Ticket OK", value: formatNumber(detail?.summary?.ticketOk || 0) },
         { label: "Ticket Error", value: formatNumber(detail?.summary?.ticketError || 0) },
@@ -696,8 +736,17 @@ export default function PushRealtimePage() {
           {isFetchingDetail ? <LinearProgress sx={{ borderRadius: 999, mb: 2 }} /> : null}
           {detail ? (
             <Stack spacing={2}>
-              <Alert severity={detail.status === "failed" ? "error" : "info"}>
+              <Alert
+                severity={
+                  detail.status === "failed"
+                    ? "error"
+                    : detail.status === "skipped"
+                    ? "warning"
+                    : "info"
+                }
+              >
                 {detail.eventName} from {detail.sourceKind} at {formatDateTime(detail.createdAt)}
+                {detail.status === "skipped" ? ` - ${getSkipReasonLabel(detail)}` : ""}
               </Alert>
 
               <Grid container spacing={2}>

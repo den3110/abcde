@@ -28,7 +28,20 @@ export const newsApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: (result, error, slug) => [{ type: "News", id: slug }],
     }),
+
+    generateNewsArticles: builder.mutation({
+      query: (body = {}) => ({
+        url: "/admin/news/generate",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: [{ type: "News", id: "LIST" }],
+    }),
   }),
 });
 
-export const { useGetNewsListQuery, useGetNewsBySlugQuery } = newsApiSlice;
+export const {
+  useGetNewsListQuery,
+  useGetNewsBySlugQuery,
+  useGenerateNewsArticlesMutation,
+} = newsApiSlice;

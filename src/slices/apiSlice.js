@@ -80,6 +80,7 @@ export const apiSlice = createApi({
     "CourtFreeManager",
     "SelfAssessment",
     "AuthLog",
+    "News",
   ],
   endpoints: () => ({}),
 });

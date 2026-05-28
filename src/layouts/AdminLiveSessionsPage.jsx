@@ -159,7 +159,13 @@ function LiveRow({ session }) {
   const match = session?.match || {};
   const bracket = match?.bracket || session?.bracket;
   const tournament = match?.tournament || session?.tournament;
-  const code = match?.code || match?.shortCode || (match?._id ? String(match._id).slice(-6) : "-");
+  const code =
+    match?.displayCode ||
+    match?.codeResolved ||
+    match?.globalCode ||
+    match?.code ||
+    match?.shortCode ||
+    (match?._id ? String(match._id).slice(-6) : "-");
   const status = session?.status || "live";
   const startedBy = session?.startedBy?.name || session?.user?.name || session?.owner?.name || "?";
   const startedAt = session?.startedAt || session?.createdAt;
