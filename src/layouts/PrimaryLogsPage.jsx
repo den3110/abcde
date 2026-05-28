@@ -76,6 +76,20 @@ const TABLE_CELL_SX = {
   verticalAlign: "top",
 };
 
+const TABLE_HEAD_SX = {
+  display: "table-header-group",
+  "& .MuiTableRow-root": {
+    display: "table-row",
+  },
+  "& .MuiTableCell-root": {
+    bgcolor: "grey.100",
+    fontWeight: 800,
+    lineHeight: 1.35,
+    whiteSpace: "nowrap",
+    wordBreak: "normal",
+  },
+};
+
 const TABLE_CELL_ELLIPSIS_SX = {
   width: "100%",
   overflow: "hidden",
@@ -248,17 +262,17 @@ export default function PrimaryLogsPage() {
             <TableContainer
               sx={{ maxHeight: "68vh", overflowX: "auto", "& .MuiTableCell-root": TABLE_CELL_SX }}
             >
-              <Table stickyHeader size="small" sx={{ width: "100%", tableLayout: "fixed" }}>
-                <TableHead>
+              <Table stickyHeader size="small" sx={{ minWidth: 1280, tableLayout: "fixed" }}>
+                <TableHead sx={TABLE_HEAD_SX}>
                   <TableRow>
-                    <TableCell sx={{ width: "15%" }}>Thời gian</TableCell>
-                    <TableCell sx={{ width: "10%" }}>Level</TableCell>
-                    <TableCell sx={{ width: "10%" }}>User ID</TableCell>
-                    <TableCell sx={{ width: "32%" }}>Route</TableCell>
-                    <TableCell sx={{ width: "7%" }}>Status</TableCell>
-                    <TableCell sx={{ width: "10%" }}>Duration</TableCell>
-                    <TableCell sx={{ width: "14%" }}>Routing</TableCell>
-                    <TableCell sx={{ width: "11%" }}>Nguồn lưu</TableCell>
+                    <TableCell sx={{ width: 170 }}>Thời gian</TableCell>
+                    <TableCell sx={{ width: 100 }}>Level</TableCell>
+                    <TableCell sx={{ width: 170 }}>User ID</TableCell>
+                    <TableCell sx={{ width: 320 }}>Route</TableCell>
+                    <TableCell sx={{ width: 100 }}>Status</TableCell>
+                    <TableCell sx={{ width: 120 }}>Duration</TableCell>
+                    <TableCell sx={{ width: 180 }}>Routing</TableCell>
+                    <TableCell sx={{ width: 140 }}>Nguồn lưu</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
