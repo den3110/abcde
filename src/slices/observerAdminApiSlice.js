@@ -40,6 +40,7 @@ export const observerAdminApiSlice = apiSlice.injectEndpoints({
         routingMode = "",
         archivedFromObserver = "all",
         q = "",
+        userId = "",
         since = "",
         until = "",
       } = {}) => {
@@ -52,6 +53,7 @@ export const observerAdminApiSlice = apiSlice.injectEndpoints({
         if (level) params.set("level", level);
         if (method) params.set("method", method);
         if (routingMode) params.set("routingMode", routingMode);
+        if (userId) params.set("userId", userId);
         if (archivedFromObserver && archivedFromObserver !== "all") {
           params.set("archivedFromObserver", archivedFromObserver);
         }

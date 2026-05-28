@@ -31,6 +31,7 @@ const DEFAULT_FILTERS = {
   category: "",
   method: "",
   routingMode: "",
+  userId: "",
   archivedFromObserver: "all",
   since: "",
   until: "",
@@ -67,6 +68,20 @@ function statusColor(statusCode) {
   if (numeric >= 300) return "info";
   return "success";
 }
+
+const TABLE_CELL_SX = {
+  py: 1.2,
+  whiteSpace: "normal",
+  wordBreak: "break-word",
+  verticalAlign: "top",
+};
+
+const TABLE_CELL_ELLIPSIS_SX = {
+  width: "100%",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
 
 export default function PrimaryLogsPage() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
@@ -155,6 +170,12 @@ export default function PrimaryLogsPage() {
                     <MenuItem value="false">DB chính trực tiếp</MenuItem>
                     <MenuItem value="true">Sync từ Observer</MenuItem>
                   </TextField>
+                  <TextField
+                    label="User ID"
+                    value={filters.userId}
+                    onChange={handleFilterChange("userId")}
+                    sx={{ minWidth: 250 }}
+                  />
                 </Stack>
 
                 <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
@@ -212,23 +233,26 @@ export default function PrimaryLogsPage() {
           ) : null}
 
           <Card variant="outlined">
-            <TableContainer sx={{ maxHeight: "68vh" }}>
-              <Table stickyHeader size="small">
+            <TableContainer
+              sx={{ maxHeight: "68vh", overflowX: "auto", "& .MuiTableCell-root": TABLE_CELL_SX }}
+            >
+              <Table stickyHeader size="small" sx={{ width: "100%", tableLayout: "fixed" }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Thời gian</TableCell>
-                    <TableCell>Level</TableCell>
-                    <TableCell>Route</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Duration</TableCell>
-                    <TableCell>Routing</TableCell>
-                    <TableCell>Nguồn lưu</TableCell>
+                    <TableCell sx={{ width: "15%" }}>Thời gian</TableCell>
+                    <TableCell sx={{ width: "10%" }}>Level</TableCell>
+                    <TableCell sx={{ width: "10%" }}>User ID</TableCell>
+                    <TableCell sx={{ width: "32%" }}>Route</TableCell>
+                    <TableCell sx={{ width: "7%" }}>Status</TableCell>
+                    <TableCell sx={{ width: "10%" }}>Duration</TableCell>
+                    <TableCell sx={{ width: "14%" }}>Routing</TableCell>
+                    <TableCell sx={{ width: "11%" }}>Nguồn lưu</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {rows.map((row) => (
                     <TableRow key={row.id} hover>
-                      <TableCell sx={{ minWidth: 150 }}>
+                      <TableCell>
                         <Typography variant="body2" fontWeight={700}>
                           {formatDateTime(row.occurredAt)}
                         </Typography>
@@ -239,20 +263,27 @@ export default function PrimaryLogsPage() {
                       <TableCell>
                         <Chip size="small" label={row.level || "-"} color={levelColor(row.level)} />
                       </TableCell>
-                      <TableCell sx={{ minWidth: 320, maxWidth: 520 }}>
-                        <Typography variant="body2" fontWeight={700}>
+                      <TableCell sx={{ maxWidth: 0 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            ...TABLE_CELL_ELLIPSIS_SX,
+                            fontFamily: "monospace",
+                            fontSize: "0.8rem",
+                          }}
+                        >
+                          {row.payload?.userId || "-"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell sx={{ maxWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={700} sx={TABLE_CELL_ELLIPSIS_SX}>
                           {row.method || "-"} {row.path || "-"}
                         </Typography>
                         <Tooltip title={row.url || ""}>
                           <Typography
                             variant="caption"
                             color="text.secondary"
-                            sx={{
-                              display: "block",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
+                            sx={{ ...TABLE_CELL_ELLIPSIS_SX, display: "block" }}
                           >
                             {row.url || row.requestId || "-"}
                           </Typography>
@@ -285,7 +316,7 @@ export default function PrimaryLogsPage() {
                   ))}
                   {!isLoading && rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7}>
+                      <TableCell colSpan={8}>
                         <Typography align="center" color="text.secondary" sx={{ py: 4 }}>
                           Không có log phù hợp.
                         </Typography>
