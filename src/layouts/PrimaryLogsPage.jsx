@@ -83,6 +83,18 @@ const TABLE_CELL_ELLIPSIS_SX = {
   whiteSpace: "nowrap",
 };
 
+function resolveUserId(payload) {
+  return (
+    payload?.userId ||
+    payload?.user?.id ||
+    payload?.user?._id ||
+    payload?.actor?.id ||
+    payload?.actor?.userId ||
+    payload?.actorId ||
+    "-"
+  );
+}
+
 export default function PrimaryLogsPage() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [page, setPage] = useState(0);
@@ -123,8 +135,8 @@ export default function PrimaryLogsPage() {
                 Nhật ký hệ thống
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Tra cứu log đã lưu trong DB chính. Log được offload sang Observer sẽ quay lại đây
-                sau khi đồng bộ ban đêm.
+                Tra cứu log đã lưu trong DB chính. Log đã được sync sang Observer sẽ quay lại đây sau khi
+                đóng băng đêm.
               </Typography>
             </Box>
             <Button
@@ -149,7 +161,7 @@ export default function PrimaryLogsPage() {
                   />
                   <TextField
                     select
-                    label="Level"
+                    label="Mức độ"
                     value={filters.level}
                     onChange={handleFilterChange("level")}
                     sx={{ minWidth: 150 }}
@@ -272,7 +284,7 @@ export default function PrimaryLogsPage() {
                             fontSize: "0.8rem",
                           }}
                         >
-                          {row.payload?.userId || "-"}
+                          {resolveUserId(row.payload)}
                         </Typography>
                       </TableCell>
                       <TableCell sx={{ maxWidth: 0 }}>
