@@ -6,6 +6,16 @@ export const aiGatewayApiSlice = apiSlice.injectEndpoints({
       query: () => ({ url: "/admin/ai-gateway" }),
       providesTags: ["AiGateway"],
     }),
+    getAiGatewayLogs: builder.query({
+      query: ({ limit = 120, afterId } = {}) => ({
+        url: "/admin/ai-gateway/logs",
+        params: {
+          limit,
+          ...(afterId ? { afterId } : {}),
+        },
+      }),
+      providesTags: ["AiGatewayLogs"],
+    }),
     updateAiGatewayConfig: builder.mutation({
       query: (body) => ({
         url: "/admin/ai-gateway",
@@ -28,12 +38,21 @@ export const aiGatewayApiSlice = apiSlice.injectEndpoints({
         body,
       }),
     }),
+    refreshAiGatewayEndpoints: builder.mutation({
+      query: () => ({
+        url: "/admin/ai-gateway/refresh",
+        method: "POST",
+      }),
+      invalidatesTags: ["AiGateway"],
+    }),
   }),
 });
 
 export const {
   useGetAiGatewayConfigQuery,
+  useGetAiGatewayLogsQuery,
   useUpdateAiGatewayConfigMutation,
   useListAiGatewayModelsMutation,
   useTestAiGatewayEndpointMutation,
+  useRefreshAiGatewayEndpointsMutation,
 } = aiGatewayApiSlice;

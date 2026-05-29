@@ -27,7 +27,9 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import {
   useGetAiGatewayConfigQuery,
+  useGetAiGatewayLogsQuery,
   useListAiGatewayModelsMutation,
+  useRefreshAiGatewayEndpointsMutation,
   useTestAiGatewayEndpointMutation,
   useUpdateAiGatewayConfigMutation,
 } from "slices/aiGatewayApiSlice";
@@ -52,6 +54,7 @@ const normalizeConfig = (config = {}) => ({
   enabled: config.enabled !== false,
   strategy: config.strategy === "roundRobin" ? "roundRobin" : "failover",
   timeoutMs: config.timeoutMs ?? 45000,
+  modelsRefreshTtlMs: config.modelsRefreshTtlMs ?? 900000,
   failureCooldownMs: config.failureCooldownMs ?? 60000,
   endpoints: Array.isArray(config.endpoints) ? config.endpoints : [],
   scopes: {
@@ -71,6 +74,15 @@ const newEndpoint = () => ({
   timeoutMs: 45000,
   defaultModel: "",
   notes: "",
+  modelCache: { models: [], updatedAt: null, error: "" },
+  health: {
+    status: "unknown",
+    lastCheckedAt: null,
+    lastOkAt: null,
+    lastError: "",
+    latencyMs: 0,
+    selectedModel: "",
+  },
 });
 
 const pickSuggestedModel = (models = []) => {
@@ -89,11 +101,59 @@ const pickSuggestedModel = (models = []) => {
   return list[0] || "";
 };
 
+const LOG_STATUS_LABEL = {
+  start: "Bắt đầu",
+  attempt: "Thử endpoint",
+  sending: "Đang gửi",
+  ok: "OK",
+  error: "Lỗi",
+  failed_all: "Lỗi tất cả",
+  cache: "Cache",
+};
+
+const logStatusColor = (status) => {
+  if (status === "ok" || status === "cache") return "success";
+  if (status === "error" || status === "failed_all") return "error";
+  if (status === "sending" || status === "attempt") return "info";
+  return "default";
+};
+
+const formatLogTime = (timestamp) => {
+  if (!timestamp) return "-";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleTimeString();
+};
+
+const buildLogDetail = (log = {}) => {
+  const endpoint = log.endpointLabel || log.endpointId || "";
+  const parts = [
+    log.requestId ? `#${log.requestId}` : "",
+    log.scope ? `scope=${log.scope}` : "",
+    log.operation || "",
+    endpoint ? `endpoint=${endpoint}` : "",
+    log.baseUrl || "",
+    log.model ? `model=${log.model}` : "",
+    Number.isFinite(Number(log.latencyMs)) ? `${log.latencyMs}ms` : "",
+    Number.isFinite(Number(log.modelCount)) ? `${log.modelCount} model` : "",
+    log.message || "",
+    log.error ? `lỗi=${log.error}` : "",
+  ];
+  return parts.filter(Boolean).join(" | ");
+};
+
 export default function AiGatewaySettingsPage() {
   const { data, isLoading, isError, refetch } = useGetAiGatewayConfigQuery();
+  const {
+    data: logsData,
+    isFetching: isFetchingLogs,
+    refetch: refetchLogs,
+  } = useGetAiGatewayLogsQuery({ limit: 120 }, { pollingInterval: 2000 });
   const [updateConfig, { isLoading: isSaving }] = useUpdateAiGatewayConfigMutation();
   const [listModels, { isLoading: isLoadingModels }] = useListAiGatewayModelsMutation();
   const [testEndpoint, { isLoading: isTesting }] = useTestAiGatewayEndpointMutation();
+  const [refreshEndpoints, { isLoading: isRefreshingSmart }] =
+    useRefreshAiGatewayEndpointsMutation();
   const [form, setForm] = useState(null);
   const [modelOptions, setModelOptions] = useState({});
 
@@ -103,7 +163,12 @@ export default function AiGatewaySettingsPage() {
       setForm(next);
       const initialOptions = {};
       next.endpoints.forEach((endpoint) => {
-        if (endpoint.defaultModel) initialOptions[endpoint.id] = [endpoint.defaultModel];
+        const cachedModels = Array.isArray(endpoint.modelCache?.models)
+          ? endpoint.modelCache.models
+          : [];
+        initialOptions[endpoint.id] = endpoint.defaultModel
+          ? [...new Set([endpoint.defaultModel, ...cachedModels])]
+          : cachedModels;
       });
       setModelOptions(initialOptions);
     }
@@ -116,6 +181,7 @@ export default function AiGatewaySettingsPage() {
     });
     return map;
   }, [form?.endpoints]);
+  const aiLogs = logsData?.logs || [];
 
   const updateRoot = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -173,8 +239,10 @@ export default function AiGatewaySettingsPage() {
       }).unwrap();
       const models = result.models || [];
       setModelOptions((prev) => ({ ...prev, [endpoint.id]: models }));
-      if (!endpoint.defaultModel && models.length) {
-        updateEndpoint(endpoint.id, { defaultModel: pickSuggestedModel(models) });
+      if (!endpoint.defaultModel && (result.selectedModel || models.length)) {
+        updateEndpoint(endpoint.id, {
+          defaultModel: result.selectedModel || pickSuggestedModel(models),
+        });
       }
       toast.success(`Đã tải ${models.length} model.`);
     } catch (error) {
@@ -193,6 +261,17 @@ export default function AiGatewaySettingsPage() {
       toast.success(`Endpoint hoạt động: ${result.modelCount || 0} model, ${result.latencyMs}ms.`);
     } catch (error) {
       toast.error(error?.data?.message || error?.error || "Endpoint đang lỗi.");
+    }
+  };
+
+  const handleRefreshSmart = async () => {
+    try {
+      const result = await refreshEndpoints().unwrap();
+      const okCount = (result.results || []).filter((item) => item.ok).length;
+      toast.success(`Đã refresh ${okCount}/${result.total || 0} endpoint.`);
+      refetch();
+    } catch (error) {
+      toast.error(error?.data?.message || error?.error || "Không refresh được AI Gateway.");
     }
   };
 
@@ -256,6 +335,14 @@ export default function AiGatewaySettingsPage() {
                   Tải lại
                 </Button>
                 <Button
+                  variant="outlined"
+                  onClick={handleRefreshSmart}
+                  disabled={isRefreshingSmart}
+                  startIcon={isRefreshingSmart ? <CircularProgress size={18} /> : <ScienceIcon />}
+                >
+                  {isRefreshingSmart ? "Đang refresh..." : "Refresh thông minh"}
+                </Button>
+                <Button
                   variant="contained"
                   onClick={handleSave}
                   disabled={isSaving}
@@ -314,6 +401,13 @@ export default function AiGatewaySettingsPage() {
                   onChange={(event) => updateRoot("failureCooldownMs", Number(event.target.value))}
                   fullWidth
                 />
+                <TextField
+                  label="Refresh model cache (ms)"
+                  type="number"
+                  value={form.modelsRefreshTtlMs}
+                  onChange={(event) => updateRoot("modelsRefreshTtlMs", Number(event.target.value))}
+                  fullWidth
+                />
               </Stack>
             </Stack>
           </Paper>
@@ -352,6 +446,17 @@ export default function AiGatewaySettingsPage() {
                         <Typography fontWeight={700}>Endpoint #{index + 1}</Typography>
                         <Stack direction="row" spacing={0.5} alignItems="center">
                           {endpoint.apiKeySet ? <Chip size="small" label="Đã lưu key" /> : null}
+                          <Chip
+                            size="small"
+                            color={endpoint.health?.status === "ok" ? "success" : endpoint.health?.status === "error" ? "error" : "default"}
+                            label={
+                              endpoint.health?.status === "ok"
+                                ? `OK ${endpoint.health?.latencyMs || 0}ms`
+                                : endpoint.health?.status === "error"
+                                  ? "Lỗi"
+                                  : "Chưa kiểm tra"
+                            }
+                          />
                           <Switch
                             checked={endpoint.enabled !== false}
                             onChange={(event) =>
@@ -458,6 +563,19 @@ export default function AiGatewaySettingsPage() {
                           Test
                         </Button>
                       </Stack>
+
+                      <Alert
+                        severity={endpoint.health?.status === "error" ? "warning" : "info"}
+                      >
+                        Models cache: {endpoint.modelCache?.models?.length || 0} model
+                        {endpoint.modelCache?.updatedAt
+                          ? `, cập nhật ${new Date(endpoint.modelCache.updatedAt).toLocaleString()}`
+                          : ""}
+                        {endpoint.health?.selectedModel
+                          ? `, runtime chọn ${endpoint.health.selectedModel}`
+                          : ""}
+                        {endpoint.health?.lastError ? `, lỗi: ${endpoint.health.lastError}` : ""}
+                      </Alert>
                     </Stack>
                   </Paper>
                 );
@@ -533,7 +651,7 @@ export default function AiGatewaySettingsPage() {
                           onChange={(event) =>
                             updateScope(scopeMeta.key, { model: event.target.value })
                           }
-                          helperText="Không chọn để dùng model mặc định của endpoint."
+                          helperText="Không chọn để runtime tự chọn. Nếu override không có trên endpoint, hệ thống tự dùng model phù hợp khác."
                           fullWidth
                         >
                           <MenuItem value="">Tự động theo endpoint</MenuItem>
@@ -591,6 +709,87 @@ export default function AiGatewaySettingsPage() {
                 </Stack>
               ) : (
                 <Alert severity="info">Chưa có dữ liệu health trong runtime hiện tại.</Alert>
+              )}
+            </Stack>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Stack spacing={2}>
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                justifyContent="space-between"
+                alignItems={{ xs: "stretch", md: "center" }}
+                spacing={1.5}
+              >
+                <Box>
+                  <Typography variant="h6" fontWeight={700}>
+                    Log realtime AI requests
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Theo dõi các request đang đi qua AI Gateway và endpoint được chọn.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip
+                    size="small"
+                    color={isFetchingLogs ? "info" : "default"}
+                    label={isFetchingLogs ? "Đang cập nhật" : "Tự cập nhật"}
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={refetchLogs}
+                    startIcon={<RefreshIcon />}
+                    size="small"
+                  >
+                    Tải log
+                  </Button>
+                </Stack>
+              </Stack>
+              <Divider />
+
+              {aiLogs.length ? (
+                <Box
+                  sx={{
+                    maxHeight: 360,
+                    overflow: "auto",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 1,
+                  }}
+                >
+                  <Stack divider={<Divider />}>
+                    {aiLogs.map((log) => (
+                      <Box key={log.id} sx={{ p: 1.25 }}>
+                        <Stack
+                          direction={{ xs: "column", md: "row" }}
+                          spacing={1}
+                          alignItems={{ xs: "flex-start", md: "center" }}
+                        >
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ fontFamily: "monospace", minWidth: 96 }}
+                          >
+                            {formatLogTime(log.timestamp)}
+                          </Typography>
+                          <Chip
+                            size="small"
+                            color={logStatusColor(log.status)}
+                            label={LOG_STATUS_LABEL[log.status] || log.status || "Log"}
+                          />
+                          <Typography
+                            variant="body2"
+                            sx={{ fontFamily: "monospace", overflowWrap: "anywhere" }}
+                          >
+                            {buildLogDetail(log)}
+                          </Typography>
+                        </Stack>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+              ) : (
+                <Alert severity="info">Chưa có request AI nào trong runtime hiện tại.</Alert>
               )}
             </Stack>
           </Paper>
