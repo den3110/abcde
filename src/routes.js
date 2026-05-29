@@ -50,6 +50,7 @@ import PushRealtimePage from "layouts/Notifications/PushRealtime";
 import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
+import AiGatewaySettingsPage from "layouts/AiGatewaySettingsPage";
 import FilesManager from "layouts/FilesManager";
 import AdminMonitorPage from "layouts/AdminMonitorPage";
 import AdminSponsorsPage from "layouts/AdminSponsorsPage";
@@ -714,6 +715,18 @@ const routes = [
     icon: <Icon fontSize="small">settings</Icon>,
     route: "/admin/settings",
     component: <SystemSettingsPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Cấu hình AI Gateway",
+    key: "ai-gateway-settings",
+    icon: <Icon fontSize="small">hub</Icon>,
+    route: "/admin/ai-gateway",
+    component: <AiGatewaySettingsPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,
