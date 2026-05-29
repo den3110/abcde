@@ -20,7 +20,10 @@ import {
   LinearProgress,
   Card as MuiCard,
 } from "@mui/material";
-import { AccountTree as AccountTreeIcon } from "@mui/icons-material";
+import {
+  AccountTree as AccountTreeIcon,
+  AutoStories as AutoStoriesIcon,
+} from "@mui/icons-material";
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
@@ -128,6 +131,10 @@ export default function TournamentsListPage() {
     (id) => navigate(`/admin/ai-registration-import?t=${encodeURIComponent(id)}`),
     [navigate]
   );
+  const goBracketStory = useCallback(
+    (id) => navigate(`/admin/tournaments/${id}/bracket-story`),
+    [navigate]
+  );
 
   /* ---------------- Memo hóa columns / rows / tableData ---------------- */
   const columns = useMemo(
@@ -213,6 +220,11 @@ export default function TournamentsListPage() {
                 <SmartToyIcon fontSize="small" />
               </IconButton>
             </Tooltip>
+            <Tooltip title="AI Bracket Story">
+              <IconButton size="small" color="warning" onClick={() => goBracketStory(t._id)}>
+                <AutoStoriesIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="Sửa">
               <IconButton size="small" onClick={() => goEdit(t._id)}>
                 <EditIcon fontSize="small" />
@@ -236,6 +248,7 @@ export default function TournamentsListPage() {
       goCourts,
       goMatches,
       goAiImport,
+      goBracketStory,
       goEdit,
       handleDelete,
     ]

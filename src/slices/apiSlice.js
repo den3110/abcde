@@ -83,6 +83,7 @@ export const apiSlice = createApi({
     "AuthLog",
     "IdentitySecurity",
     "IdentitySecuritySettings",
+    "BracketStory",
     "News",
   ],
   endpoints: () => ({}),

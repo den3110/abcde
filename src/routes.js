@@ -35,6 +35,7 @@ import AdminRefereeMatches from "layouts/tournament/referee/AdminRefereeMatches"
 import TournamentBlueprintPage from "layouts/tournament/TournamentBlueprintPage";
 import AutoRegistrationsPage from "layouts/tournament/AutoRegistrationsPage";
 import AiRegistrationImportPage from "layouts/tournament/AiRegistrationImportPage";
+import BracketStoryPage from "layouts/tournament/BracketStoryPage";
 import AdminOverlayPage from "layouts/tournament/OverlayTab";
 import GlobalMatchViewerPage from "layouts/match/GlobalMatchViewerPage";
 import AdminMatchDetailPage from "layouts/match/AdminMatchDetailPage";
@@ -387,6 +388,16 @@ const routes = [
     key: "tournament-bracket-view",
     route: "/admin/tournaments/:id/bracket",
     component: <TournamentBracketView />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "AI Bracket Story",
+    key: "tournament-bracket-story",
+    route: "/admin/tournaments/:id/bracket-story",
+    component: <BracketStoryPage />,
     private: true,
     roles: ["admin"],
   },
