@@ -87,6 +87,8 @@ export const apiSlice = createApi({
     "AiGateway",
     "AiGatewayLogs",
     "News",
+    "VenueAdmin",
+    "BookingAdmin",
   ],
   endpoints: () => ({}),
 });

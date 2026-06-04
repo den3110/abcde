@@ -1,5 +1,8 @@
 // src/routes.js — UPDATED: add AdminLiveSessionsPage route
 import Dashboard from "layouts/dashboard";
+import VenueListPage from "layouts/venue/VenueListPage";
+import VenueDetailPage from "layouts/venue/VenueDetailPage";
+import BookingListPage from "layouts/booking/BookingListPage";
 import Tables from "layouts/tables";
 import Billing from "layouts/billing";
 import RTL from "layouts/rtl";
@@ -96,6 +99,40 @@ const routes = [
     component: <Dashboard />,
     roles: ["admin"],
     private: true,
+  },
+
+  // 🆕 Quản lý sân (đặt sân)
+  {
+    type: "collapse",
+    name: "Quản lý sân",
+    key: "venue-management",
+    icon: <Icon fontSize="small">stadium</Icon>,
+    route: "/admin/venues",
+    component: <VenueListPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Chi tiết cụm sân",
+    key: "venue-detail",
+    route: "/admin/venues/:id",
+    component: <VenueDetailPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Quản lý đặt sân",
+    key: "booking-management",
+    icon: <Icon fontSize="small">event_available</Icon>,
+    route: "/admin/bookings",
+    component: <BookingListPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
   },
 
   // 🆕 Nhà tài trợ (Admin)
