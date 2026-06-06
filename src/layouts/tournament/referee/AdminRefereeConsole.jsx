@@ -523,6 +523,8 @@ export default function AdminRefereeConsole() {
   const [earlyOpen, setEarlyOpen] = useState(false);
   const [earlyWinner, setEarlyWinner] = useState("A");
   const [useCurrentScore, setUseCurrentScore] = useState(false);
+  const [scoreActionBusy, setScoreActionBusy] = useState(false);
+  const scoreActionBusyRef = useRef(false);
 
   // join room & realtime
   useEffect(() => {
@@ -640,9 +642,13 @@ export default function AdminRefereeConsole() {
 
   const inc = async (side) => {
     if (!match || match.status !== "live") return;
+    if (scoreActionBusyRef.current) return;
+
+    scoreActionBusyRef.current = true;
+    setScoreActionBusy(true);
     try {
       await incPoint({ matchId: match._id, side, delta: +1, autoNext: autoNextGame }).unwrap();
-      socket?.emit("score:inc", { matchId: match._id, side, delta: +1, autoNext: autoNextGame });
+      await refetchDetail();
       if (side === "A") {
         setFlashA(true);
         setTimeout(() => setFlashA(false), 750);
@@ -652,16 +658,26 @@ export default function AdminRefereeConsole() {
       }
     } catch (e) {
       showSnack("error", e?.data?.message || e?.error || "Không thể cộng điểm");
+    } finally {
+      scoreActionBusyRef.current = false;
+      setScoreActionBusy(false);
     }
   };
 
   const dec = async (side) => {
     if (!match || match.status === "finished") return;
+    if (scoreActionBusyRef.current) return;
+
+    scoreActionBusyRef.current = true;
+    setScoreActionBusy(true);
     try {
       await incPoint({ matchId: match._id, side, delta: -1, autoNext: autoNextGame }).unwrap();
-      socket?.emit("score:inc", { matchId: match._id, side, delta: -1, autoNext: autoNextGame });
+      await refetchDetail();
     } catch (e) {
       showSnack("error", e?.data?.message || e?.error || "Không thể trừ điểm");
+    } finally {
+      scoreActionBusyRef.current = false;
+      setScoreActionBusy(false);
     }
   };
 
@@ -778,6 +794,7 @@ export default function AdminRefereeConsole() {
     const onKey = (e) => {
       if (isEditableTarget(e.target) || earlyOpen) return;
       if (!match) return;
+      if (e.repeat) return;
       const k = e.key.toLowerCase();
       if (["a", "z", "k", "m", " "].includes(k)) e.preventDefault();
       if (k === "a") inc("A");
@@ -982,7 +999,7 @@ export default function AdminRefereeConsole() {
                   >
                     <IconButton
                       onClick={() => dec("A")}
-                      disabled={match.status === "finished"}
+                      disabled={scoreActionBusy || match.status === "finished"}
                       size="large"
                     >
                       <Remove fontSize="inherit" />
@@ -1002,7 +1019,7 @@ export default function AdminRefereeConsole() {
                     </Typography>
                     <IconButton
                       onClick={() => inc("A")}
-                      disabled={match.status !== "live" || matchPointReached || gameDone}
+                      disabled={scoreActionBusy || match.status !== "live" || matchPointReached || gameDone}
                       size="large"
                     >
                       <Add fontSize="inherit" />
@@ -1080,7 +1097,7 @@ export default function AdminRefereeConsole() {
                   >
                     <IconButton
                       onClick={() => dec("B")}
-                      disabled={match.status === "finished"}
+                      disabled={scoreActionBusy || match.status === "finished"}
                       size="large"
                     >
                       <Remove fontSize="inherit" />
@@ -1100,7 +1117,7 @@ export default function AdminRefereeConsole() {
                     </Typography>
                     <IconButton
                       onClick={() => inc("B")}
-                      disabled={match.status !== "live" || matchPointReached || gameDone}
+                      disabled={scoreActionBusy || match.status !== "live" || matchPointReached || gameDone}
                       size="large"
                     >
                       <Add fontSize="inherit" />

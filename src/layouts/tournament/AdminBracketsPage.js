@@ -493,6 +493,10 @@ export default function AdminBracketsPage() {
   const [selBracket, setSelBracket] = useState("");
   const [pairA, setPairA] = useState("");
   const [pairB, setPairB] = useState("");
+  const [seedTypeA, setSeedTypeA] = useState("registration");
+  const [seedTypeB, setSeedTypeB] = useState("registration");
+  const [seedMatchA, setSeedMatchA] = useState("");
+  const [seedMatchB, setSeedMatchB] = useState("");
   const [rules, setRules] = useState({
     bestOf: 3,
     pointsToWin: 11,
@@ -515,6 +519,10 @@ export default function AdminBracketsPage() {
   const [emOrder, setEmOrder] = useState(0);
   const [emPairA, setEmPairA] = useState("");
   const [emPairB, setEmPairB] = useState("");
+  const [emSeedTypeA, setEmSeedTypeA] = useState("registration");
+  const [emSeedTypeB, setEmSeedTypeB] = useState("registration");
+  const [emSeedMatchA, setEmSeedMatchA] = useState("");
+  const [emSeedMatchB, setEmSeedMatchB] = useState("");
   const [emRules, setEmRules] = useState({ bestOf: 1, pointsToWin: 11, winByTwo: true });
   const [emStatus, setEmStatus] = useState("scheduled");
   const [emWinner, setEmWinner] = useState("");
@@ -711,6 +719,217 @@ export default function AdminBracketsPage() {
 
     return { byId, byBracketRoundOrder, byStageRoundOrder };
   }, [matches]);
+
+  const bracketLookup = useMemo(() => {
+    const map = new Map();
+    (brackets || []).forEach((br) => map.set(idOf(br._id), br));
+    return map;
+  }, [brackets]);
+
+  const seedSourceOptionsFor = (targetBracketId, targetRound, currentMatchId = "") => {
+    const targetBid = idOf(targetBracketId);
+    const targetBr = bracketLookup.get(targetBid);
+    const targetStage = Number(targetBr?.stage || 0);
+    const roundNo = Math.max(1, Number(targetRound) || 1);
+    return (matches || [])
+      .filter((m) => {
+        const mid = idOf(m?._id);
+        if (!mid || mid === idOf(currentMatchId)) return false;
+        const sourceBid = idOf(m?.bracket?._id || m?.bracket);
+        if (!sourceBid) return false;
+        if (sourceBid === targetBid) return Number(m?.round || 1) < roundNo;
+        const sourceBr = bracketLookup.get(sourceBid) || m?.bracket || {};
+        const sourceStage = Number(sourceBr?.stage || 0);
+        if (targetStage && sourceStage) return sourceStage <= targetStage;
+        return true;
+      })
+      .sort((a, b) => {
+        const aBr = bracketLookup.get(idOf(a?.bracket?._id || a?.bracket)) || a?.bracket || {};
+        const bBr = bracketLookup.get(idOf(b?.bracket?._id || b?.bracket)) || b?.bracket || {};
+        return (
+          Number(aBr?.stage || 0) - Number(bBr?.stage || 0) ||
+          Number(a?.round || 1) - Number(b?.round || 1) ||
+          Number(a?.order || 0) - Number(b?.order || 0)
+        );
+      });
+  };
+
+  const sourceMatchLabel = (match) => {
+    if (!match) return "";
+    const sourceBr = bracketLookup.get(idOf(match?.bracket?._id || match?.bracket)) || match?.bracket || {};
+    const code = getMatchCode(match, sourceBr?.type);
+    const bracketName = sourceBr?.name || "Bracket";
+    return `${bracketName} • ${code || `V${match.round || 1}-T${Number(match.order || 0) + 1}`}`;
+  };
+
+  const seedStateFromMatchSide = (mt, side) => {
+    const seed = side === "A" ? mt?.seedA : mt?.seedB;
+    const pair = side === "A" ? mt?.pairA : mt?.pairB;
+    const previous = side === "A" ? mt?.previousA : mt?.previousB;
+
+    if (seed?.type === "bye") {
+      return { type: "bye", registration: "", matchId: "" };
+    }
+    if (seed?.type === "stageMatchWinner" || seed?.type === "stageMatchLoser") {
+      const source = findSourceMatchFromSeed(mt, seed);
+      return {
+        type: seed.type,
+        registration: "",
+        matchId: idOf(seed?.ref?.matchId || source?._id),
+      };
+    }
+    if (previous) {
+      return { type: "stageMatchWinner", registration: "", matchId: idOf(previous) };
+    }
+    if (pair) {
+      return { type: "registration", registration: idOf(pair?._id || pair), matchId: "" };
+    }
+    if (seed?.type === "registration") {
+      return {
+        type: "registration",
+        registration: idOf(seed?.ref?.registration || seed?.ref?.reg),
+        matchId: "",
+      };
+    }
+    return { type: "empty", registration: "", matchId: "" };
+  };
+
+  const buildSeedPayload = (type, registrationId, matchId) => {
+    if (type === "empty") return null;
+    if (type === "bye") return { type: "bye", label: "BYE", ref: null };
+    if (type === "registration") {
+      if (!registrationId) return null;
+      return { type: "registration", ref: { registration: registrationId } };
+    }
+    if (type === "stageMatchWinner" || type === "stageMatchLoser") {
+      const source = matchLookup.byId.get(idOf(matchId));
+      if (!source) return null;
+      const sourceBr = bracketLookup.get(idOf(source?.bracket?._id || source?.bracket)) || {};
+      const prefix = type === "stageMatchWinner" ? "W" : "L";
+      const code = getMatchCode(source, sourceBr?.type);
+      return {
+        type,
+        ref: {
+          matchId: source._id,
+          stageIndex: Number(sourceBr?.stage || source?.bracket?.stage || 1),
+          round: Number(source.round || 1),
+          order: Number(source.order || 0),
+        },
+        label: `${prefix}-${code || `V${source.round || 1}-T${Number(source.order || 0) + 1}`}`,
+      };
+    }
+    return null;
+  };
+
+  const hasValidSeedSource = (type, registrationId, matchId) => {
+    if (type === "empty") return true;
+    if (type === "bye") return true;
+    if (type === "registration") return !!registrationId;
+    return !!matchId;
+  };
+
+  const renderSeedSourceFields = ({
+    sideLabel,
+    type,
+    setType,
+    registrationId,
+    setRegistrationId,
+    matchId,
+    setMatchId,
+    targetBracketId,
+    targetRound,
+    currentMatchId = "",
+  }) => {
+    const sourceOptions = seedSourceOptionsFor(targetBracketId, targetRound, currentMatchId);
+    return (
+      <Box sx={{ p: 1.5, border: "1px solid #eee", borderRadius: 1 }}>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+          {sideLabel}
+        </Typography>
+        <Grid container spacing={1.5}>
+          <Grid item xs={12} sm={5}>
+            <TextField
+              select
+              fullWidth
+              label="Nguồn slot"
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value);
+                if (e.target.value !== "registration") setRegistrationId("");
+                if (!["stageMatchWinner", "stageMatchLoser"].includes(e.target.value)) {
+                  setMatchId("");
+                }
+              }}
+              sx={{
+                "& .MuiInputBase-root": { minHeight: 56 },
+                "& .MuiSelect-select": { py: 2 },
+              }}
+            >
+              <MenuItem value="registration">{isSingles ? "VĐV cụ thể" : "Đội cụ thể"}</MenuItem>
+              <MenuItem value="stageMatchWinner">W - thắng trận</MenuItem>
+              <MenuItem value="stageMatchLoser">L - thua trận</MenuItem>
+              <MenuItem value="bye">BYE</MenuItem>
+              <MenuItem value="empty">Để trống</MenuItem>
+            </TextField>
+          </Grid>
+          <Grid item xs={12} sm={7}>
+            {type === "registration" ? (
+              <TextField
+                select
+                fullWidth
+                label={isSingles ? "Chọn VĐV" : "Chọn đội"}
+                value={registrationId}
+                onChange={(e) => setRegistrationId(e.target.value)}
+                sx={{
+                  "& .MuiInputBase-root": { minHeight: 56 },
+                  "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
+                }}
+              >
+                <MenuItem value="">
+                  <em>Chưa chọn</em>
+                </MenuItem>
+                {registrations.map((r) => (
+                  <MenuItem key={r._id} value={r._id}>
+                    {regName(r, evType, displayMode)}
+                  </MenuItem>
+                ))}
+              </TextField>
+            ) : ["stageMatchWinner", "stageMatchLoser"].includes(type) ? (
+              <TextField
+                select
+                fullWidth
+                label="Trận nguồn"
+                value={matchId}
+                onChange={(e) => setMatchId(e.target.value)}
+                sx={{
+                  "& .MuiInputBase-root": { minHeight: 56 },
+                  "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
+                }}
+                helperText={
+                  sourceOptions.length
+                    ? "Chọn trận nguồn để lấy W/L"
+                    : "Chưa có trận nguồn hợp lệ"
+                }
+              >
+                <MenuItem value="">
+                  <em>Chưa chọn</em>
+                </MenuItem>
+                {sourceOptions.map((m) => (
+                  <MenuItem key={m._id} value={m._id}>
+                    {sourceMatchLabel(m)}
+                  </MenuItem>
+                ))}
+              </TextField>
+            ) : (
+              <Alert severity={type === "bye" ? "info" : "warning"} sx={{ py: 0.75 }}>
+                {type === "bye" ? "Slot này sẽ là BYE." : "Slot này sẽ để trống."}
+              </Alert>
+            )}
+          </Grid>
+        </Grid>
+      </Box>
+    );
+  };
 
   const findSourceMatchFromSeed = (mt, seed) => {
     if (!seed) return null;
@@ -1091,7 +1310,13 @@ export default function AdminBracketsPage() {
             for (let i = 0; i < matchesToCreate; i++) {
               await createMatch({
                 bracketId: created._id,
-                body: { round: 1, order: i, rules: { bestOf: 3, pointsToWin: 11, winByTwo: true } },
+                body: {
+                  round: 1,
+                  order: i,
+                  seedA: null,
+                  seedB: null,
+                  rules: { bestOf: 3, pointsToWin: 11, winByTwo: true },
+                },
               }).unwrap();
               ok++;
             }
@@ -1117,7 +1342,13 @@ export default function AdminBracketsPage() {
           for (let i = 0; i < matchesToCreate; i++) {
             await createMatch({
               bracketId: created._id,
-              body: { round: 1, order: i, rules: { bestOf: 3, pointsToWin: 11, winByTwo: true } },
+              body: {
+                round: 1,
+                order: i,
+                seedA: null,
+                seedB: null,
+                rules: { bestOf: 3, pointsToWin: 11, winByTwo: true },
+              },
             }).unwrap();
             ok++;
           }
@@ -1230,6 +1461,10 @@ export default function AdminBracketsPage() {
     setSelBracket(br._id);
     setPairA("");
     setPairB("");
+    setSeedTypeA("registration");
+    setSeedTypeB("registration");
+    setSeedMatchA("");
+    setSeedMatchB("");
     setRules({
       bestOf: 3,
       pointsToWin: 11,
@@ -1251,7 +1486,14 @@ export default function AdminBracketsPage() {
   const createNRD = !!(selBracketObj?.noRankDelta || tournament?.noRankDelta); // ⭐ NEW
 
   const handleCreateMatch = async () => {
-    if (!pairA || !pairB || pairA === pairB) {
+    const seedPayloadA = buildSeedPayload(seedTypeA, pairA, seedMatchA);
+    const seedPayloadB = buildSeedPayload(seedTypeB, pairB, seedMatchB);
+    const validA = hasValidSeedSource(seedTypeA, pairA, seedMatchA);
+    const validB = hasValidSeedSource(seedTypeB, pairB, seedMatchB);
+    if (!validA || !validB) {
+      return showSnack("error", "Phải chọn nguồn hợp lệ cho cả hai slot");
+    }
+    if (seedTypeA === "registration" && seedTypeB === "registration" && pairA === pairB) {
       return showSnack("error", "Phải chọn 2 đội khác nhau");
     }
     try {
@@ -1260,8 +1502,8 @@ export default function AdminBracketsPage() {
         body: {
           round: newRound,
           order: newOrder,
-          pairA,
-          pairB,
+          seedA: seedPayloadA,
+          seedB: seedPayloadB,
           rules: {
             bestOf: Number(rules.bestOf),
             pointsToWin: Number(rules.pointsToWin),
@@ -1285,6 +1527,47 @@ export default function AdminBracketsPage() {
   };
 
   // ======== “Tạo vòng sau (chọn đội)” — thủ công ========
+  const getRoundElimDrawSize = (br) =>
+    Number(
+      br?.config?.roundElim?.drawSize ||
+        br?.config?.blueprint?.drawSize ||
+        br?.meta?.drawSize ||
+        0
+    );
+
+  const appendRoundElimRound = async (br) => {
+    const bid = idOf(br?._id);
+    if (!bid) return;
+
+    const drawSize = getRoundElimDrawSize(br) || ceilPow2(Math.max(2, paidCount || regsCount || 2));
+    const maxCut = Math.max(1, toRounds(drawSize) - 1);
+    const list = grouped[bid] || [];
+    const currentMaxRound = list.length ? Math.max(...list.map((m) => Number(m.round || 1))) : 0;
+    const nextCut = Math.min(maxCut, Math.max(1, currentMaxRound + 1));
+
+    if (currentMaxRound >= maxCut) {
+      showSnack("info", "Playoff đã đủ số vòng theo quy mô hiện tại.");
+      return;
+    }
+
+    try {
+      const res = await buildRoundElimSkeleton({
+        bracketId: bid,
+        body: { drawSize, cutRounds: nextCut, append: true },
+      }).unwrap();
+      showSnack(
+        "success",
+        res?.created
+          ? `Đã thêm ${res.created} trận playoff đến vòng ${nextCut}`
+          : "Không có trận playoff mới cần thêm"
+      );
+      await refetchMatches();
+      await refetchBrackets();
+    } catch (e) {
+      showSnack("error", e?.data?.message || e.error);
+    }
+  };
+
   const openNextRoundDialog = (br) => {
     try {
       const list = grouped[idOf(br._id)] || [];
@@ -1386,8 +1669,14 @@ export default function AdminBracketsPage() {
     setEmBracketId(mt.bracket?._id || mt.bracket);
     setEmRound(mt.round ?? 1);
     setEmOrder(mt.order ?? 0);
-    setEmPairA(mt.pairA?._id || "");
-    setEmPairB(mt.pairB?._id || "");
+    const seedAState = seedStateFromMatchSide(mt, "A");
+    const seedBState = seedStateFromMatchSide(mt, "B");
+    setEmSeedTypeA(seedAState.type);
+    setEmSeedTypeB(seedBState.type);
+    setEmPairA(seedAState.registration);
+    setEmPairB(seedBState.registration);
+    setEmSeedMatchA(seedAState.matchId);
+    setEmSeedMatchB(seedBState.matchId);
     setEmRules({
       bestOf: mt.rules?.bestOf ?? 3,
       pointsToWin: mt.rules?.pointsToWin ?? 11,
@@ -1439,12 +1728,23 @@ export default function AdminBracketsPage() {
       String(curCapMode) !== String(origCapMode) ||
       normCapPoints(curCapPoints) !== normCapPoints(origCapPoints);
 
+    const originalSeedA = seedStateFromMatchSide(editingMatch, "A");
+    const originalSeedB = seedStateFromMatchSide(editingMatch, "B");
+    const seedAEqual =
+      String(emSeedTypeA) === String(originalSeedA.type) &&
+      String(emPairA || "") === String(originalSeedA.registration || "") &&
+      String(emSeedMatchA || "") === String(originalSeedA.matchId || "");
+    const seedBEqual =
+      String(emSeedTypeB) === String(originalSeedB.type) &&
+      String(emPairB || "") === String(originalSeedB.registration || "") &&
+      String(emSeedMatchB || "") === String(originalSeedB.matchId || "");
+
     // Các trường còn lại giữ nguyên?
     const othersEqual =
       Number(emRound) === Number(editingMatch?.round ?? 1) &&
       Number(emOrder) === Number(editingMatch?.order ?? 0) &&
-      (emPairA || "") === String(editingMatch?.pairA?._id || "") &&
-      (emPairB || "") === String(editingMatch?.pairB?._id || "") &&
+      seedAEqual &&
+      seedBEqual &&
       Number(emRules?.bestOf ?? 3) === Number(editingMatch?.rules?.bestOf ?? 3) &&
       Number(emRules?.pointsToWin ?? 11) === Number(editingMatch?.rules?.pointsToWin ?? 11) &&
       Boolean(emRules?.winByTwo ?? true) === Boolean(editingMatch?.rules?.winByTwo ?? true) &&
@@ -1472,9 +1772,16 @@ export default function AdminBracketsPage() {
     const capOnly = capChanged && othersEqual;
 
     // === 2) Chỉ chặn khi KHÔNG phải cap-only ===
-    const pairsInvalid = !emPairA || !emPairB || emPairA === emPairB;
+    const slotAInvalid = !hasValidSeedSource(emSeedTypeA, emPairA, emSeedMatchA);
+    const slotBInvalid = !hasValidSeedSource(emSeedTypeB, emPairB, emSeedMatchB);
+    const sameRegistration =
+      emSeedTypeA === "registration" && emSeedTypeB === "registration" && emPairA === emPairB;
+    const pairsInvalid = slotAInvalid || slotBInvalid || sameRegistration;
     if (pairsInvalid && !capOnly) {
-      return showSnack("error", "Phải chọn 2 đội khác nhau");
+      return showSnack(
+        "error",
+        sameRegistration ? "Phải chọn 2 đội khác nhau" : "Phải chọn nguồn hợp lệ cho cả hai slot"
+      );
     }
 
     try {
@@ -1498,10 +1805,9 @@ export default function AdminBracketsPage() {
         video: sanitizeVideoUrl(emVideo) || "",
       };
 
-      // Với cap-only & cặp đang trống/trùng → KHÔNG gửi pairA/pairB (tránh ghi đè prevA/B)
       if (!(capOnly && pairsInvalid)) {
-        body.pairA = emPairA;
-        body.pairB = emPairB;
+        body.seedA = buildSeedPayload(emSeedTypeA, emPairA, emSeedMatchA);
+        body.seedB = buildSeedPayload(emSeedTypeB, emPairB, emSeedMatchB);
       }
 
       await updateMatch({ matchId: emId, body }).unwrap();
@@ -1819,7 +2125,7 @@ export default function AdminBracketsPage() {
                                 size="small"
                                 disabled={buildingSkeleton}
                                 onClick={stop(async () => {
-                                  const drawSize = Number(br?.meta?.drawSize) || 0;
+                                  const drawSize = getRoundElimDrawSize(br);
                                   const maxCut = Math.max(1, toRounds(drawSize) - 1);
                                   const k = Math.min(1, maxCut) || 1;
                                   if (!drawSize || !maxCut) {
@@ -1847,8 +2153,15 @@ export default function AdminBracketsPage() {
                           </Tooltip>
                         )}
 
-                        <Button size="small" onClick={stop(() => openNextRoundDialog(br))}>
-                          Tạo vòng sau
+                        <Button
+                          size="small"
+                          onClick={stop(() =>
+                            br.type === "roundElim"
+                              ? appendRoundElimRound(br)
+                              : openNextRoundDialog(br)
+                          )}
+                        >
+                          {br.type === "roundElim" ? "Thêm vòng PO" : "Tạo vòng sau"}
                         </Button>
 
                         <Button
@@ -2830,49 +3143,29 @@ export default function AdminBracketsPage() {
               />
             </Stack>
 
-            <TextField
-              select
-              label={isSingles ? "Chọn VĐV A" : "Chọn Đội A"}
-              fullWidth
-              value={pairA}
-              onChange={(e) => setPairA(e.target.value)}
-              sx={{
-                mt: 1,
-                "& .MuiInputBase-root": { minHeight: 56 },
-                "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
-              }}
-            >
-              <MenuItem value="">
-                <em>Chưa chọn</em>
-              </MenuItem>
-              {registrations.map((r) => (
-                <MenuItem key={r._id} value={r._id}>
-                  {regName(r, evType, displayMode)}
-                </MenuItem>
-              ))}
-            </TextField>
+            {renderSeedSourceFields({
+              sideLabel: isSingles ? "Slot A" : "Đội A",
+              type: seedTypeA,
+              setType: setSeedTypeA,
+              registrationId: pairA,
+              setRegistrationId: setPairA,
+              matchId: seedMatchA,
+              setMatchId: setSeedMatchA,
+              targetBracketId: selBracket,
+              targetRound: newRound,
+            })}
 
-            <TextField
-              select
-              label={isSingles ? "Chọn VĐV B" : "Chọn Đội B"}
-              fullWidth
-              value={pairB}
-              onChange={(e) => setPairB(e.target.value)}
-              sx={{
-                mt: 1,
-                "& .MuiInputBase-root": { minHeight: 56 },
-                "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
-              }}
-            >
-              <MenuItem value="">
-                <em>Chưa chọn</em>
-              </MenuItem>
-              {registrations.map((r) => (
-                <MenuItem key={r._id} value={r._id}>
-                  {regName(r, evType, displayMode)}
-                </MenuItem>
-              ))}
-            </TextField>
+            {renderSeedSourceFields({
+              sideLabel: isSingles ? "Slot B" : "Đội B",
+              type: seedTypeB,
+              setType: setSeedTypeB,
+              registrationId: pairB,
+              setRegistrationId: setPairB,
+              matchId: seedMatchB,
+              setMatchId: setSeedMatchB,
+              targetBracketId: selBracket,
+              targetRound: newRound,
+            })}
             <TextField
               label="Link video"
               fullWidth
@@ -3114,47 +3407,31 @@ export default function AdminBracketsPage() {
               />
             </Box>
 
-            <TextField
-              select
-              fullWidth
-              label={isSingles ? "VĐV A" : "Đội A"}
-              value={emPairA}
-              onChange={(e) => setEmPairA(e.target.value)}
-              sx={{
-                "& .MuiInputBase-root": { minHeight: 56 },
-                "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
-              }}
-            >
-              <MenuItem value="">
-                <em>— Chưa chọn —</em>
-              </MenuItem>
-              {registrations.map((r) => (
-                <MenuItem key={r._id} value={r._id}>
-                  {regName(r, evType, displayMode)}
-                </MenuItem>
-              ))}
-            </TextField>
+            {renderSeedSourceFields({
+              sideLabel: isSingles ? "Slot A" : "Đội A",
+              type: emSeedTypeA,
+              setType: setEmSeedTypeA,
+              registrationId: emPairA,
+              setRegistrationId: setEmPairA,
+              matchId: emSeedMatchA,
+              setMatchId: setEmSeedMatchA,
+              targetBracketId: emBracketId,
+              targetRound: emRound,
+              currentMatchId: emId,
+            })}
 
-            <TextField
-              select
-              fullWidth
-              label={isSingles ? "VĐV B" : "Đội B"}
-              value={emPairB}
-              onChange={(e) => setEmPairB(e.target.value)}
-              sx={{
-                "& .MuiInputBase-root": { minHeight: 56 },
-                "& .MuiSelect-select": { py: 2, display: "flex", alignItems: "center" },
-              }}
-            >
-              <MenuItem value="">
-                <em>— Chưa chọn —</em>
-              </MenuItem>
-              {registrations.map((r) => (
-                <MenuItem key={r._id} value={r._id}>
-                  {regName(r, evType, displayMode)}
-                </MenuItem>
-              ))}
-            </TextField>
+            {renderSeedSourceFields({
+              sideLabel: isSingles ? "Slot B" : "Đội B",
+              type: emSeedTypeB,
+              setType: setEmSeedTypeB,
+              registrationId: emPairB,
+              setRegistrationId: setEmPairB,
+              matchId: emSeedMatchB,
+              setMatchId: setEmSeedMatchB,
+              targetBracketId: emBracketId,
+              targetRound: emRound,
+              currentMatchId: emId,
+            })}
 
             <Grid container spacing={2} p={2}>
               <Grid item xs={4}>
