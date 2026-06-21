@@ -108,6 +108,9 @@ const hydrateFormState = (source) => ({
       ? source.frontendUi.version
       : "v1",
   },
+  pikora: {
+    enabled: source?.pikora?.enabled ?? true,
+  },
   ota: {
     enabled: source?.ota?.enabled ?? true,
     forceUpdateEnabled: source?.ota?.forceUpdateEnabled ?? false,
@@ -492,6 +495,9 @@ export default function SystemSettingsPage() {
       version: ["v1", "v2", "v3"].includes(source.frontendUi?.version)
         ? source.frontendUi.version
         : "v1",
+    },
+    pikora: {
+      enabled: source.pikora?.enabled !== false,
     },
     ota: {
       enabled: source.ota?.enabled !== false,
@@ -981,6 +987,35 @@ export default function SystemSettingsPage() {
               {form.frontendUi?.version === "v3"
                 ? "V3 hiện đang để sẵn slot triển khai. Trong giai đoạn này, frontend sẽ dùng cùng shell với V2 cho đến khi có giao diện V3 riêng."
                 : "Thay đổi này áp dụng cho frontend public và vẫn giữ nguyên toàn bộ giao diện cũ ở V1."}
+            </Alert>
+          </Section>
+
+          <Section
+            title="Pikora"
+            desc="Ẩn hoặc hiện trợ lý Pikora trên frontend public."
+          >
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              alignItems={{ xs: "flex-start", sm: "center" }}
+              justifyContent="space-between"
+              spacing={2}
+            >
+              <Box>
+                <Typography fontWeight={700}>Hiển thị Pikora</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Tắt công tắc này để ẩn nút trợ lý Pikora trên website public.
+                </Typography>
+              </Box>
+              <Switch
+                checked={form.pikora?.enabled !== false}
+                onChange={onToggle("pikora.enabled")}
+              />
+            </Stack>
+
+            <Alert severity={form.pikora?.enabled === false ? "warning" : "success"}>
+              {form.pikora?.enabled === false
+                ? "Pikora đang bị ẩn trên frontend public."
+                : "Pikora đang hiển thị trên frontend public."}
             </Alert>
           </Section>
 
