@@ -85,6 +85,7 @@ import ObserverVpsPage from "layouts/ObserverVpsPage";
 import PrimaryLogsPage from "layouts/PrimaryLogsPage";
 import CourtFreeManagerPage from "layouts/CourtFreeManagerPage";
 import IdentitySecurityPage from "layouts/IdentitySecurityPage";
+import CheckpointManagerPage from "layouts/CheckpointManagerPage";
 
 // 🆕 Live đang phát (Admin)
 
@@ -596,6 +597,18 @@ const routes = [
     icon: <Icon fontSize="small">security</Icon>,
     route: "/admin/identity-security",
     component: <IdentitySecurityPage />,
+    private: true,
+    roles: ["superadmin", "superuser"],
+    requireAdminAndSuperUser: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Checkpoint Engine",
+    key: "checkpoint-engine",
+    icon: <Icon fontSize="small">verified_user</Icon>,
+    route: "/admin/checkpoint-engine",
+    component: <CheckpointManagerPage />,
     private: true,
     roles: ["superadmin", "superuser"],
     requireAdminAndSuperUser: true,
