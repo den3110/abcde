@@ -127,6 +127,14 @@ export const checkpointAdminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["CheckpointAdmin", "CheckpointSession", "CheckpointEvent"],
     }),
+    unlockCheckpointSubject: builder.mutation({
+      query: (body) => ({
+        url: `${CHECKPOINT_URL}/admin/unlock`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["CheckpointAdmin", "CheckpointSession", "CheckpointEvent"],
+    }),
     getCheckpointAdminSessionDetail: builder.query({
       query: (id) => `${CHECKPOINT_URL}/admin/sessions/${id}`,
       providesTags: (result, error, id) => [{ type: "CheckpointSession", id }],
@@ -168,6 +176,7 @@ export const {
   useLazySearchCheckpointUsersQuery,
   useCreateCheckpointMandateMutation,
   useCancelCheckpointMandateMutation,
+  useUnlockCheckpointSubjectMutation,
   useGetCheckpointAdminSessionDetailQuery,
   useGetCheckpointSubjectInsightQuery,
   useSimulateCheckpointRiskMutation,

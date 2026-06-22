@@ -62,6 +62,7 @@ import {
   useLazySearchCheckpointUsersQuery,
   useCreateCheckpointMandateMutation,
   useCancelCheckpointMandateMutation,
+  useUnlockCheckpointSubjectMutation,
   useResolveCheckpointAdminSessionMutation,
   useSimulateCheckpointRiskMutation,
   useUpdateCheckpointAdminSettingsMutation,
@@ -452,7 +453,7 @@ function ResolveDialog({ open, session, action, onClose, onConfirm, loading }) {
 
   const title =
     action === "approve"
-      ? "Duyệt checkpoint"
+      ? "Mở checkpoint"
       : action === "reject"
       ? "Từ chối checkpoint"
       : "Huỷ checkpoint";
@@ -503,7 +504,7 @@ function ResolveDialog({ open, session, action, onClose, onConfirm, loading }) {
 
 function SessionDetailDialog({ session, events = [], loadingEvents, open, onClose, onResolve }) {
   if (!session) return null;
-  const canApprove = session.status === "review_required";
+  const canUnlock = ["pending", "review_required"].includes(session.status);
   const canStop = ["pending", "review_required"].includes(session.status);
 
   return (
@@ -641,9 +642,9 @@ function SessionDetailDialog({ session, events = [], loadingEvents, open, onClos
             Từ chối
           </Button>
         ) : null}
-        {canApprove ? (
+        {canUnlock ? (
           <Button color="success" variant="contained" startIcon={<CheckCircleIcon />} onClick={() => onResolve(session, "approve")}>
-            Duyệt
+            Mở checkpoint
           </Button>
         ) : null}
       </DialogActions>
@@ -879,7 +880,7 @@ function SessionsTab({
 
       <Stack spacing={1.25}>
         {sessions.map((session) => {
-          const canApprove = session.status === "review_required";
+          const canUnlock = ["pending", "review_required"].includes(session.status);
           const canStop = ["pending", "review_required"].includes(session.status);
           return (
             <Paper key={session._id} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
@@ -920,8 +921,8 @@ function SessionsTab({
                         <VisibilityIcon />
                       </IconButton>
                     </Tooltip>
-                    {canApprove ? (
-                      <Tooltip title="Duyệt">
+                    {canUnlock ? (
+                      <Tooltip title="Mở checkpoint">
                         <span>
                           <IconButton color="success" disabled={resolving} onClick={() => onResolve(session, "approve")}>
                             <CheckCircleIcon />
@@ -1056,8 +1057,10 @@ function ManualCheckpointTab({
   onPage,
   onCreate,
   onCancel,
+  onUnlock,
   creating,
   cancelling,
+  unlocking,
 }) {
   const userSearchTimerRef = useRef(null);
   const [searchUsers, userSearchQuery] = useLazySearchCheckpointUsersQuery();
@@ -1146,6 +1149,35 @@ function ManualCheckpointTab({
           userId: "",
           identifier: "",
           reason: "",
+          note: "",
+        }));
+      }
+    } catch {
+      // Toast đã được hiển thị ở handler cha.
+    }
+  };
+
+  const handleUnlock = async () => {
+    setMessage("");
+    const userId = userOptionId(selectedUser) || String(form.userId || "").trim();
+    try {
+      const result = await onUnlock({
+        userId: userId || undefined,
+        identifier: userId ? "" : String(form.identifier || "").trim(),
+        note: String(form.note || "").trim(),
+      });
+      if (result?.ok) {
+        setSelectedUser(null);
+        setUserOptions([]);
+        setMessage(
+          result.unlocked
+            ? "Đã mở checkpoint cho user. Nếu user đang ở trang checkpoint, hệ thống sẽ mở khóa khi trang cập nhật."
+            : "User này hiện không có checkpoint hoặc mandate active để mở."
+        );
+        setForm((current) => ({
+          ...current,
+          userId: "",
+          identifier: "",
           note: "",
         }));
       }
@@ -1255,14 +1287,25 @@ function ManualCheckpointTab({
               </Grid>
             </Grid>
             <Stack direction="row" justifyContent="flex-end">
-              <Button
-                variant="contained"
-                startIcon={creating ? <CircularProgress size={16} color="inherit" /> : <GavelIcon />}
-                onClick={handleCreate}
-                disabled={creating || !form.identifier.trim()}
-              >
-                Áp checkpoint
-              </Button>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                <Button
+                  variant="outlined"
+                  color="success"
+                  startIcon={unlocking ? <CircularProgress size={16} color="inherit" /> : <CheckCircleIcon />}
+                  onClick={handleUnlock}
+                  disabled={unlocking || !form.identifier.trim()}
+                >
+                  Mở checkpoint
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={creating ? <CircularProgress size={16} color="inherit" /> : <GavelIcon />}
+                  onClick={handleCreate}
+                  disabled={creating || !form.identifier.trim()}
+                >
+                  Áp checkpoint
+                </Button>
+              </Stack>
             </Stack>
           </Stack>
         </CardContent>
@@ -2147,6 +2190,8 @@ export default function CheckpointManagerPage() {
   const [resolveSession, { isLoading: resolving }] = useResolveCheckpointAdminSessionMutation();
   const [createMandate, { isLoading: creatingMandate }] = useCreateCheckpointMandateMutation();
   const [cancelMandate, { isLoading: cancellingMandate }] = useCancelCheckpointMandateMutation();
+  const [unlockCheckpointSubject, { isLoading: unlockingCheckpoint }] =
+    useUnlockCheckpointSubjectMutation();
   const [updateSettings, { isLoading: savingSettings }] =
     useUpdateCheckpointAdminSettingsMutation();
   const [simulateRisk, { isLoading: simulating }] = useSimulateCheckpointRiskMutation();
@@ -2300,6 +2345,24 @@ export default function CheckpointManagerPage() {
     }
   };
 
+  const handleUnlockCheckpointSubject = async (payload) => {
+    try {
+      const result = await unlockCheckpointSubject(payload).unwrap();
+      if (!mandatesQuery.isUninitialized) await mandatesQuery.refetch();
+      if (!sessionsQuery.isUninitialized) await sessionsQuery.refetch();
+      await overviewQuery.refetch();
+      if (result?.unlocked) {
+        toast.success("Đã mở checkpoint cho user.");
+      } else {
+        toast.info("User này hiện không có checkpoint hoặc mandate active để mở.");
+      }
+      return result;
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Không mở được checkpoint cho user."));
+      throw error;
+    }
+  };
+
   if (verifying) {
     return (
       <DashboardLayout>
@@ -2400,8 +2463,10 @@ export default function CheckpointManagerPage() {
               onPage={(page) => setMandateFilter("page", page)}
               onCreate={handleCreateMandate}
               onCancel={handleCancelMandate}
+              onUnlock={handleUnlockCheckpointSubject}
               creating={creatingMandate}
               cancelling={cancellingMandate}
+              unlocking={unlockingCheckpoint}
             />
           ) : null}
 
