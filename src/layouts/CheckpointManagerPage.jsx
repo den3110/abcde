@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import {
   Alert,
@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   Grid,
   IconButton,
   LinearProgress,
@@ -22,6 +23,7 @@ import {
   Paper,
   Select,
   Stack,
+  Switch,
   Tab,
   Tabs,
   TextField,
@@ -33,8 +35,11 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import GavelIcon from "@mui/icons-material/Gavel";
+import ManageSearchIcon from "@mui/icons-material/ManageSearch";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import RuleIcon from "@mui/icons-material/Rule";
+import SaveIcon from "@mui/icons-material/Save";
+import ScienceIcon from "@mui/icons-material/Science";
 import SecurityIcon from "@mui/icons-material/Security";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -47,8 +52,16 @@ import {
   useGetCheckpointAdminEventsQuery,
   useGetCheckpointAdminOverviewQuery,
   useGetCheckpointAdminPolicyQuery,
+  useGetCheckpointAdminSessionDetailQuery,
+  useGetCheckpointAdminSettingsQuery,
   useGetCheckpointAdminSessionsQuery,
+  useGetCheckpointSubjectInsightQuery,
+  useGetCheckpointMandatesQuery,
+  useCreateCheckpointMandateMutation,
+  useCancelCheckpointMandateMutation,
   useResolveCheckpointAdminSessionMutation,
+  useSimulateCheckpointRiskMutation,
+  useUpdateCheckpointAdminSettingsMutation,
 } from "slices/checkpointAdminApiSlice";
 import { isStrictSuperAdminUser } from "utils/authz";
 
@@ -94,7 +107,61 @@ const SEVERITY_OPTIONS = [
   ["critical", "Critical"],
 ];
 
+const MANDATE_STATUS_OPTIONS = [
+  ["", "Tất cả mandate"],
+  ["active", "Đang áp"],
+  ["consumed", "Đã hoàn tất"],
+  ["cancelled", "Đã huỷ"],
+  ["expired", "Hết hạn"],
+];
+
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
+const RULE_LABELS = {
+  authFailedDay: "Đăng nhập sai trong ngày",
+  authFailedDayBurst: "Burst đăng nhập sai",
+  authFailedWeek: "Đăng nhập sai nhiều ngày",
+  adminDeniedDay: "Admin route bị từ chối/ngày",
+  adminDeniedWeek: "Admin route bị từ chối/tuần",
+  spamHour: "Spam thao tác/giờ",
+  spamDay: "Spam thao tác/ngày",
+  rateLimitedDay: "Rate limit/ngày",
+  checkpointFailedWeek: "Sai checkpoint/tuần",
+  abuseWeek: "Abuse bị chặn/tuần",
+  clientSuspiciousDay: "Client suspicious/ngày",
+  criticalMonth: "High/Critical trong tháng",
+};
+
+const DAMPENER_LABELS = {
+  authSuccessWeek: "Đăng nhập thành công gần đây",
+  checkpointPassedMonth: "Đã qua checkpoint gần đây",
+  verifiedIdentity: "Đã xác minh CCCD",
+  agedAccount: "Tài khoản lâu năm",
+};
+
+const COUNTER_FIELDS = [
+  ["authFailedDay", "Auth fail 24h"],
+  ["authFailedWeek", "Auth fail 7d"],
+  ["authSuccessWeek", "Auth success 7d"],
+  ["adminDeniedDay", "Admin denied 24h"],
+  ["adminDeniedWeek", "Admin denied 7d"],
+  ["spamHour", "Spam 1h"],
+  ["spamDay", "Spam 24h"],
+  ["rateLimitedDay", "Rate limit 24h"],
+  ["checkpointFailedWeek", "Checkpoint fail 7d"],
+  ["checkpointPassedMonth", "Checkpoint pass 30d"],
+  ["abuseWeek", "Abuse 7d"],
+  ["clientSuspiciousDay", "Client suspicious 24h"],
+  ["criticalMonth", "High/Critical 30d"],
+];
+
+const ALLOWLIST_GROUPS = [
+  ["users", "User ID"],
+  ["emails", "Email"],
+  ["phones", "Số điện thoại"],
+  ["deviceIds", "Device ID"],
+  ["ips", "IP"],
+];
 
 const statusLabel = {
   pending: "Đang chờ",
@@ -157,6 +224,27 @@ const jsonPreview = (value) => {
   } catch {
     return String(value || "");
   }
+};
+
+const clone = (value) => JSON.parse(JSON.stringify(value || {}));
+
+const getPathValue = (target, path, fallback = "") =>
+  path.split(".").reduce((acc, key) => acc?.[key], target) ?? fallback;
+
+const setPathValue = (target, path, value) => {
+  const keys = path.split(".");
+  let cursor = target;
+  keys.slice(0, -1).forEach((key) => {
+    cursor[key] = { ...(cursor[key] || {}) };
+    cursor = cursor[key];
+  });
+  cursor[keys[keys.length - 1]] = value;
+  return target;
+};
+
+const toNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
 };
 
 function MetricCard({ label, value, caption, icon, color = "primary" }) {
@@ -305,6 +393,20 @@ function FilterSelect({ value, onChange, options, minWidth = 180 }) {
   );
 }
 
+function NumberSetting({ label, value, onChange, min = 0, max = 10000, width = 150 }) {
+  return (
+    <TextField
+      size="small"
+      type="number"
+      label={label}
+      value={value ?? 0}
+      onChange={(event) => onChange(toNumber(event.target.value))}
+      inputProps={{ min, max }}
+      sx={{ minWidth: width }}
+    />
+  );
+}
+
 function ResolveDialog({ open, session, action, onClose, onConfirm, loading }) {
   const [note, setNote] = useState("");
 
@@ -355,7 +457,7 @@ function ResolveDialog({ open, session, action, onClose, onConfirm, loading }) {
   );
 }
 
-function SessionDetailDialog({ session, open, onClose, onResolve }) {
+function SessionDetailDialog({ session, events = [], loadingEvents, open, onClose, onResolve }) {
   if (!session) return null;
   const canApprove = session.status === "review_required";
   const canStop = ["pending", "review_required"].includes(session.status);
@@ -454,6 +556,33 @@ function SessionDetailDialog({ session, open, onClose, onResolve }) {
               {session.review.note ? ` | ${session.review.note}` : ""}
             </Alert>
           ) : null}
+
+          <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+            <Stack spacing={1.25}>
+              <SectionTitle icon={<TimelineIcon color="primary" />} title="Timeline liên quan" />
+              {loadingEvents ? <LinearProgress /> : null}
+              {(events || []).slice(0, 30).map((event) => (
+                <Paper key={event._id} variant="outlined" sx={{ p: 1, borderRadius: 2 }}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="space-between">
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                        {event.type}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {fmtDate(event.createdAt)} | {event.path || event.routeGroup || event.ip || "-"}
+                      </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                      <Chip size="small" label={event.category} />
+                      <Chip size="small" color={outcomeColor(event.outcome)} label={event.outcome} />
+                      <Chip size="small" color={severityColor(event.severity)} label={event.severity} />
+                    </Stack>
+                  </Stack>
+                </Paper>
+              ))}
+              {!events?.length && !loadingEvents ? <Alert severity="info">Chưa có event liên quan.</Alert> : null}
+            </Stack>
+          </Paper>
         </Stack>
       </DialogContent>
       <DialogActions>
@@ -876,6 +1005,819 @@ function EventsTab({ query, filters, onFilter, onPage }) {
   );
 }
 
+function ManualCheckpointTab({
+  query,
+  filters,
+  onFilter,
+  onPage,
+  onCreate,
+  onCancel,
+  creating,
+  cancelling,
+}) {
+  const [form, setForm] = useState({
+    identifier: "",
+    level: 1,
+    expiresInHours: 72,
+    reason: "",
+    note: "",
+  });
+  const [message, setMessage] = useState("");
+
+  const mandates = query.data?.mandates || [];
+  const totalPages = query.data?.totalPages || 1;
+
+  const updateForm = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+
+  const handleCreate = async () => {
+    setMessage("");
+    const result = await onCreate(form);
+    if (result?.mandate) {
+      setMessage("Đã áp checkpoint thủ công. User sẽ bị yêu cầu checkpoint ở lần đăng nhập tiếp theo.");
+      setForm((current) => ({
+        ...current,
+        identifier: "",
+        reason: "",
+        note: "",
+      }));
+    }
+  };
+
+  return (
+    <Stack spacing={2}>
+      {message ? <Alert severity="success">{message}</Alert> : null}
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <SectionTitle
+              icon={<GavelIcon color="primary" />}
+              title="Áp checkpoint thủ công"
+              subtitle="Admin chọn user và level; hệ thống sẽ gửi OTP và mở flow checkpoint khi user đăng nhập tiếp theo."
+            />
+            <Grid container spacing={1.5}>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  size="small"
+                  label="User ID, email, số điện thoại hoặc nickname"
+                  value={form.identifier}
+                  onChange={(event) => updateForm("identifier", event.target.value)}
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <FilterSelect
+                  value={form.level}
+                  onChange={(value) => updateForm("level", Number(value))}
+                  options={[
+                    [1, "Level 1"],
+                    [2, "Level 2"],
+                    [3, "Level 3"],
+                  ]}
+                  minWidth="100%"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <NumberSetting
+                  label="Hiệu lực giờ"
+                  value={form.expiresInHours}
+                  min={1}
+                  max={720}
+                  width="100%"
+                  onChange={(value) => updateForm("expiresInHours", value)}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  size="small"
+                  label="Lý do user-facing"
+                  value={form.reason}
+                  onChange={(event) => updateForm("reason", event.target.value)}
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  size="small"
+                  label="Ghi chú nội bộ"
+                  value={form.note}
+                  onChange={(event) => updateForm("note", event.target.value)}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                />
+              </Grid>
+            </Grid>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button
+                variant="contained"
+                startIcon={creating ? <CircularProgress size={16} color="inherit" /> : <GavelIcon />}
+                onClick={handleCreate}
+                disabled={creating || !form.identifier.trim()}
+              >
+                Áp checkpoint
+              </Button>
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack direction={{ xs: "column", lg: "row" }} spacing={1.25} alignItems={{ lg: "center" }}>
+            <TextField
+              size="small"
+              label="Tìm user/lý do"
+              value={filters.q}
+              onChange={(event) => onFilter("q", event.target.value)}
+              sx={{ minWidth: 260 }}
+            />
+            <FilterSelect value={filters.status} onChange={(value) => onFilter("status", value)} options={MANDATE_STATUS_OPTIONS} />
+            <FilterSelect
+              value={filters.level}
+              onChange={(value) => onFilter("level", value)}
+              options={[
+                ["", "Tất cả level"],
+                ["1", "Level 1"],
+                ["2", "Level 2"],
+                ["3", "Level 3"],
+              ]}
+              minWidth={140}
+            />
+            <FilterSelect
+              value={filters.pageSize}
+              onChange={(value) => onFilter("pageSize", Number(value))}
+              options={PAGE_SIZE_OPTIONS.map((value) => [value, `${value}/trang`])}
+              minWidth={130}
+            />
+          </Stack>
+        </CardContent>
+      </Card>
+
+      {query.isFetching ? <LinearProgress /> : null}
+      {query.error ? (
+        <Alert severity="error">{query.error?.data?.message || "Không tải được manual checkpoint."}</Alert>
+      ) : null}
+
+      <Stack spacing={1.25}>
+        {mandates.map((mandate) => (
+          <Paper key={mandate._id} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+            <Grid container spacing={1.5} alignItems="center">
+              <Grid item xs={12} md={3}>
+                <UserBlock user={mandate.user} />
+                <Typography variant="caption" color="text.secondary">
+                  Tạo: {fmtDate(mandate.createdAt)}
+                </Typography>
+              </Grid>
+              <Grid item xs={12} md={2}>
+                <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                  <Chip
+                    size="small"
+                    color={mandate.status === "active" ? "warning" : mandate.status === "consumed" ? "success" : "default"}
+                    label={mandate.status}
+                  />
+                  <Chip size="small" color={mandate.level >= 3 ? "error" : mandate.level >= 2 ? "warning" : "default"} label={`Level ${mandate.level}`} />
+                </Stack>
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap title={mandate.reason}>
+                  {mandate.reason || "-"}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Hết hạn: {fmtDate(mandate.expiresAt)}
+                </Typography>
+              </Grid>
+              <Grid item xs={12} md={2}>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Tạo bởi: {mandate.createdBy?.email || mandate.createdBy?.name || "-"}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Session: {mandate.consumedBySession || "-"}
+                </Typography>
+              </Grid>
+              <Grid item xs={12} md={2}>
+                <Stack direction="row" spacing={0.75} justifyContent={{ xs: "flex-start", md: "flex-end" }}>
+                  {mandate.status === "active" ? (
+                    <Button
+                      color="warning"
+                      variant="outlined"
+                      disabled={cancelling}
+                      onClick={() => onCancel({ id: mandate._id, note: "Admin huỷ manual checkpoint" })}
+                    >
+                      Huỷ
+                    </Button>
+                  ) : null}
+                </Stack>
+              </Grid>
+            </Grid>
+          </Paper>
+        ))}
+        {!mandates.length && !query.isFetching ? <Alert severity="info">Chưa có manual checkpoint phù hợp.</Alert> : null}
+      </Stack>
+
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="body2" color="text.secondary">
+          Tổng: {query.data?.total || 0}
+        </Typography>
+        <Pagination page={filters.page} count={totalPages} onChange={(_, page) => onPage(page)} />
+      </Stack>
+    </Stack>
+  );
+}
+
+function SettingsTab({ settingsResponse, loading, error, onSave, saving }) {
+  const [draft, setDraft] = useState(null);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (settingsResponse?.settings) setDraft(clone(settingsResponse.settings));
+  }, [settingsResponse]);
+
+  const setValue = (path, value) => {
+    setDraft((current) => setPathValue(clone(current), path, value));
+    setMessage("");
+  };
+
+  const handleReset = () => {
+    if (settingsResponse?.defaults) setDraft(clone(settingsResponse.defaults));
+    setMessage("");
+  };
+
+  const handleSave = async () => {
+    await onSave(draft);
+    setMessage("Đã lưu cấu hình checkpoint.");
+  };
+
+  if (loading) {
+    return (
+      <Card sx={{ py: 8, textAlign: "center", borderRadius: 3 }}>
+        <CircularProgress />
+      </Card>
+    );
+  }
+
+  if (error) {
+    return <Alert severity="error">{error?.data?.message || "Không tải được cấu hình checkpoint."}</Alert>;
+  }
+
+  if (!draft) return <Alert severity="info">Chưa có cấu hình checkpoint.</Alert>;
+
+  return (
+    <Stack spacing={2}>
+      {message ? <Alert severity="success">{message}</Alert> : null}
+
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <SectionTitle
+              icon={<SecurityIcon color="primary" />}
+              title="Runtime"
+              subtitle="Các giá trị này áp dụng cho phiên checkpoint mới và resend tiếp theo."
+            />
+            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={draft.enabled !== false}
+                    onChange={(event) => setValue("enabled", event.target.checked)}
+                  />
+                }
+                label="Bật engine"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={draft.roleBypassEnabled !== false}
+                    onChange={(event) => setValue("roleBypassEnabled", event.target.checked)}
+                  />
+                }
+                label="Bypass admin/referee"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={draft.review?.requireNoteOnReject !== false}
+                    onChange={(event) => setValue("review.requireNoteOnReject", event.target.checked)}
+                  />
+                }
+                label="Bắt buộc ghi chú khi reject"
+              />
+            </Stack>
+            <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+              <NumberSetting label="Session TTL phút" value={draft.sessionTtlMinutes} min={5} max={240} onChange={(value) => setValue("sessionTtlMinutes", value)} />
+              <NumberSetting label="OTP TTL phút" value={draft.codeTtlMinutes} min={1} max={60} onChange={(value) => setValue("codeTtlMinutes", value)} />
+              <NumberSetting label="Resend giây" value={draft.resendCooldownSeconds} min={10} max={600} onChange={(value) => setValue("resendCooldownSeconds", value)} />
+              <NumberSetting label="Trust ngày" value={draft.trustDays} min={1} max={365} onChange={(value) => setValue("trustDays", value)} />
+              <NumberSetting label="Max attempts" value={draft.maxAttempts} min={1} max={20} onChange={(value) => setValue("maxAttempts", value)} />
+              <NumberSetting label="Manual review từ level" value={draft.manualReviewLevel} min={1} max={4} onChange={(value) => setValue("manualReviewLevel", value)} />
+              <NumberSetting label="Gia hạn sau approve phút" value={draft.review?.extendPendingMinutesOnApprove} min={1} max={120} onChange={(value) => setValue("review.extendPendingMinutesOnApprove", value)} />
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <SectionTitle
+              icon={<RuleIcon color="primary" />}
+              title="Threshold lên cấp"
+              subtitle="Điểm tổng chỉ lên level khi đạt thêm điều kiện số lượng signal/category để giảm false positive."
+            />
+            <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+              <NumberSetting label="Level 1 score" value={draft.thresholds?.level1Score} min={0} max={200} onChange={(value) => setValue("thresholds.level1Score", value)} />
+              <NumberSetting label="Level 2 score" value={draft.thresholds?.level2Score} min={0} max={200} onChange={(value) => setValue("thresholds.level2Score", value)} />
+              <NumberSetting label="Level 3 score" value={draft.thresholds?.level3Score} min={0} max={240} onChange={(value) => setValue("thresholds.level3Score", value)} />
+              <NumberSetting label="Min signal L1" value={draft.thresholds?.minSignalsForLevel1} min={1} max={12} onChange={(value) => setValue("thresholds.minSignalsForLevel1", value)} />
+              <NumberSetting label="Min category L2" value={draft.thresholds?.minCategoriesForLevel2} min={1} max={12} onChange={(value) => setValue("thresholds.minCategoriesForLevel2", value)} />
+              <NumberSetting label="Min category L3" value={draft.thresholds?.minCategoriesForLevel3} min={1} max={12} onChange={(value) => setValue("thresholds.minCategoriesForLevel3", value)} />
+            </Stack>
+            <Divider />
+            <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+              Hard signals
+            </Typography>
+            <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+              {Object.keys(draft.hardSignals || {}).map((key) => (
+                <NumberSetting
+                  key={key}
+                  label={key}
+                  value={draft.hardSignals?.[key]}
+                  min={0}
+                  max={1000}
+                  width={190}
+                  onChange={(value) => setValue(`hardSignals.${key}`, value)}
+                />
+              ))}
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <SectionTitle icon={<TimelineIcon color="primary" />} title="Rule matrix" />
+            {(Object.entries(draft.rules || {})).map(([key, rule]) => (
+              <Paper key={key} variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                <Stack spacing={1.25}>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }} justifyContent="space-between">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={rule.enabled !== false}
+                          onChange={(event) => setValue(`rules.${key}.enabled`, event.target.checked)}
+                        />
+                      }
+                      label={RULE_LABELS[key] || key}
+                    />
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      <Chip size="small" label={rule.category || "system"} />
+                      <Chip size="small" variant="outlined" label={rule.window || "-"} />
+                    </Stack>
+                  </Stack>
+                  <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+                    <NumberSetting label="Threshold" value={rule.threshold} onChange={(value) => setValue(`rules.${key}.threshold`, value)} />
+                    <NumberSetting label="Points" value={rule.points} min={-200} max={240} onChange={(value) => setValue(`rules.${key}.points`, value)} />
+                    <NumberSetting label="Level hint" value={rule.levelHint} min={1} max={3} onChange={(value) => setValue(`rules.${key}.levelHint`, value)} />
+                    <TextField
+                      size="small"
+                      label="Lý do"
+                      value={rule.reason || ""}
+                      onChange={(event) => setValue(`rules.${key}.reason`, event.target.value)}
+                      sx={{ minWidth: 360, flex: 1 }}
+                    />
+                  </Stack>
+                </Stack>
+              </Paper>
+            ))}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <SectionTitle icon={<FactCheckIcon color="primary" />} title="Dampener chống false positive" />
+            <Grid container spacing={1.5}>
+              {Object.entries(draft.dampeners || {}).map(([key, item]) => (
+                <Grid key={key} item xs={12} md={6}>
+                  <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, height: "100%" }}>
+                    <Stack spacing={1.25}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={item.enabled !== false}
+                            onChange={(event) => setValue(`dampeners.${key}.enabled`, event.target.checked)}
+                          />
+                        }
+                        label={DAMPENER_LABELS[key] || key}
+                      />
+                      <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+                        <NumberSetting label="Threshold" value={item.threshold} onChange={(value) => setValue(`dampeners.${key}.threshold`, value)} />
+                        <NumberSetting label="Points" value={item.points} min={-200} max={0} onChange={(value) => setValue(`dampeners.${key}.points`, value)} />
+                      </Stack>
+                      <TextField
+                        size="small"
+                        label="Lý do"
+                        value={item.reason || ""}
+                        onChange={(event) => setValue(`dampeners.${key}.reason`, event.target.value)}
+                        fullWidth
+                      />
+                    </Stack>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Stack direction="row" spacing={1} justifyContent="flex-end">
+        <Button variant="outlined" onClick={handleReset}>
+          Khôi phục mặc định
+        </Button>
+        <Button
+          variant="contained"
+          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+          onClick={handleSave}
+          disabled={saving}
+        >
+          Lưu cấu hình
+        </Button>
+      </Stack>
+    </Stack>
+  );
+}
+
+function AllowlistTab({ settingsResponse, loading, error, onSave, saving }) {
+  const [allowlist, setAllowlist] = useState(null);
+  const [group, setGroup] = useState("users");
+  const [value, setValue] = useState("");
+  const [reason, setReason] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (settingsResponse?.settings?.allowlist) {
+      setAllowlist(clone(settingsResponse.settings.allowlist));
+    }
+  }, [settingsResponse]);
+
+  const addEntry = () => {
+    const clean = value.trim();
+    if (!clean) return;
+    setAllowlist((current) => ({
+      ...(current || {}),
+      [group]: [
+        ...((current?.[group] || [])),
+        {
+          value: clean,
+          reason: reason.trim(),
+          expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }));
+    setValue("");
+    setReason("");
+    setExpiresAt("");
+    setMessage("");
+  };
+
+  const removeEntry = (targetGroup, index) => {
+    setAllowlist((current) => ({
+      ...(current || {}),
+      [targetGroup]: (current?.[targetGroup] || []).filter((_, idx) => idx !== index),
+    }));
+    setMessage("");
+  };
+
+  const handleSave = async () => {
+    await onSave({ allowlist });
+    setMessage("Đã lưu allowlist checkpoint.");
+  };
+
+  if (loading) {
+    return (
+      <Card sx={{ py: 8, textAlign: "center", borderRadius: 3 }}>
+        <CircularProgress />
+      </Card>
+    );
+  }
+  if (error) return <Alert severity="error">{error?.data?.message || "Không tải được allowlist."}</Alert>;
+  if (!allowlist) return <Alert severity="info">Chưa có allowlist.</Alert>;
+
+  return (
+    <Stack spacing={2}>
+      {message ? <Alert severity="success">{message}</Alert> : null}
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <SectionTitle
+              icon={<SecurityIcon color="primary" />}
+              title="Bypass có kiểm soát"
+              subtitle="Chỉ dùng cho false positive đã xác minh, luôn kèm lý do và thời hạn nếu có."
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={allowlist.enabled !== false}
+                  onChange={(event) => setAllowlist((current) => ({ ...(current || {}), enabled: event.target.checked }))}
+                />
+              }
+              label="Bật allowlist"
+            />
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.25}>
+              <FilterSelect value={group} onChange={setGroup} options={ALLOWLIST_GROUPS} minWidth={160} />
+              <TextField size="small" label="Giá trị" value={value} onChange={(event) => setValue(event.target.value)} sx={{ minWidth: 260 }} />
+              <TextField size="small" label="Lý do" value={reason} onChange={(event) => setReason(event.target.value)} sx={{ minWidth: 280, flex: 1 }} />
+              <TextField
+                size="small"
+                type="datetime-local"
+                label="Hết hạn"
+                value={expiresAt}
+                onChange={(event) => setExpiresAt(event.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ minWidth: 210 }}
+              />
+              <Button variant="contained" onClick={addEntry}>
+                Thêm
+              </Button>
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      {ALLOWLIST_GROUPS.map(([key, label]) => (
+        <Card key={key} sx={{ borderRadius: 3 }}>
+          <CardContent>
+            <Stack spacing={1.25}>
+              <Typography variant="h6" sx={{ fontWeight: 900 }}>
+                {label}
+              </Typography>
+              {(allowlist[key] || []).map((entry, index) => (
+                <Paper key={`${entry.value}-${index}`} variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }} justifyContent="space-between">
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 900 }} noWrap>
+                        {entry.value}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {entry.reason || "Không có lý do"} | Hết hạn: {fmtDate(entry.expiresAt)}
+                      </Typography>
+                    </Box>
+                    <Button color="warning" onClick={() => removeEntry(key, index)}>
+                      Xoá
+                    </Button>
+                  </Stack>
+                </Paper>
+              ))}
+              {!allowlist[key]?.length ? <Alert severity="info">Chưa có mục nào.</Alert> : null}
+            </Stack>
+          </CardContent>
+        </Card>
+      ))}
+
+      <Stack direction="row" justifyContent="flex-end">
+        <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSave} disabled={saving}>
+          Lưu allowlist
+        </Button>
+      </Stack>
+    </Stack>
+  );
+}
+
+function SimulatorTab({ onSimulate, result, loading }) {
+  const [counters, setCounters] = useState(() =>
+    COUNTER_FIELDS.reduce((acc, [key]) => ({ ...acc, [key]: 0 }), {})
+  );
+  const [user, setUser] = useState({
+    hasEmail: true,
+    hasPhone: true,
+    cccdStatus: "",
+    accountAgeDays: 45,
+  });
+
+  const run = async () => {
+    const accountAgeMs = Number(user.accountAgeDays || 0) * 24 * 60 * 60 * 1000;
+    await onSimulate({
+      intent: "login",
+      counters,
+      user: {
+        email: user.hasEmail ? "demo@example.com" : "",
+        phone: user.hasPhone ? "0900000000" : "",
+        cccdStatus: user.cccdStatus,
+        createdAt: new Date(Date.now() - accountAgeMs).toISOString(),
+      },
+    });
+  };
+
+  const decision = result?.decision;
+
+  return (
+    <Stack spacing={2}>
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <SectionTitle
+              icon={<ScienceIcon color="primary" />}
+              title="Risk simulator"
+              subtitle="Thử counters giả lập để xem engine ra level nào trước khi chỉnh policy."
+            />
+            <Grid container spacing={1.5}>
+              {COUNTER_FIELDS.map(([key, label]) => (
+                <Grid key={key} item xs={12} sm={6} md={4} lg={3}>
+                  <NumberSetting
+                    label={label}
+                    value={counters[key]}
+                    min={0}
+                    max={10000}
+                    width="100%"
+                    onChange={(value) => setCounters((current) => ({ ...current, [key]: value }))}
+                  />
+                </Grid>
+              ))}
+            </Grid>
+            <Divider />
+            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+              <FormControlLabel
+                control={<Switch checked={user.hasEmail} onChange={(event) => setUser((current) => ({ ...current, hasEmail: event.target.checked }))} />}
+                label="Có email"
+              />
+              <FormControlLabel
+                control={<Switch checked={user.hasPhone} onChange={(event) => setUser((current) => ({ ...current, hasPhone: event.target.checked }))} />}
+                label="Có số điện thoại"
+              />
+              <FilterSelect
+                value={user.cccdStatus}
+                onChange={(value) => setUser((current) => ({ ...current, cccdStatus: value }))}
+                options={[
+                  ["", "CCCD chưa xác minh"],
+                  ["verified", "CCCD verified"],
+                ]}
+                minWidth={190}
+              />
+              <NumberSetting
+                label="Tuổi tài khoản ngày"
+                value={user.accountAgeDays}
+                min={0}
+                max={3000}
+                onChange={(value) => setUser((current) => ({ ...current, accountAgeDays: value }))}
+              />
+              <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <ScienceIcon />} onClick={run} disabled={loading}>
+                Chạy mô phỏng
+              </Button>
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      {decision ? (
+        <Card sx={{ borderRadius: 3 }}>
+          <CardContent>
+            <Stack spacing={1.5}>
+              <SectionTitle icon={<RuleIcon color="primary" />} title="Kết quả mô phỏng" />
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Chip color={decision.required ? "warning" : "success"} label={decision.required ? "Checkpoint required" : "Không checkpoint"} />
+                <Chip color={decision.level >= 3 ? "error" : decision.level >= 2 ? "warning" : "default"} label={`Level ${decision.level || 0}`} />
+                <Chip label={`Score ${decision.score || 0}`} />
+                <Chip variant="outlined" label={`Raw ${decision.rawScore || 0}`} />
+                <Chip variant="outlined" label={decision.confidence || "low"} />
+              </Stack>
+              <RiskChips risk={decision} />
+            </Stack>
+          </CardContent>
+        </Card>
+      ) : null}
+    </Stack>
+  );
+}
+
+function InsightTab({ queryArgs, setQueryArgs, query, onSearch }) {
+  const data = query.data;
+  return (
+    <Stack spacing={2}>
+      <Card sx={{ borderRadius: 3 }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <SectionTitle
+              icon={<ManageSearchIcon color="primary" />}
+              title="Subject insight"
+              subtitle="Tra theo user, IP hoặc device để xem toàn bộ lịch sử checkpoint/risk liên quan."
+            />
+            <Stack direction={{ xs: "column", lg: "row" }} spacing={1.25}>
+              <TextField size="small" label="User ID" value={queryArgs.userId} onChange={(event) => setQueryArgs((current) => ({ ...current, userId: event.target.value }))} sx={{ minWidth: 250 }} />
+              <TextField size="small" label="IP" value={queryArgs.ip} onChange={(event) => setQueryArgs((current) => ({ ...current, ip: event.target.value }))} sx={{ minWidth: 180 }} />
+              <TextField size="small" label="Device ID" value={queryArgs.deviceId} onChange={(event) => setQueryArgs((current) => ({ ...current, deviceId: event.target.value }))} sx={{ minWidth: 240 }} />
+              <FilterSelect
+                value={queryArgs.days}
+                onChange={(value) => setQueryArgs((current) => ({ ...current, days: Number(value) }))}
+                options={[
+                  [7, "7 ngày"],
+                  [30, "30 ngày"],
+                  [90, "90 ngày"],
+                ]}
+                minWidth={130}
+              />
+              <Button variant="contained" onClick={onSearch}>
+                Tra cứu
+              </Button>
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      {query.isFetching ? <LinearProgress /> : null}
+      {query.error ? <Alert severity="error">{query.error?.data?.message || "Không tải được insight."}</Alert> : null}
+
+      {data ? (
+        <Stack spacing={2}>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <MetricCard label="Events" value={data.summary?.events || 0} caption={`${data.window?.days || 0} ngày`} icon={<TimelineIcon color="primary" />} />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <MetricCard label="Sessions" value={data.summary?.sessions || 0} caption={`${data.summary?.reviewRequired || 0} cần review`} icon={<SecurityIcon color="primary" />} />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <MetricCard label="Passed" value={data.summary?.passed || 0} caption="Phiên đã qua" icon={<CheckCircleIcon color="success" />} color="success" />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <MetricCard label="Failed" value={data.summary?.failed || 0} caption="Failed/expired/cancelled" icon={<ErrorOutlineIcon color="warning" />} color="warning" />
+            </Grid>
+          </Grid>
+
+          <Card sx={{ borderRadius: 3 }}>
+            <CardContent>
+              <Stack spacing={1.5}>
+                <SectionTitle icon={<RuleIcon color="primary" />} title="Top signals" />
+                <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                  {(data.topSignals || []).map((signal) => (
+                    <Chip key={signal.key} size="small" variant="outlined" label={`${signal.reason} x${signal.count}`} />
+                  ))}
+                  {!data.topSignals?.length ? <Chip size="small" label="Chưa có signal" /> : null}
+                </Stack>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Grid container spacing={2}>
+            <Grid item xs={12} lg={6}>
+              <Card sx={{ borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={1.25}>
+                    <SectionTitle icon={<SecurityIcon color="primary" />} title="Sessions gần đây" />
+                    {(data.sessions || []).slice(0, 10).map((session) => (
+                      <Paper key={session._id} variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                        <Stack direction="row" spacing={1} justifyContent="space-between">
+                          <UserBlock user={session.user} />
+                          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                            <Chip size="small" color={statusColor(session.status)} label={statusLabel[session.status] || session.status} />
+                            <Chip size="small" label={`L${session.level}`} />
+                            <Chip size="small" variant="outlined" label={`Score ${session.risk?.score || 0}`} />
+                          </Stack>
+                        </Stack>
+                      </Paper>
+                    ))}
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} lg={6}>
+              <Card sx={{ borderRadius: 3 }}>
+                <CardContent>
+                  <Stack spacing={1.25}>
+                    <SectionTitle icon={<TimelineIcon color="primary" />} title="Events gần đây" />
+                    {(data.events || []).slice(0, 12).map((event) => (
+                      <Paper key={event._id} variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                        <Stack direction="row" spacing={1} justifyContent="space-between">
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                              {event.type}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {fmtDate(event.createdAt)}
+                            </Typography>
+                          </Box>
+                          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                            <Chip size="small" label={event.category} />
+                            <Chip size="small" color={outcomeColor(event.outcome)} label={event.outcome} />
+                          </Stack>
+                        </Stack>
+                      </Paper>
+                    ))}
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        </Stack>
+      ) : (
+        <Alert severity="info">Nhập user ID, IP hoặc device ID rồi bấm tra cứu.</Alert>
+      )}
+    </Stack>
+  );
+}
+
 function PolicyTab({ policy, loading, error }) {
   if (loading) {
     return (
@@ -987,6 +1929,9 @@ export default function CheckpointManagerPage() {
   const [days, setDays] = useState(30);
   const [selectedSession, setSelectedSession] = useState(null);
   const [resolveState, setResolveState] = useState({ open: false, session: null, action: "" });
+  const [simulatorResult, setSimulatorResult] = useState(null);
+  const [insightArgs, setInsightArgs] = useState({ userId: "", ip: "", deviceId: "", days: 30 });
+  const [activeInsightArgs, setActiveInsightArgs] = useState(null);
   const [sessionFilters, setSessionFilters] = useState({
     page: 1,
     pageSize: 20,
@@ -1003,12 +1948,20 @@ export default function CheckpointManagerPage() {
     outcome: "",
     severity: "",
   });
+  const [mandateFilters, setMandateFilters] = useState({
+    page: 1,
+    pageSize: 20,
+    q: "",
+    status: "active",
+    level: "",
+  });
 
   const { data: verifyData, isLoading: verifying } = useVerifyQuery();
   const isSuperAdmin = isStrictSuperAdminUser(verifyData?.user);
 
   const overviewQuery = useGetCheckpointAdminOverviewQuery({ days }, { skip: !isSuperAdmin });
   const policyQuery = useGetCheckpointAdminPolicyQuery(undefined, { skip: !isSuperAdmin });
+  const settingsQuery = useGetCheckpointAdminSettingsQuery(undefined, { skip: !isSuperAdmin });
   const sessionsQuery = useGetCheckpointAdminSessionsQuery(
     { ...sessionFilters, days },
     { skip: !isSuperAdmin || tab !== "sessions" },
@@ -1017,22 +1970,50 @@ export default function CheckpointManagerPage() {
     { ...eventFilters, days },
     { skip: !isSuperAdmin || tab !== "events" },
   );
+  const mandatesQuery = useGetCheckpointMandatesQuery(mandateFilters, {
+    skip: !isSuperAdmin || tab !== "manual",
+  });
+  const sessionDetailQuery = useGetCheckpointAdminSessionDetailQuery(selectedSession?._id, {
+    skip: !isSuperAdmin || !selectedSession?._id,
+  });
+  const insightQuery = useGetCheckpointSubjectInsightQuery(activeInsightArgs || {}, {
+    skip:
+      !isSuperAdmin ||
+      !activeInsightArgs ||
+      (!activeInsightArgs.userId && !activeInsightArgs.ip && !activeInsightArgs.deviceId),
+  });
   const [resolveSession, { isLoading: resolving }] = useResolveCheckpointAdminSessionMutation();
+  const [createMandate, { isLoading: creatingMandate }] = useCreateCheckpointMandateMutation();
+  const [cancelMandate, { isLoading: cancellingMandate }] = useCancelCheckpointMandateMutation();
+  const [updateSettings, { isLoading: savingSettings }] =
+    useUpdateCheckpointAdminSettingsMutation();
+  const [simulateRisk, { isLoading: simulating }] = useSimulateCheckpointRiskMutation();
 
   const activeFetching = useMemo(
     () =>
       overviewQuery.isFetching ||
       policyQuery.isFetching ||
+      settingsQuery.isFetching ||
       sessionsQuery.isFetching ||
+      eventsQuery.isFetching ||
+      mandatesQuery.isFetching,
+    [
       eventsQuery.isFetching,
-    [eventsQuery.isFetching, overviewQuery.isFetching, policyQuery.isFetching, sessionsQuery.isFetching],
+      overviewQuery.isFetching,
+      policyQuery.isFetching,
+      mandatesQuery.isFetching,
+      sessionsQuery.isFetching,
+      settingsQuery.isFetching,
+    ],
   );
 
   const handleRefresh = () => {
     overviewQuery.refetch();
     policyQuery.refetch();
+    settingsQuery.refetch();
     if (tab === "sessions") sessionsQuery.refetch();
     if (tab === "events") eventsQuery.refetch();
+    if (tab === "manual") mandatesQuery.refetch();
   };
 
   const setSessionFilter = (key, value) => {
@@ -1051,6 +2032,14 @@ export default function CheckpointManagerPage() {
     }));
   };
 
+  const setMandateFilter = (key, value) => {
+    setMandateFilters((current) => ({
+      ...current,
+      [key]: value,
+      page: key === "page" ? value : 1,
+    }));
+  };
+
   const openResolveDialog = (session, action) => {
     setResolveState({ open: true, session, action });
   };
@@ -1060,6 +2049,31 @@ export default function CheckpointManagerPage() {
     setResolveState({ open: false, session: null, action: "" });
     setSelectedSession(null);
     overviewQuery.refetch();
+  };
+
+  const handleSaveSettings = async (payload) => {
+    await updateSettings(payload).unwrap();
+    await settingsQuery.refetch();
+    await policyQuery.refetch();
+    await overviewQuery.refetch();
+  };
+
+  const handleSimulate = async (payload) => {
+    const result = await simulateRisk(payload).unwrap();
+    setSimulatorResult(result);
+  };
+
+  const handleCreateMandate = async (payload) => {
+    const result = await createMandate(payload).unwrap();
+    await mandatesQuery.refetch();
+    await overviewQuery.refetch();
+    return result;
+  };
+
+  const handleCancelMandate = async (payload) => {
+    await cancelMandate(payload).unwrap();
+    await mandatesQuery.refetch();
+    await overviewQuery.refetch();
   };
 
   if (verifying) {
@@ -1115,6 +2129,11 @@ export default function CheckpointManagerPage() {
             <Tab value="overview" label="Tổng quan" />
             <Tab value="sessions" label="Phiên checkpoint" />
             <Tab value="events" label="Sự kiện" />
+            <Tab value="manual" label="Manual" />
+            <Tab value="settings" label="Rules" />
+            <Tab value="allowlist" label="Allowlist" />
+            <Tab value="simulator" label="Simulator" />
+            <Tab value="insight" label="Insight" />
             <Tab value="policy" label="Chính sách" />
           </Tabs>
 
@@ -1149,6 +2168,56 @@ export default function CheckpointManagerPage() {
             />
           ) : null}
 
+          {tab === "manual" ? (
+            <ManualCheckpointTab
+              query={mandatesQuery}
+              filters={mandateFilters}
+              onFilter={setMandateFilter}
+              onPage={(page) => setMandateFilter("page", page)}
+              onCreate={handleCreateMandate}
+              onCancel={handleCancelMandate}
+              creating={creatingMandate}
+              cancelling={cancellingMandate}
+            />
+          ) : null}
+
+          {tab === "settings" ? (
+            <SettingsTab
+              settingsResponse={settingsQuery.data}
+              loading={settingsQuery.isLoading}
+              error={settingsQuery.error}
+              onSave={handleSaveSettings}
+              saving={savingSettings}
+            />
+          ) : null}
+
+          {tab === "allowlist" ? (
+            <AllowlistTab
+              settingsResponse={settingsQuery.data}
+              loading={settingsQuery.isLoading}
+              error={settingsQuery.error}
+              onSave={handleSaveSettings}
+              saving={savingSettings}
+            />
+          ) : null}
+
+          {tab === "simulator" ? (
+            <SimulatorTab
+              onSimulate={handleSimulate}
+              result={simulatorResult}
+              loading={simulating}
+            />
+          ) : null}
+
+          {tab === "insight" ? (
+            <InsightTab
+              queryArgs={insightArgs}
+              setQueryArgs={setInsightArgs}
+              query={insightQuery}
+              onSearch={() => setActiveInsightArgs({ ...insightArgs })}
+            />
+          ) : null}
+
           {tab === "policy" ? (
             <PolicyTab
               policy={policyQuery.data || overviewQuery.data?.policy}
@@ -1161,7 +2230,9 @@ export default function CheckpointManagerPage() {
       <Footer />
 
       <SessionDetailDialog
-        session={selectedSession}
+        session={sessionDetailQuery.data?.session || selectedSession}
+        events={sessionDetailQuery.data?.events || []}
+        loadingEvents={sessionDetailQuery.isFetching}
         open={Boolean(selectedSession)}
         onClose={() => setSelectedSession(null)}
         onResolve={openResolveDialog}
