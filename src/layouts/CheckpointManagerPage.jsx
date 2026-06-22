@@ -1,8 +1,10 @@
 /* eslint-disable react/prop-types */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
+import { toast } from "react-toastify";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -57,6 +59,7 @@ import {
   useGetCheckpointAdminSessionsQuery,
   useGetCheckpointSubjectInsightQuery,
   useGetCheckpointMandatesQuery,
+  useLazySearchCheckpointUsersQuery,
   useCreateCheckpointMandateMutation,
   useCancelCheckpointMandateMutation,
   useResolveCheckpointAdminSessionMutation,
@@ -218,6 +221,33 @@ const shortId = (value) => {
   return text.length > 10 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text || "-";
 };
 
+const userOptionId = (user) => String(user?._id || user?.id || "").trim();
+
+const mergeUserOptions = (...groups) => {
+  const map = new Map();
+  groups
+    .flat()
+    .filter(Boolean)
+    .forEach((user) => {
+      const key = userOptionId(user);
+      if (key) map.set(key, user);
+    });
+  return Array.from(map.values());
+};
+
+const userSearchOptionLabel = (user) => {
+  if (!user) return "";
+  const nickname = String(user.nickname || user.nickName || "").trim();
+  const name = String(user.name || user.fullName || "").trim();
+  const email = String(user.email || "").trim();
+  const phone = String(user.phone || "").trim();
+  const main = nickname || name || email || phone || shortId(userOptionId(user));
+  const tail = [name && name !== main ? name : "", email, phone]
+    .filter(Boolean)
+    .join(" • ");
+  return tail ? `${main} • ${tail}` : main;
+};
+
 const jsonPreview = (value) => {
   try {
     return JSON.stringify(value || {}, null, 2);
@@ -227,6 +257,16 @@ const jsonPreview = (value) => {
 };
 
 const clone = (value) => JSON.parse(JSON.stringify(value || {}));
+
+const apiErrorMessage = (error, fallback = "Thao tác thất bại.") =>
+  error?.data?.message ||
+  error?.data?.error ||
+  error?.error ||
+  error?.message ||
+  fallback;
+
+const apiErrorKey = (error, fallback = "Thao tác thất bại.") =>
+  `${error?.status || error?.originalStatus || "api"}:${apiErrorMessage(error, fallback)}`;
 
 const getPathValue = (target, path, fallback = "") =>
   path.split(".").reduce((acc, key) => acc?.[key], target) ?? fallback;
@@ -418,8 +458,12 @@ function ResolveDialog({ open, session, action, onClose, onConfirm, loading }) {
       : "Huỷ checkpoint";
 
   const handleConfirm = async () => {
-    await onConfirm({ id: session?._id, action, note });
-    setNote("");
+    try {
+      await onConfirm({ id: session?._id, action, note });
+      setNote("");
+    } catch {
+      // Toast đã được hiển thị ở handler cha.
+    }
   };
 
   return (
@@ -1015,7 +1059,12 @@ function ManualCheckpointTab({
   creating,
   cancelling,
 }) {
+  const userSearchTimerRef = useRef(null);
+  const [searchUsers, userSearchQuery] = useLazySearchCheckpointUsersQuery();
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userOptions, setUserOptions] = useState([]);
   const [form, setForm] = useState({
+    userId: "",
     identifier: "",
     level: 1,
     expiresInHours: 72,
@@ -1026,20 +1075,82 @@ function ManualCheckpointTab({
 
   const mandates = query.data?.mandates || [];
   const totalPages = query.data?.totalPages || 1;
+  const searchResults = userSearchQuery.data?.users || [];
 
   const updateForm = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
+  useEffect(() => {
+    setUserOptions((current) =>
+      mergeUserOptions(selectedUser ? [selectedUser] : [], current, searchResults),
+    );
+  }, [searchResults, selectedUser]);
+
+  useEffect(
+    () => () => {
+      if (userSearchTimerRef.current) {
+        clearTimeout(userSearchTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (userSearchQuery.error) {
+      toast.error(apiErrorMessage(userSearchQuery.error, "Không tìm được user checkpoint."));
+    }
+  }, [userSearchQuery.error]);
+
+  const handleUserSearchInput = (value) => {
+    updateForm("identifier", value);
+    if (selectedUser && value !== userSearchOptionLabel(selectedUser)) {
+      setSelectedUser(null);
+      updateForm("userId", "");
+    }
+
+    const keyword = String(value || "").trim();
+    if (userSearchTimerRef.current) {
+      clearTimeout(userSearchTimerRef.current);
+      userSearchTimerRef.current = null;
+    }
+    if (keyword.length < 2) return;
+
+    userSearchTimerRef.current = setTimeout(() => {
+      searchUsers({ q: keyword, limit: 12 });
+    }, 250);
+  };
+
+  const handleUserSelect = (_, user) => {
+    setSelectedUser(user || null);
+    setForm((current) => ({
+      ...current,
+      userId: userOptionId(user),
+      identifier: user ? userSearchOptionLabel(user) : "",
+    }));
+  };
+
   const handleCreate = async () => {
     setMessage("");
-    const result = await onCreate(form);
-    if (result?.mandate) {
-      setMessage("Đã áp checkpoint thủ công. User sẽ bị yêu cầu checkpoint ở lần đăng nhập tiếp theo.");
-      setForm((current) => ({
-        ...current,
-        identifier: "",
-        reason: "",
-        note: "",
-      }));
+    const userId = userOptionId(selectedUser) || String(form.userId || "").trim();
+    try {
+      const result = await onCreate({
+        ...form,
+        userId: userId || undefined,
+        identifier: userId ? "" : String(form.identifier || "").trim(),
+      });
+      if (result?.mandate) {
+        setSelectedUser(null);
+        setUserOptions([]);
+        setMessage("Đã áp checkpoint thủ công. Nếu user đang online, web sẽ chuyển sang checkpoint trong vòng polling.");
+        setForm((current) => ({
+          ...current,
+          userId: "",
+          identifier: "",
+          reason: "",
+          note: "",
+        }));
+      }
+    } catch {
+      // Toast đã được hiển thị ở handler cha.
     }
   };
 
@@ -1056,12 +1167,48 @@ function ManualCheckpointTab({
             />
             <Grid container spacing={1.5}>
               <Grid item xs={12} md={4}>
-                <TextField
+                <Autocomplete
                   size="small"
-                  label="User ID, email, số điện thoại hoặc nickname"
-                  value={form.identifier}
-                  onChange={(event) => updateForm("identifier", event.target.value)}
-                  fullWidth
+                  options={userOptions}
+                  value={selectedUser}
+                  inputValue={form.identifier}
+                  loading={userSearchQuery.isFetching}
+                  onChange={handleUserSelect}
+                  onInputChange={(_, value, reason) => {
+                    if (reason === "input") handleUserSearchInput(value);
+                    if (reason === "clear") handleUserSelect(null, null);
+                  }}
+                  getOptionLabel={userSearchOptionLabel}
+                  isOptionEqualToValue={(option, value) =>
+                    userOptionId(option) === userOptionId(value)
+                  }
+                  filterOptions={(options) => options}
+                  renderOption={(props, option) => {
+                    const { key, ...rest } = props;
+                    return (
+                      <Box component="li" key={key} {...rest}>
+                        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                          <UserBlock user={option} />
+                          <Typography variant="caption" color="text.secondary">
+                            ID: {shortId(option._id)}
+                          </Typography>
+                        </Stack>
+                      </Box>
+                    );
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Tìm user"
+                      placeholder="Tên, nickname, email, SĐT hoặc User ID"
+                      helperText={
+                        selectedUser
+                          ? `Đã chọn: ${shortId(selectedUser._id)}`
+                          : "Nhập ít nhất 2 ký tự; User ID chính xác sẽ hiện."
+                      }
+                      fullWidth
+                    />
+                  )}
                 />
               </Grid>
               <Grid item xs={12} sm={6} md={2}>
@@ -1201,7 +1348,9 @@ function ManualCheckpointTab({
                       color="warning"
                       variant="outlined"
                       disabled={cancelling}
-                      onClick={() => onCancel({ id: mandate._id, note: "Admin huỷ manual checkpoint" })}
+                      onClick={() =>
+                        onCancel({ id: mandate._id, note: "Admin huỷ manual checkpoint" }).catch(() => {})
+                      }
                     >
                       Huỷ
                     </Button>
@@ -1243,8 +1392,12 @@ function SettingsTab({ settingsResponse, loading, error, onSave, saving }) {
   };
 
   const handleSave = async () => {
-    await onSave(draft);
-    setMessage("Đã lưu cấu hình checkpoint.");
+    try {
+      await onSave(draft);
+      setMessage("Đã lưu cấu hình checkpoint.");
+    } catch {
+      // Toast đã được hiển thị ở handler cha.
+    }
   };
 
   if (loading) {
@@ -1492,8 +1645,12 @@ function AllowlistTab({ settingsResponse, loading, error, onSave, saving }) {
   };
 
   const handleSave = async () => {
-    await onSave({ allowlist });
-    setMessage("Đã lưu allowlist checkpoint.");
+    try {
+      await onSave({ allowlist });
+      setMessage("Đã lưu allowlist checkpoint.");
+    } catch {
+      // Toast đã được hiển thị ở handler cha.
+    }
   };
 
   if (loading) {
@@ -1599,16 +1756,20 @@ function SimulatorTab({ onSimulate, result, loading }) {
 
   const run = async () => {
     const accountAgeMs = Number(user.accountAgeDays || 0) * 24 * 60 * 60 * 1000;
-    await onSimulate({
-      intent: "login",
-      counters,
-      user: {
-        email: user.hasEmail ? "demo@example.com" : "",
-        phone: user.hasPhone ? "0900000000" : "",
-        cccdStatus: user.cccdStatus,
-        createdAt: new Date(Date.now() - accountAgeMs).toISOString(),
-      },
-    });
+    try {
+      await onSimulate({
+        intent: "login",
+        counters,
+        user: {
+          email: user.hasEmail ? "demo@example.com" : "",
+          phone: user.hasPhone ? "0900000000" : "",
+          cccdStatus: user.cccdStatus,
+          createdAt: new Date(Date.now() - accountAgeMs).toISOString(),
+        },
+      });
+    } catch {
+      // Toast đã được hiển thị ở handler cha.
+    }
   };
 
   const decision = result?.decision;
@@ -1955,6 +2116,7 @@ export default function CheckpointManagerPage() {
     status: "active",
     level: "",
   });
+  const lastApiToastRef = useRef("");
 
   const { data: verifyData, isLoading: verifying } = useVerifyQuery();
   const isSuperAdmin = isStrictSuperAdminUser(verifyData?.user);
@@ -1988,6 +2150,34 @@ export default function CheckpointManagerPage() {
   const [updateSettings, { isLoading: savingSettings }] =
     useUpdateCheckpointAdminSettingsMutation();
   const [simulateRisk, { isLoading: simulating }] = useSimulateCheckpointRiskMutation();
+
+  useEffect(() => {
+    const entry = [
+      { error: overviewQuery.error, fallback: "Không tải được tổng quan checkpoint." },
+      { error: policyQuery.error, fallback: "Không tải được policy checkpoint." },
+      { error: settingsQuery.error, fallback: "Không tải được cấu hình checkpoint." },
+      { error: sessionsQuery.error, fallback: "Không tải được danh sách checkpoint." },
+      { error: eventsQuery.error, fallback: "Không tải được checkpoint events." },
+      { error: mandatesQuery.error, fallback: "Không tải được manual checkpoint." },
+      { error: sessionDetailQuery.error, fallback: "Không tải được chi tiết checkpoint." },
+      { error: insightQuery.error, fallback: "Không tải được insight checkpoint." },
+    ].find((item) => item.error);
+
+    if (!entry) return;
+    const key = apiErrorKey(entry.error, entry.fallback);
+    if (lastApiToastRef.current === key) return;
+    lastApiToastRef.current = key;
+    toast.error(apiErrorMessage(entry.error, entry.fallback));
+  }, [
+    eventsQuery.error,
+    insightQuery.error,
+    mandatesQuery.error,
+    overviewQuery.error,
+    policyQuery.error,
+    sessionDetailQuery.error,
+    sessionsQuery.error,
+    settingsQuery.error,
+  ]);
 
   const activeFetching = useMemo(
     () =>
@@ -2045,35 +2235,69 @@ export default function CheckpointManagerPage() {
   };
 
   const handleResolve = async ({ id, action, note }) => {
-    await resolveSession({ id, action, note }).unwrap();
-    setResolveState({ open: false, session: null, action: "" });
-    setSelectedSession(null);
-    overviewQuery.refetch();
+    try {
+      await resolveSession({ id, action, note }).unwrap();
+      setResolveState({ open: false, session: null, action: "" });
+      setSelectedSession(null);
+      overviewQuery.refetch();
+      toast.success(
+        action === "approve"
+          ? "Đã duyệt checkpoint."
+          : action === "reject"
+          ? "Đã từ chối checkpoint."
+          : "Đã hủy checkpoint.",
+      );
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Không xử lý được checkpoint."));
+      throw error;
+    }
   };
 
   const handleSaveSettings = async (payload) => {
-    await updateSettings(payload).unwrap();
-    await settingsQuery.refetch();
-    await policyQuery.refetch();
-    await overviewQuery.refetch();
+    try {
+      await updateSettings(payload).unwrap();
+      await settingsQuery.refetch();
+      await policyQuery.refetch();
+      await overviewQuery.refetch();
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Không lưu được cấu hình checkpoint."));
+      throw error;
+    }
   };
 
   const handleSimulate = async (payload) => {
-    const result = await simulateRisk(payload).unwrap();
-    setSimulatorResult(result);
+    try {
+      const result = await simulateRisk(payload).unwrap();
+      setSimulatorResult(result);
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Không chạy được mô phỏng checkpoint."));
+      throw error;
+    }
   };
 
   const handleCreateMandate = async (payload) => {
-    const result = await createMandate(payload).unwrap();
-    await mandatesQuery.refetch();
-    await overviewQuery.refetch();
-    return result;
+    try {
+      const result = await createMandate(payload).unwrap();
+      await mandatesQuery.refetch();
+      await overviewQuery.refetch();
+      toast.success("Đã áp checkpoint thủ công.");
+      return result;
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Không áp được checkpoint thủ công."));
+      throw error;
+    }
   };
 
   const handleCancelMandate = async (payload) => {
-    await cancelMandate(payload).unwrap();
-    await mandatesQuery.refetch();
-    await overviewQuery.refetch();
+    try {
+      await cancelMandate(payload).unwrap();
+      await mandatesQuery.refetch();
+      await overviewQuery.refetch();
+      toast.success("Đã hủy checkpoint thủ công.");
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Không hủy được checkpoint thủ công."));
+      throw error;
+    }
   };
 
   if (verifying) {

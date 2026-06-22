@@ -104,6 +104,13 @@ export const checkpointAdminApiSlice = apiSlice.injectEndpoints({
       providesTags: ["CheckpointAdmin"],
       keepUnusedDataFor: 10,
     }),
+    searchCheckpointUsers: builder.query({
+      query: ({ q = "", limit = 12 } = {}) => ({
+        url: `${CHECKPOINT_URL}/admin/users/search`,
+        params: cleanParams({ q, limit }),
+      }),
+      keepUnusedDataFor: 10,
+    }),
     createCheckpointMandate: builder.mutation({
       query: (body) => ({
         url: `${CHECKPOINT_URL}/admin/mandates`,
@@ -158,6 +165,7 @@ export const {
   useGetCheckpointAdminSessionsQuery,
   useGetCheckpointAdminEventsQuery,
   useGetCheckpointMandatesQuery,
+  useLazySearchCheckpointUsersQuery,
   useCreateCheckpointMandateMutation,
   useCancelCheckpointMandateMutation,
   useGetCheckpointAdminSessionDetailQuery,
