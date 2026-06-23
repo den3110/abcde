@@ -81,8 +81,8 @@ const MONITOR_STATUS_PRIORITY = {
 const STATUS_META = {
   recording: { color: "error", label: "Đang ghi" },
   uploading: { color: "warning", label: "Đang tải lên" },
-  uploaded: { color: "info", label: "Đã tải xong" },
-  pending_export_window: { color: "secondary", label: "Chờ xuất" },
+  uploaded: { color: "secondary", label: "Chờ export" },
+  pending_export_window: { color: "secondary", label: "Chờ export" },
   exporting: { color: "info", label: "Đang xuất" },
   ready: { color: "success", label: "Sẵn sàng" },
   failed: { color: "error", label: "Lỗi" },
@@ -356,7 +356,7 @@ function getRowDisplayStatus(row) {
   const status = String(row?.status || "").trim().toLowerCase();
   const { totalSegments, uploadedSegments } = getRowProgressSummary(row);
   if (status === "uploading" && totalSegments > 0 && uploadedSegments >= totalSegments) {
-    return "uploaded";
+    return "pending_export_window";
   }
   return status;
 }
@@ -408,10 +408,8 @@ function ExportStageCell({ row }) {
           ? "Đã xong"
           : displayStatus === "failed"
             ? "Thất bại"
-            : displayStatus === "uploaded"
-              ? "Chờ chuyển sang export"
-              : displayStatus === "pending_export_window"
-                ? "Chờ xuất"
+            : displayStatus === "uploaded" || displayStatus === "pending_export_window"
+              ? "Chờ export"
                 : "-"}
       </Typography>
     );
@@ -691,7 +689,7 @@ function ProgressCell({ row }) {
 
   let helperText = "Đang ghi, chưa có đoạn cắt nào";
   if (allSegmentsUploaded && row?.status === "uploading") {
-    helperText = "Đã tải xong, chờ chuyển sang export";
+    helperText = "Đã upload đủ segment, chờ chuyển export";
   } else if (displaySegment) {
     if (displaySegment.uploadStatus === "uploading_parts" && !hasKnownBytes) {
       helperText = "Đang đợi part đầu tiên";
@@ -752,7 +750,7 @@ function MatchCell({ row }) {
         {participantsLabel || "Chưa rõ trận đấu"}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.8 }}>
-        Match: {matchCode || row.matchId || "-"}
+        Match: {matchCode || "-"}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.7, whiteSpace: "normal" }}>
         {row.competitionLabel || "-"}
