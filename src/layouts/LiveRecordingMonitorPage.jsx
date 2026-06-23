@@ -81,6 +81,8 @@ const MONITOR_STATUS_PRIORITY = {
 const STATUS_META = {
   recording: { color: "error", label: "Đang ghi" },
   uploading: { color: "warning", label: "Đang tải lên" },
+  uploaded: { color: "info", label: "Đã tải xong" },
+  pending_export_window: { color: "secondary", label: "Chờ xuất" },
   exporting: { color: "info", label: "Đang xuất" },
   ready: { color: "success", label: "Sẵn sàng" },
   failed: { color: "error", label: "Lỗi" },
@@ -97,6 +99,15 @@ function sortMonitorRows(rows = []) {
     if (priorityA !== priorityB) return priorityA - priorityB;
     return new Date(b?.updatedAt || 0).getTime() - new Date(a?.updatedAt || 0).getTime();
   });
+}
+
+function extractPublicMatchCode(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const match = text.match(
+    /\b(?:V\d+(?:-B[^-\s]+)?(?:-NT)?-T\d+|WB\d+-T\d+|LB\d+-T\d+|GF(?:\d+)?-T\d+)\b/i
+  );
+  return match ? match[0].toUpperCase() : "";
 }
 
 function buildMonitorRowSearchText(row) {
@@ -341,6 +352,15 @@ function getRowProgressSummary(row) {
   };
 }
 
+function getRowDisplayStatus(row) {
+  const status = String(row?.status || "").trim().toLowerCase();
+  const { totalSegments, uploadedSegments } = getRowProgressSummary(row);
+  if (status === "uploading" && totalSegments > 0 && uploadedSegments >= totalSegments) {
+    return "uploaded";
+  }
+  return status;
+}
+
 function canForceRowToExport(row) {
   const totalSegments = Number(row?.segmentSummary?.totalSegments || 0);
   const uploadedSegments = Number(row?.segmentSummary?.uploadedSegments || 0);
@@ -366,8 +386,9 @@ function canCleanR2Row(row) {
   return Boolean(String(row?.error || "").trim());
 }
 
-function StatusChip({ status }) {
-  const meta = STATUS_META[status] || {
+function StatusChip({ status, row }) {
+  const displayStatus = row ? getRowDisplayStatus(row) : String(status || "").trim().toLowerCase();
+  const meta = STATUS_META[displayStatus] || {
     color: "default",
     label: status || "Không rõ",
   };
@@ -378,11 +399,20 @@ function ExportStageCell({ row }) {
   const exportPipeline = row?.exportPipeline || {};
   const stageLabel = exportPipeline.label || "-";
   const detail = exportPipeline.detail || "";
+  const displayStatus = getRowDisplayStatus(row);
 
   if (row?.status !== "exporting") {
     return (
       <Typography variant="caption" sx={{ py: 0.6, opacity: 0.72 }}>
-        {row?.status === "ready" ? "Đã xong" : row?.status === "failed" ? "Thất bại" : "-"}
+        {displayStatus === "ready"
+          ? "Đã xong"
+          : displayStatus === "failed"
+            ? "Thất bại"
+            : displayStatus === "uploaded"
+              ? "Chờ chuyển sang export"
+              : displayStatus === "pending_export_window"
+                ? "Chờ xuất"
+                : "-"}
       </Typography>
     );
   }
@@ -657,9 +687,12 @@ function ProgressCell({ row }) {
   const hasKnownBytes = Number(displaySegment?.totalSizeBytes || 0) > 0;
   const partText = formatSegmentPartLabel(displaySegment, { short: true });
   const completedBytes = getSegmentDisplayCompletedBytes(displaySegment);
+  const allSegmentsUploaded = totalSegments > 0 && uploadedSegments >= totalSegments;
 
   let helperText = "Đang ghi, chưa có đoạn cắt nào";
-  if (displaySegment) {
+  if (allSegmentsUploaded && row?.status === "uploading") {
+    helperText = "Đã tải xong, chờ chuyển sang export";
+  } else if (displaySegment) {
     if (displaySegment.uploadStatus === "uploading_parts" && !hasKnownBytes) {
       helperText = "Đang đợi part đầu tiên";
     } else if (hasKnownBytes) {
@@ -705,13 +738,21 @@ function ProgressCell({ row }) {
 }
 
 function MatchCell({ row }) {
+  const sideALabel = row?.teamALabel || row?.teamAName || "";
+  const sideBLabel = row?.teamBLabel || row?.teamBName || "";
+  const matchCode = extractPublicMatchCode(row?.matchCode);
+  const participantsLabel =
+    sideALabel || sideBLabel
+      ? `${sideALabel || "Đội A chưa rõ"} vs ${sideBLabel || "Đội B chưa rõ"}`
+      : row?.participantsLabel || "";
+
   return (
     <Stack spacing={0.45} sx={{ py: 0.6 }}>
       <Typography variant="body2" fontWeight={700} sx={{ whiteSpace: "normal" }}>
-        {row.participantsLabel || "Chưa rõ trận đấu"}
+        {participantsLabel || "Chưa rõ trận đấu"}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.8 }}>
-        Match: {row.matchCode || row.matchId || "-"}
+        Match: {matchCode || row.matchId || "-"}
       </Typography>
       <Typography variant="caption" sx={{ opacity: 0.7, whiteSpace: "normal" }}>
         {row.competitionLabel || "-"}
@@ -889,7 +930,7 @@ function RecordingDetailDialog({
       <DialogContent dividers ref={dialogContentRef} onScroll={handleDialogScroll}>
         <Stack spacing={2.5}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1} flexWrap="wrap">
-            <StatusChip status={row?.status} />
+            <StatusChip status={row?.status} row={row} />
             <Chip size="small" variant="outlined" label={`Mode: ${row?.modeLabel || "-"}`} />
             <Chip
               size="small"
@@ -1742,7 +1783,7 @@ export default function LiveRecordingMonitorPage() {
         field: "status",
         headerName: "Trạng thái",
         minWidth: 130,
-        renderCell: ({ row }) => <StatusChip status={row.status} />,
+        renderCell: ({ row }) => <StatusChip status={row.status} row={row} />,
       },
       {
         field: "modeLabel",
