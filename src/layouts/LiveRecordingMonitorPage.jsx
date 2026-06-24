@@ -354,10 +354,6 @@ function getRowProgressSummary(row) {
 
 function getRowDisplayStatus(row) {
   const status = String(row?.status || "").trim().toLowerCase();
-  const { totalSegments, uploadedSegments } = getRowProgressSummary(row);
-  if (status === "uploading" && totalSegments > 0 && uploadedSegments >= totalSegments) {
-    return "pending_export_window";
-  }
   return status;
 }
 
@@ -689,7 +685,7 @@ function ProgressCell({ row }) {
 
   let helperText = "Đang ghi, chưa có đoạn cắt nào";
   if (allSegmentsUploaded && row?.status === "uploading") {
-    helperText = "Đã upload đủ segment, chờ chuyển export";
+    helperText = "Đã upload đủ segment hiện tại, vẫn đang chờ segment mới";
   } else if (displaySegment) {
     if (displaySegment.uploadStatus === "uploading_parts" && !hasKnownBytes) {
       helperText = "Đang đợi part đầu tiên";
