@@ -38,7 +38,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-import { DataGrid, GridToolbar } from "@mui/x-data-grid";
+import { DataGrid } from "@mui/x-data-grid";
 import { useDispatch } from "react-redux";
 import { toast } from "react-toastify";
 
@@ -67,6 +67,7 @@ const MONITOR_SOCKET_SOFT_SYNC_MIN_GAP_MS = 8000;
 const MONITOR_SOCKET_HARD_SYNC_MIN_GAP_MS = 1200;
 const MONITOR_SOCKET_AUXILIARY_POLLING_INTERVAL = 5 * 60000;
 const MONITOR_SOCKET_WORKER_HEALTH_POLLING_INTERVAL = 60000;
+const AUTO_EXPORT_COUNTDOWN_TICK_MS = 5000;
 const DETAIL_SEGMENTS_PAGE_SIZE = 20;
 
 const MONITOR_STATUS_PRIORITY = {
@@ -301,6 +302,28 @@ function formatPercent(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "-";
   return `${Math.max(0, Math.min(100, Math.round(numeric)))}%`;
+}
+
+function formatCountdownSeconds(seconds) {
+  const value = Math.max(0, Math.ceil(Number(seconds) || 0));
+  return `${value}s`;
+}
+
+function getAutoExportCountdownText(row, nowMs = Date.now()) {
+  if (String(row?.status || "").toLowerCase() !== "uploading") return "";
+  const autoExport = row?.autoExport || {};
+  const triggerAtMs = autoExport?.triggerAt ? new Date(autoExport.triggerAt).getTime() : 0;
+  const remainingSeconds =
+    Number.isFinite(triggerAtMs) && triggerAtMs > 0
+      ? Math.max(0, Math.ceil((triggerAtMs - nowMs) / 1000))
+      : Number(autoExport?.remainingSeconds);
+  if (!Number.isFinite(remainingSeconds)) return "";
+  if (remainingSeconds <= 0) {
+    return "Đã tới mốc auto export, đang chờ backend chuyển sang Chờ export";
+  }
+  return `Nếu không có tín hiệu mới, còn ${formatCountdownSeconds(
+    remainingSeconds
+  )} sẽ chuyển sang Chờ export`;
 }
 
 function formatSegmentUploadStatus(status) {
@@ -675,13 +698,14 @@ function StorageOverviewCard({ storage }) {
   );
 }
 
-function ProgressCell({ row }) {
+function ProgressCell({ row, nowMs }) {
   const { displaySegment, totalSegments, uploadedSegments, segmentPercent, overallPercent } =
     getRowProgressSummary(row);
   const hasKnownBytes = Number(displaySegment?.totalSizeBytes || 0) > 0;
   const partText = formatSegmentPartLabel(displaySegment, { short: true });
   const completedBytes = getSegmentDisplayCompletedBytes(displaySegment);
   const allSegmentsUploaded = totalSegments > 0 && uploadedSegments >= totalSegments;
+  const autoExportText = getAutoExportCountdownText(row, nowMs);
 
   let helperText = "Đang ghi, chưa có đoạn cắt nào";
   if (allSegmentsUploaded && row?.status === "uploading") {
@@ -727,6 +751,14 @@ function ProgressCell({ row }) {
       <Typography variant="caption" sx={{ opacity: 0.75, whiteSpace: "normal" }}>
         {helperText}
       </Typography>
+      {autoExportText ? (
+        <Typography
+          variant="caption"
+          sx={{ color: "warning.main", fontWeight: 600, whiteSpace: "normal" }}
+        >
+          {autoExportText}
+        </Typography>
+      ) : null}
     </Stack>
   );
 }
@@ -1218,6 +1250,7 @@ export default function LiveRecordingMonitorPage() {
   const [cleaningR2Id, setCleaningR2Id] = useState(null);
   const [bulkAction, setBulkAction] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [countdownNowMs, setCountdownNowMs] = useState(() => Date.now());
   const deferredSearch = useDeferredValue(search);
   const trimmedSearch = deferredSearch.trim();
   const monitorPollingInterval = socketOn ? 0 : 15000;
@@ -1310,6 +1343,16 @@ export default function LiveRecordingMonitorPage() {
   const rows = useMemo(() => {
     return Array.isArray(rowsData?.rows) ? rowsData.rows : [];
   }, [rowsData?.rows]);
+  const rowIdSet = useMemo(() => new Set(rows.map((row) => String(row.id))), [rows]);
+  const hasAutoExportCountdown = useMemo(
+    () =>
+      rows.some(
+        (row) =>
+          String(row?.status || "").toLowerCase() === "uploading" &&
+          (row?.autoExport?.triggerAt || Number.isFinite(Number(row?.autoExport?.remainingSeconds)))
+      ),
+    [rows]
+  );
   const summary = summaryData?.summary || {};
   const meta = metaData?.meta || {};
   const count = Number(rowsData?.count || 0);
@@ -1594,14 +1637,28 @@ export default function LiveRecordingMonitorPage() {
   }, [tournamentData?.tournaments]);
 
   useEffect(() => {
+    if (!hasAutoExportCountdown) return undefined;
+    setCountdownNowMs(Date.now());
+    const timer = setInterval(() => {
+      setCountdownNowMs(Date.now());
+    }, AUTO_EXPORT_COUNTDOWN_TICK_MS);
+    return () => clearInterval(timer);
+  }, [hasAutoExportCountdown]);
+
+  useEffect(() => {
     setSelectionModel((previous) =>
-      previous.filter((id) => rows.some((row) => String(row.id) === String(id)))
+      previous.filter((id) => rowIdSet.has(String(id)))
     );
-  }, [rows]);
+  }, [rowIdSet]);
+
+  const selectionIdSet = useMemo(
+    () => new Set(selectionModel.map((id) => String(id))),
+    [selectionModel]
+  );
 
   const selectedRows = useMemo(
-    () => rows.filter((row) => selectionModel.includes(row.id)),
-    [rows, selectionModel]
+    () => rows.filter((row) => selectionIdSet.has(String(row.id))),
+    [rows, selectionIdSet]
   );
   const selectedForceRows = useMemo(
     () => selectedRows.filter((row) => canForceRowToExport(row)),
@@ -1805,7 +1862,7 @@ export default function LiveRecordingMonitorPage() {
         flex: 1,
         minWidth: 260,
         sortable: false,
-        renderCell: ({ row }) => <ProgressCell row={row} />,
+        renderCell: ({ row }) => <ProgressCell row={row} nowMs={countdownNowMs} />,
       },
       {
         field: "output",
@@ -1879,7 +1936,14 @@ export default function LiveRecordingMonitorPage() {
         ),
       },
     ],
-    [bulkAction, forceExportingId, handleForceExport, cleaningR2Id, handleCleanR2]
+    [
+      bulkAction,
+      countdownNowMs,
+      forceExportingId,
+      handleForceExport,
+      cleaningR2Id,
+      handleCleanR2,
+    ]
   );
 
   return (
@@ -2192,7 +2256,10 @@ export default function LiveRecordingMonitorPage() {
                       setSelectedRowId(params.row.id);
                     }}
                     getRowHeight={() => 112}
-                    slots={{ toolbar: GridToolbar }}
+                    disableColumnMenu
+                    disableColumnFilter
+                    disableColumnSelector
+                    disableDensitySelector
                     pagination
                     paginationMode="server"
                     rowCount={count}
