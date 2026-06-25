@@ -18,6 +18,7 @@ import {
   MenuItem,
   Skeleton,
   LinearProgress,
+  Switch,
   Card as MuiCard,
 } from "@mui/material";
 import {
@@ -35,7 +36,11 @@ import {
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { useListTournamentsQuery, useDeleteTournamentMutation } from "slices/tournamentsApiSlice";
+import {
+  useListTournamentsQuery,
+  useDeleteTournamentMutation,
+  useUpdateTournamentMutation,
+} from "slices/tournamentsApiSlice";
 import { setTKeyword, setTPage, setTStatus } from "slices/adminTournamentUiSlice";
 import { toast } from "react-toastify";
 
@@ -101,6 +106,8 @@ export default function TournamentsListPage() {
 
   /* ---------------- Handlers ổn định ---------------- */
   const [del] = useDeleteTournamentMutation();
+  const [updateTournament] = useUpdateTournamentMutation();
+  const [updatingTestIds, setUpdatingTestIds] = useState({});
 
   const handleDelete = useCallback(
     async (id) => {
@@ -136,6 +143,61 @@ export default function TournamentsListPage() {
     [navigate]
   );
 
+  const handleToggleTest = useCallback(
+    async (tournament) => {
+      const id = tournament?._id;
+      if (!id) return;
+      const nextIsTest = !tournament.isTest;
+      setUpdatingTestIds((prev) => ({ ...prev, [id]: true }));
+      try {
+        await updateTournament({ id, body: { isTest: nextIsTest } }).unwrap();
+        toast.success(nextIsTest ? "Đã bật chế độ giải test" : "Đã tắt chế độ giải test");
+      } catch (err) {
+        toast.error(err?.data?.message || err?.error || "Cập nhật giải test thất bại");
+      } finally {
+        setUpdatingTestIds((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    },
+    [updateTournament]
+  );
+
+  const renderTestSwitch = useCallback(
+    (tournament) => {
+      const id = tournament?._id;
+      return (
+        <Tooltip title="Bật để chỉ admin thấy giải này">
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            sx={{ width: "fit-content" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Switch
+              size="small"
+              checked={!!tournament?.isTest}
+              disabled={!!updatingTestIds[id]}
+              onChange={() => handleToggleTest(tournament)}
+              inputProps={{ "aria-label": "Giải test" }}
+            />
+            <Typography
+              variant="caption"
+              color={tournament?.isTest ? "warning.main" : "text.secondary"}
+              sx={{ whiteSpace: "nowrap", fontWeight: tournament?.isTest ? 700 : 500 }}
+            >
+              Giải test
+            </Typography>
+          </Stack>
+        </Tooltip>
+      );
+    },
+    [handleToggleTest, updatingTestIds]
+  );
+
   /* ---------------- Memo hóa columns / rows / tableData ---------------- */
   const columns = useMemo(
     () => [
@@ -161,6 +223,7 @@ export default function TournamentsListPage() {
               <MDTypography variant="button" fontWeight="medium" sx={NAME_SX}>
                 {t.name}
               </MDTypography>
+              {renderTestSwitch(t)}
             </Box>
           </Stack>
         ),
@@ -251,6 +314,7 @@ export default function TournamentsListPage() {
       goBracketStory,
       goEdit,
       handleDelete,
+      renderTestSwitch,
     ]
   );
 
@@ -390,6 +454,7 @@ export default function TournamentsListPage() {
                         <Chip label={STATUS_LABEL[t.status]} size="small" />
                         <Chip label={t.eventType === "double" ? "Đôi" : "Đơn"} size="small" />
                       </Stack>
+                      <Box mt={0.5}>{renderTestSwitch(t)}</Box>
                       <Stack direction="row" spacing={1} mt={2} flexWrap="wrap">
                         <MDButton
                           size="small"

@@ -18,6 +18,7 @@ import {
   Tooltip,
   InputAdornment,
   Slider,
+  Switch,
 } from "@mui/material";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
@@ -510,6 +511,7 @@ export default function TournamentFormPage() {
     maxPairs: 0,
     noRankDelta: false,
     allowExceedMaxRating: false,
+    isTest: false,
 
     // phạm vi chấm
     scoringScopeType: "national",
@@ -755,6 +757,7 @@ export default function TournamentFormPage() {
       contentHtml: tour.contentHtml || "",
       noRankDelta: !!tour.noRankDelta,
       allowExceedMaxRating: !!tour.allowExceedMaxRating,
+      isTest: !!tour.isTest,
 
       scoringScopeType: scopeType,
       scoringProvinces: scopeProvinces,
@@ -886,6 +889,7 @@ export default function TournamentFormPage() {
       maxPairs: Number(form.maxPairs) || 0,
       noRankDelta: !!form.noRankDelta,
       allowExceedMaxRating: !!form.allowExceedMaxRating,
+      isTest: !!form.isTest,
 
       scoringScope: {
         type: scoringScopeType,
@@ -1733,6 +1737,19 @@ export default function TournamentFormPage() {
                 </Grid>
 
                 <Grid item xs={12}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={!!form.isTest}
+                        onChange={(e) => setForm((p) => ({ ...p, isTest: e.target.checked }))}
+                      />
+                    }
+                    label="Giải test"
+                  />
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+                    Bật để chỉ admin thấy giải này.
+                  </Typography>
+
                   <FormControlLabel
                     control={
                       <Checkbox
