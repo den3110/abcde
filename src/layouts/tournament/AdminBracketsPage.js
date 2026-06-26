@@ -70,6 +70,7 @@ import {
   useCreateMatchMutation,
   useDeleteMatchMutation,
   useUpdateBracketMutation,
+  useRebuildKnockoutBracketMutation,
   useUpdateMatchMutation,
   useResetMatchChainMutation,
   useResetMatchScoresMutation,
@@ -338,6 +339,8 @@ export default function AdminBracketsPage() {
   const [createMatch] = useCreateMatchMutation();
   const [deleteMatch] = useDeleteMatchMutation();
   const [updateBracket] = useUpdateBracketMutation();
+  const [rebuildKnockoutBracket, { isLoading: rebuildingKnockout }] =
+    useRebuildKnockoutBracketMutation();
   const [updateMatch] = useUpdateMatchMutation();
   const [resetMatchChain] = useResetMatchChainMutation();
   const [resetMatchScores, { isLoading: resettingScores }] = useResetMatchScoresMutation();
@@ -1660,6 +1663,42 @@ export default function AdminBracketsPage() {
       refetchBrackets();
     } catch (e) {
       showSnack("error", e?.data?.message || e.error);
+    }
+  };
+
+  const handleRebuildKnockout = async () => {
+    if (!ebId || ebType !== "knockout") return;
+    const size = Number(ebDrawSize) || fromRounds(Number(ebMaxRounds) || 1);
+    const validSize = Number.isInteger(size) && size >= 2 && (size & (size - 1)) === 0;
+    if (!validSize) {
+      return showSnack("error", "Quy mô knockout phải là lũy thừa của 2.");
+    }
+
+    const ok = window.confirm(
+      `Tạo lại sơ đồ knockout "${ebName || editingBracket?.name || ""}" thành ${size} đội?\n` +
+        "Thao tác này chỉ xoá và tạo lại các trận trong bracket knockout này. " +
+        "Vòng trước/vòng bảng/playoff giữ nguyên, sau đó vẫn đổ seed từ vòng trước như bình thường."
+    );
+    if (!ok) return;
+
+    try {
+      const res = await rebuildKnockoutBracket({
+        tournamentId,
+        bracketId: ebId,
+        body: {
+          drawSize: size,
+          preserveSeeds: false,
+        },
+      }).unwrap();
+      showSnack(
+        "success",
+        `Đã tạo lại sơ đồ knockout ${res?.drawSize || size} đội (${res?.created || 0} trận).`
+      );
+      setEditingBracket(null);
+      refetchBrackets();
+      refetchMatches();
+    } catch (e) {
+      showSnack("error", e?.data?.message || e.error || "Lỗi tạo lại sơ đồ knockout");
     }
   };
 
@@ -3100,6 +3139,20 @@ export default function AdminBracketsPage() {
                       ))}
                     </TextField>
                   </Stack>
+                  <Alert severity="warning">
+                    Nút tạo lại chỉ xoá và dựng lại các trận trong bracket knockout này.
+                    Vòng trước giữ nguyên; sau đó dùng phần đổ seed/fill từ vòng trước như bình thường.
+                  </Alert>
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    startIcon={rebuildingKnockout ? <CircularProgress size={16} /> : <RefreshIcon />}
+                    onClick={handleRebuildKnockout}
+                    disabled={rebuildingKnockout}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    Tạo lại sơ đồ knockout
+                  </Button>
                 )}
                 <Divider sx={{ my: 2 }} />
                 <FormControlLabel

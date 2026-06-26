@@ -237,6 +237,18 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         body,
       }),
     }),
+    rebuildKnockoutBracket: builder.mutation({
+      query: ({ tournamentId, bracketId, body }) => ({
+        url: `/admin/tournaments/${tournamentId}/brackets/${bracketId}/knockout/rebuild`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_res, _err, { tournamentId, bracketId }) => [
+        { type: "Bracket", id: tournamentId },
+        { type: "Match", id: bracketId },
+        { type: "Match", id: "LIST" },
+      ],
+    }),
     updateMatch: builder.mutation({
       query: ({ matchId, body }) => ({
         url: `/admin/matches/${matchId}`,
@@ -773,6 +785,7 @@ export const {
   useDeleteBracketMutation,
   useGetBracketQuery,
   useUpdateBracketMutation,
+  useRebuildKnockoutBracketMutation,
   useUpdateMatchMutation,
   useUploadAvatarMutation,
   useUploadTournamentImageMutation,
