@@ -293,6 +293,13 @@ export const liveApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
     }),
+    cleanLiveRecordingR2Source: builder.mutation({
+      query: (recordingId) => ({
+        url: `/live/recordings/v2/admin/${recordingId}/source-r2-clean`,
+        method: "POST",
+      }),
+      invalidatesTags: [{ type: "LiveRecordingMonitor", id: "LIST" }],
+    }),
     bulkTrashLiveRecordingDriveAssets: builder.mutation({
       query: ({ recordingIds = [], target = "source" }) => ({
         url: "/live/recordings/v2/admin/drive-asset/trash/bulk",
@@ -334,6 +341,7 @@ export const {
   useRenameLiveRecordingDriveAssetMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
+  useCleanLiveRecordingR2SourceMutation,
   useTrashLiveRecordingDriveAssetMutation,
   useTrashLiveRecordingR2AssetsMutation,
 } = liveApiSlice;

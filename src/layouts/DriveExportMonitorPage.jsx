@@ -24,6 +24,7 @@ import {
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
 import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
+import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import SearchIcon from "@mui/icons-material/Search";
 import dayjs from "dayjs";
@@ -44,6 +45,7 @@ import {
   useGetLiveRecordingMonitorSummaryQuery,
   useGetLiveRecordingWorkerHealthQuery,
   useQueueLiveRecordingAiCommentaryMutation,
+  useCleanLiveRecordingR2SourceMutation,
   useRerenderLiveRecordingAiCommentaryMutation,
   useRetryLiveRecordingExportMutation,
 } from "slices/liveApiSlice";
@@ -482,6 +484,13 @@ function canForceExportNow(row) {
     row?.status === "uploading" ||
     (row?.status === "exporting" &&
       ["queued", "queued_retry", "delayed_until_window", "awaiting_queue_sync", "stale_no_job"].includes(stage))
+  );
+}
+
+function canCleanR2Source(row) {
+  return Boolean(
+    row?.sourceCleanupStatus !== "completed" &&
+      (row?.driveFileId || row?.driveRawUrl || row?.drivePreviewUrl || row?.status === "ready")
   );
 }
 
@@ -942,8 +951,10 @@ function RecordingDetailDialog({
   detailError = null,
   onForceExportNow,
   onRetryExport,
+  onCleanR2Source,
   forcingRecordingId,
   retryingRecordingId,
+  cleaningR2SourceId,
 }) {
   if (!row) return null;
 
@@ -1060,7 +1071,11 @@ function RecordingDetailDialog({
                 size="small"
                 color="warning"
                 variant="outlined"
-                disabled={Boolean(forcingRecordingId) || Boolean(retryingRecordingId)}
+                disabled={
+                  Boolean(forcingRecordingId) ||
+                  Boolean(retryingRecordingId) ||
+                  Boolean(cleaningR2SourceId)
+                }
                 onClick={() => onRetryExport?.(row.recordingId)}
                 startIcon={
                   retryingRecordingId === row.recordingId ? (
@@ -1069,6 +1084,28 @@ function RecordingDetailDialog({
                 }
               >
                 {retryingRecordingId === row.recordingId ? "Đang thử lại..." : "Thử lại export"}
+              </Button>
+            ) : null}
+            {canCleanR2Source(row) ? (
+              <Button
+                size="small"
+                color="error"
+                variant="outlined"
+                disabled={
+                  Boolean(forcingRecordingId) ||
+                  Boolean(retryingRecordingId) ||
+                  Boolean(cleaningR2SourceId)
+                }
+                onClick={() => onCleanR2Source?.(row.recordingId)}
+                startIcon={
+                  cleaningR2SourceId === row.recordingId ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : (
+                    <DeleteSweepIcon fontSize="small" />
+                  )
+                }
+              >
+                {cleaningR2SourceId === row.recordingId ? "Đang dọn..." : "Dọn R2"}
               </Button>
             ) : null}
           </Stack>
@@ -1625,6 +1662,7 @@ export default function DriveExportMonitorPage() {
   const [queueDialogOpen, setQueueDialogOpen] = useState(false);
   const [retryingRecordingId, setRetryingRecordingId] = useState(null);
   const [forcingRecordingId, setForcingRecordingId] = useState(null);
+  const [cleaningR2SourceId, setCleaningR2SourceId] = useState(null);
   const [queueingCommentaryId, setQueueingCommentaryId] = useState(null);
   const [rerenderingCommentaryId, setRerenderingCommentaryId] = useState(null);
   const [paginationModel, setPaginationModel] = useState({
@@ -1686,6 +1724,7 @@ export default function DriveExportMonitorPage() {
   });
   const [retryExport] = useRetryLiveRecordingExportMutation();
   const [forceExport] = useForceLiveRecordingExportMutation();
+  const [cleanR2Source] = useCleanLiveRecordingR2SourceMutation();
   const [queueAiCommentary] = useQueueLiveRecordingAiCommentaryMutation();
   const [rerenderAiCommentary] = useRerenderLiveRecordingAiCommentaryMutation();
   const {
@@ -1913,6 +1952,30 @@ export default function DriveExportMonitorPage() {
     }
   };
 
+  const handleCleanR2Source = useCallback(async (recordingId) => {
+    if (!recordingId || cleaningR2SourceId) return;
+    if (
+      !window.confirm(
+        "Dọn toàn bộ source R2 của recording này? Drive file và record DB vẫn được giữ lại, nhưng source R2 sau khi xóa sẽ không phục hồi được."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setCleaningR2SourceId(recordingId);
+      const result = await cleanR2Source(recordingId).unwrap();
+      toast.success(
+        result?.message || `Đã dọn ${Number(result?.deletedObjects || 0)} file R2.`
+      );
+      await refreshAll();
+    } catch (apiError) {
+      toast.error(apiError?.data?.message || apiError?.error || "Không thể dọn source R2.");
+    } finally {
+      setCleaningR2SourceId(null);
+    }
+  }, [cleanR2Source, cleaningR2SourceId, refreshAll]);
+
   const handleOpenQueueDetail = useCallback((row) => {
     if (!row?.id) return;
     setQueueDialogOpen(false);
@@ -2049,7 +2112,11 @@ export default function DriveExportMonitorPage() {
                 size="small"
                 color="warning"
                 variant="outlined"
-                disabled={Boolean(retryingRecordingId) || Boolean(forcingRecordingId)}
+                disabled={
+                  Boolean(retryingRecordingId) ||
+                  Boolean(forcingRecordingId) ||
+                  Boolean(cleaningR2SourceId)
+                }
                 onClick={(event) => {
                   event.stopPropagation();
                   handleRetryExport(row.recordingId);
@@ -2068,7 +2135,11 @@ export default function DriveExportMonitorPage() {
                 size="small"
                 color="secondary"
                 variant="outlined"
-                disabled={Boolean(retryingRecordingId) || Boolean(forcingRecordingId)}
+                disabled={
+                  Boolean(retryingRecordingId) ||
+                  Boolean(forcingRecordingId) ||
+                  Boolean(cleaningR2SourceId)
+                }
                 onClick={(event) => {
                   event.stopPropagation();
                   handleForceExportNow(row.recordingId);
@@ -2080,6 +2151,31 @@ export default function DriveExportMonitorPage() {
                 }
               >
                 {forcingRecordingId === row.recordingId ? "Đang xuất..." : "Xuất ngay"}
+              </Button>
+            ) : null}
+            {canCleanR2Source(row) ? (
+              <Button
+                size="small"
+                color="error"
+                variant="outlined"
+                disabled={
+                  Boolean(retryingRecordingId) ||
+                  Boolean(forcingRecordingId) ||
+                  Boolean(cleaningR2SourceId)
+                }
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleCleanR2Source(row.recordingId);
+                }}
+                startIcon={
+                  cleaningR2SourceId === row.recordingId ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : (
+                    <DeleteSweepIcon fontSize="small" />
+                  )
+                }
+              >
+                {cleaningR2SourceId === row.recordingId ? "Đang dọn..." : "Dọn R2"}
               </Button>
             ) : null}
           </Stack>
@@ -2214,7 +2310,9 @@ export default function DriveExportMonitorPage() {
     [
       commentaryAutoEnabled,
       commentaryGlobalEnabled,
+      cleaningR2SourceId,
       forcingRecordingId,
+      handleCleanR2Source,
       queueingCommentaryId,
       rerenderingCommentaryId,
       retryingRecordingId,
@@ -2482,8 +2580,10 @@ export default function DriveExportMonitorPage() {
             onClose={() => setSelectedRowId(null)}
             onForceExportNow={handleForceExportNow}
             onRetryExport={handleRetryExport}
+            onCleanR2Source={handleCleanR2Source}
             forcingRecordingId={forcingRecordingId}
             retryingRecordingId={retryingRecordingId}
+            cleaningR2SourceId={cleaningR2SourceId}
             loadingDetail={selectedRowDetailLoading}
             detailError={selectedRowDetailError}
           />
