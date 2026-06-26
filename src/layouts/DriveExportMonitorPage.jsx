@@ -476,7 +476,13 @@ function canRetryExport(row) {
 }
 
 function canForceExportNow(row) {
-  return row?.status === "pending_export_window";
+  const stage = row?.exportPipeline?.stage || "";
+  return (
+    row?.status === "pending_export_window" ||
+    row?.status === "uploading" ||
+    (row?.status === "exporting" &&
+      ["queued", "queued_retry", "delayed_until_window", "awaiting_queue_sync", "stale_no_job"].includes(stage))
+  );
 }
 
 const PIPELINE_STAGE_LABELS = {
