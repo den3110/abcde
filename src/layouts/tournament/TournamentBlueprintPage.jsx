@@ -3736,7 +3736,7 @@ export default function TournamentBlueprintPage() {
   const renderPreviewStage = (stage, idx) => {
     const stageKey = stage.type === "group" ? "groups" : stage.type;
     const runtime = stageCardMap[stageKey]?.runtime;
-    const locked = !!runtime?.locked;
+    const locked = !!runtime?.locked && !(stage.type === "ko" && existingKoBracketId);
     const showPublishedGroups =
       stage.type === "group" &&
       publishedGroupPreview.some((group) => Array.isArray(group.names) && group.names.length > 0);
@@ -4012,6 +4012,9 @@ export default function TournamentBlueprintPage() {
         : {}),
     }));
   };
+
+  const koPreviewStageIndex = stages.findIndex((stage) => stage.type === "ko");
+  const koPreviewStage = koPreviewStageIndex >= 0 ? stages[koPreviewStageIndex] : null;
 
   const manualContent = (
     <Stack spacing={3}>
@@ -4462,6 +4465,8 @@ export default function TournamentBlueprintPage() {
         </Paper>
       )}
 
+      {koPreviewStage ? renderPreviewStage(koPreviewStage, koPreviewStageIndex) : null}
+
       <Box sx={{ mt: 1 }}>
         <RulesEditor label="Luật (KO)" value={koRules} onChange={setKoRules} />
 
@@ -4520,7 +4525,7 @@ export default function TournamentBlueprintPage() {
 
       <Divider />
 
-      {stages.map((stage, idx) => renderPreviewStage(stage, idx))}
+      {stages.map((stage, idx) => (stage.type === "ko" ? null : renderPreviewStage(stage, idx)))}
     </Stack>
   );
 
