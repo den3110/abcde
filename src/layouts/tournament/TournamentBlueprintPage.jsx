@@ -39,6 +39,7 @@ import {
   useGetRegistrationsQuery,
   useGetTournamentPlanQuery,
   useUpdateTournamentPlanMutation,
+  useRebuildKnockoutBracketMutation,
 } from "slices/tournamentsApiSlice";
 import PropTypes from "prop-types";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -318,9 +319,12 @@ const ruleSummary = (r) => {
   return base + cap;
 };
 
-function RulesEditor({ label = "Luật trận", value, onChange }) {
+function RulesEditor({ label = "Luật trận", value, onChange, disabled = false }) {
   const v = normalizeRulesForState(value);
-  const set = (patch) => onChange({ ...v, ...patch });
+  const set = (patch) => {
+    if (disabled) return;
+    onChange({ ...v, ...patch });
+  };
 
   return (
     <Stack
@@ -338,6 +342,7 @@ function RulesEditor({ label = "Luật trận", value, onChange }) {
         value={v.bestOf}
         onChange={(e) => set({ bestOf: parseInt(e.target.value || "1", 10) })}
         sx={{ width: 140 }}
+        disabled={disabled}
       >
         {[1, 3, 5].map((n) => (
           <MenuItem key={n} value={n}>
@@ -353,6 +358,7 @@ function RulesEditor({ label = "Luật trận", value, onChange }) {
         value={v.pointsToWin}
         onChange={(e) => set({ pointsToWin: parseInt(e.target.value || "11", 10) })}
         sx={{ width: 180 }}
+        disabled={disabled}
       >
         {[11, 15, 21].map((n) => (
           <MenuItem key={n} value={n}>
@@ -366,6 +372,7 @@ function RulesEditor({ label = "Luật trận", value, onChange }) {
           <Checkbox
             checked={!!v.winByTwo}
             onChange={(e) => set({ winByTwo: !!e.target.checked })}
+            disabled={disabled}
           />
         }
         label="Thắng cách 2 điểm"
@@ -379,6 +386,7 @@ function RulesEditor({ label = "Luật trận", value, onChange }) {
         value={v.cap.mode}
         onChange={(e) => set({ cap: { ...v.cap, mode: e.target.value } })}
         sx={{ width: 160 }}
+        disabled={disabled}
       >
         <MenuItem value="none">none</MenuItem>
         <MenuItem value="soft">soft</MenuItem>
@@ -399,7 +407,7 @@ function RulesEditor({ label = "Luật trận", value, onChange }) {
           })
         }
         sx={{ width: 140 }}
-        disabled={v.cap.mode === "none"}
+        disabled={disabled || v.cap.mode === "none"}
         placeholder={v.cap.mode === "none" ? "—" : "e.g. 15"}
       />
     </Stack>
@@ -417,6 +425,7 @@ RulesEditor.propTypes = {
     }),
   }).isRequired,
   onChange: PropTypes.func.isRequired,
+  disabled: PropTypes.bool,
 };
 
 /** Build KO rounds (R editable; R>=2 winners auto) với baseRound
@@ -1835,6 +1844,7 @@ export default function TournamentBlueprintPage() {
     data: existingBracketsRaw = [],
     isLoading: loadingBrackets,
     isError: bracketsError,
+    refetch: refetchBrackets,
   } = useGetTournamentBracketsQuery(tournamentId);
 
   const existingBrackets = Array.isArray(existingBracketsRaw)
@@ -1894,6 +1904,8 @@ export default function TournamentBlueprintPage() {
   }, [registrations]);
 
   const [commitTournamentPlan, { isLoading: committing }] = useCommitTournamentPlanMutation();
+  const [rebuildKnockoutBracket, { isLoading: rebuildingKnockout }] =
+    useRebuildKnockoutBracketMutation();
   const [aiPlan, setAiPlan] = useState(null);
 
   // PO defaults (non-2^n)
@@ -3415,6 +3427,27 @@ export default function TournamentBlueprintPage() {
   const groupRuntime = stageRuntimeMap.groups;
   const poRuntime = stageRuntimeMap.po;
   const koRuntime = stageRuntimeMap.ko;
+  const existingKoBracket = useMemo(
+    () =>
+      (existingBrackets || []).find(
+        (stage) =>
+          stage?.semanticStage === "ko" ||
+          stage?.type === "ko" ||
+          stage?.type === "knockout" ||
+          stage?.type === "double_elim"
+      ) || null,
+    [existingBrackets]
+  );
+  const existingKoBracketId =
+    koRuntime?.publishedBracketId ||
+    existingKoBracket?.publishedBracketId ||
+    existingKoBracket?._id ||
+    "";
+  const lockPreviousStageSizeForKoRebuild = !!existingKoBracketId;
+  const lockPoSizeForKoRebuild = lockPreviousStageSizeForKoRebuild && includePO;
+  const lockGroupSizeForKoRebuild =
+    lockPreviousStageSizeForKoRebuild && !includePO && includeGroup;
+  const lockPreviousStagesForKoRebuild = !!existingKoBracketId;
   const hasLockedStages = stageCards.some((stage) => stage.runtime?.locked);
   const openBracketAdmin = () => navigate(`/admin/tournaments/${tournamentId}/brackets`);
   const wizardSteps = ["Tổng quan", "Thiết kế", "Kiểm tra tác động"];
@@ -3433,6 +3466,57 @@ export default function TournamentBlueprintPage() {
     } catch (e) {
       toast.error(e?.data?.message || e?.error || "Lưu bản nháp thất bại.");
       throw e;
+    }
+  };
+
+  const handleRebuildPublishedKnockout = async () => {
+    if (!existingKoBracketId) {
+      toast.error("Chưa tìm thấy bracket knockout đã publish để tạo lại.");
+      return;
+    }
+    if (koIsDoubleElim) {
+      toast.error("Chức năng này hiện chỉ áp dụng cho knockout loại trực tiếp.");
+      return;
+    }
+    if (koDrawSizeError) {
+      toast.error(koDrawSizeError);
+      return;
+    }
+
+    const size = Number(koPlan?.drawSize || 0);
+    if (!Number.isInteger(size) || size < 2 || nextPow2(size) !== size) {
+      toast.error("KO drawSize phải là lũy thừa của 2.");
+      return;
+    }
+
+    const ok = window.confirm(
+      `Tạo lại sơ đồ knockout đã publish thành ${size} đội?\n` +
+        "Thao tác này chỉ xoá và dựng lại các trận trong vòng knockout. " +
+        "Vòng trước knockout giữ nguyên, sau đó vẫn đổ seed/fill từ vòng trước như bình thường."
+    );
+    if (!ok) return;
+
+    try {
+      await saveDraft(planPayload, { silent: true });
+      const result = await rebuildKnockoutBracket({
+        tournamentId,
+        bracketId: existingKoBracketId,
+        body: {
+          drawSize: size,
+          preserveSeeds: false,
+          thirdPlace: koThirdPlace,
+        },
+      }).unwrap();
+
+      await refetchBrackets();
+      if (activeStep === 2) {
+        refreshImpact(planPayload).catch(() => {});
+      }
+      toast.success(
+        `Đã tạo lại sơ đồ knockout ${result?.drawSize || size} đội (${result?.created || 0} trận).`
+      );
+    } catch (e) {
+      toast.error(e?.data?.message || e?.error || "Tạo lại sơ đồ knockout thất bại.");
     }
   };
 
@@ -3943,6 +4027,7 @@ export default function TournamentBlueprintPage() {
                 <Checkbox
                   checked={includeGroup}
                   onChange={(e) => setIncludeGroup(e.target.checked)}
+                  disabled={lockPreviousStagesForKoRebuild}
                 />
               }
               label="Thêm Vòng bảng (Vx)"
@@ -3955,6 +4040,7 @@ export default function TournamentBlueprintPage() {
                   label="Số bảng"
                   value={groupCount}
                   onChange={(e) => setGroupCount(parseInt(e.target.value || "0", 10))}
+                  disabled={lockPreviousStagesForKoRebuild || lockGroupSizeForKoRebuild}
                 />
                 <TextField
                   size="small"
@@ -3962,6 +4048,7 @@ export default function TournamentBlueprintPage() {
                   label="Số đội / bảng (nếu không nhập tổng)"
                   value={groupSize}
                   onChange={(e) => setGroupSize(parseInt(e.target.value || "0", 10))}
+                  disabled={lockPreviousStagesForKoRebuild || lockGroupSizeForKoRebuild}
                 />
                 <TextField
                   size="small"
@@ -3970,6 +4057,7 @@ export default function TournamentBlueprintPage() {
                   value={groupTotal}
                   onChange={(e) => setGroupTotal(parseInt(e.target.value || "0", 10))}
                   helperText="Nếu >0: chia đều, dư dồn bảng cuối"
+                  disabled={lockPreviousStagesForKoRebuild || lockGroupSizeForKoRebuild}
                 />
                 <Divider orientation="vertical" flexItem />
                 <TextField
@@ -3989,6 +4077,7 @@ export default function TournamentBlueprintPage() {
                     )
                   }
                   sx={{ width: 180 }}
+                  disabled={lockPreviousStagesForKoRebuild}
                 />
                 <Chip
                   size="small"
@@ -4003,6 +4092,7 @@ export default function TournamentBlueprintPage() {
                     value={group2KOMethod}
                     onChange={(e) => setGroup2KOMethod(e.target.value)}
                     sx={{ minWidth: 240 }}
+                    disabled={lockPreviousStagesForKoRebuild}
                   >
                     <MenuItem value="default">Mặc định (theo thứ hạng)</MenuItem>
                     <MenuItem value="cross">So le (A1–B2, B1–A2)</MenuItem>
@@ -4018,7 +4108,11 @@ export default function TournamentBlueprintPage() {
                     </MenuItem>
                   </TextField>
 
-                  <Button variant="outlined" onClick={() => prefillKOfromGroups(group2KOMethod)}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => prefillKOfromGroups(group2KOMethod)}
+                    disabled={lockPreviousStagesForKoRebuild}
+                  >
                     Đổ seed KO từ Vòng bảng
                   </Button>
                 </Stack>
@@ -4033,7 +4127,9 @@ export default function TournamentBlueprintPage() {
                           setManualRemainder(on);
                           if (!on) setGroupExtras(Array.from({ length: groupCount }, () => 0));
                         }}
-                        disabled={(Number(groupTotal) || 0) <= 0}
+                        disabled={
+                          lockPreviousStagesForKoRebuild || (Number(groupTotal) || 0) <= 0
+                        }
                       />
                     }
                     label="Chia dư thủ công"
@@ -4055,7 +4151,12 @@ export default function TournamentBlueprintPage() {
 
       {includeGroup || groupRuntime?.locked || !!stageCardMap.groups?.config ? (
         <Box sx={{ mt: 1 }}>
-          <RulesEditor label="Luật (Vòng bảng)" value={groupRules} onChange={setGroupRules} />
+          <RulesEditor
+            label="Luật (Vòng bảng)"
+            value={groupRules}
+            onChange={setGroupRules}
+            disabled={lockPreviousStagesForKoRebuild}
+          />
         </Box>
       ) : null}
 
@@ -4066,7 +4167,11 @@ export default function TournamentBlueprintPage() {
           <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="center">
             <FormControlLabel
               control={
-                <Checkbox checked={includePO} onChange={(e) => setIncludePO(e.target.checked)} />
+                <Checkbox
+                  checked={includePO}
+                  onChange={(e) => setIncludePO(e.target.checked)}
+                  disabled={lockPreviousStagesForKoRebuild}
+                />
               }
               label="Thêm Play-Off (PO) trước KO"
             />
@@ -4077,6 +4182,7 @@ export default function TournamentBlueprintPage() {
                   type="number"
                   label="PO drawSize"
                   value={poPlan.drawSize}
+                  disabled={lockPreviousStagesForKoRebuild || lockPoSizeForKoRebuild}
                   onChange={(e) => {
                     const ds = parseInt(e.target.value || "0", 10);
                     const maxPossible = maxPoRoundsFor(ds);
@@ -4095,6 +4201,7 @@ export default function TournamentBlueprintPage() {
                   <Select
                     size="small"
                     value={poPlan.maxRounds || 1}
+                    disabled={lockPreviousStagesForKoRebuild || lockPoSizeForKoRebuild}
                     onChange={(e) => {
                       const v = parseInt(e.target.value || "1", 10);
                       const maxPossible = maxPoRoundsFor(poPlan.drawSize);
@@ -4127,6 +4234,7 @@ export default function TournamentBlueprintPage() {
                   value={po2KOMethod}
                   onChange={(e) => setPo2KOMethod(e.target.value)}
                   sx={{ minWidth: 240 }}
+                  disabled={lockPreviousStagesForKoRebuild}
                 >
                   <MenuItem value="default">Mặc định (1–2, 3–4,…)</MenuItem>
                   <MenuItem value="cross">So le nửa nhánh</MenuItem>
@@ -4143,7 +4251,11 @@ export default function TournamentBlueprintPage() {
                   </MenuItem>
                 </TextField>
 
-                <Button variant="outlined" onClick={() => prefillKOfromPO(po2KOMethod)}>
+                <Button
+                  variant="outlined"
+                  onClick={() => prefillKOfromPO(po2KOMethod)}
+                  disabled={lockPreviousStagesForKoRebuild}
+                >
                   Đổ seed KO từ PO
                 </Button>
               </Stack>
@@ -4158,6 +4270,7 @@ export default function TournamentBlueprintPage() {
           <RulesEditor
             label="Luật (PO) – mặc định cho tất cả round"
             value={poRules}
+            disabled={lockPreviousStagesForKoRebuild}
             onChange={(val) => {
               setPoRules(val);
               setPoRoundRules((prev) => {
@@ -4177,6 +4290,7 @@ export default function TournamentBlueprintPage() {
                 key={idx}
                 label={`Luật PO • V${idx + 1}`}
                 value={poRoundRules[idx] || poRules || DEFAULT_PO_RULES}
+                disabled={lockPreviousStagesForKoRebuild}
                 onChange={(val) =>
                   setPoRoundRules((prev) => {
                     const next = prev.slice();
@@ -4223,7 +4337,7 @@ export default function TournamentBlueprintPage() {
                   xs: "1fr",
                   lg: koIsDoubleElim
                     ? "minmax(240px,1fr) minmax(220px,0.9fr) minmax(280px,1fr)"
-                    : "minmax(240px,1.2fr) 160px",
+                    : "minmax(240px,1.2fr) 160px minmax(220px,0.8fr)",
                 },
                 alignItems: "start",
               }}
@@ -4288,6 +4402,17 @@ export default function TournamentBlueprintPage() {
               helperText={koDrawSizeError || " "}
               inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
             />
+            {!koIsDoubleElim && existingKoBracketId ? (
+              <Button
+                variant="outlined"
+                color="warning"
+                onClick={handleRebuildPublishedKnockout}
+                disabled={rebuildingKnockout || !!koDrawSizeError}
+                sx={{ minHeight: 40 }}
+              >
+                {rebuildingKnockout ? "Đang tạo lại..." : "Tạo lại sơ đồ KO"}
+              </Button>
+            ) : null}
             {renderDoubleElimStartRoundSelect()}
             </Box>
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">

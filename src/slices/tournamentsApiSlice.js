@@ -244,7 +244,10 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
         body,
       }),
       invalidatesTags: (_res, _err, { tournamentId, bracketId }) => [
+        { type: "ADMIN_BRACKETS", id: tournamentId },
+        { type: "Brackets", id: `T_${tournamentId}` },
         { type: "Bracket", id: tournamentId },
+        { type: "Bracket", id: bracketId },
         { type: "Match", id: bracketId },
         { type: "Match", id: "LIST" },
       ],
