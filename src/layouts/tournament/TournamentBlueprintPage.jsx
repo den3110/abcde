@@ -3446,8 +3446,8 @@ export default function TournamentBlueprintPage() {
   const lockPreviousStageSizeForKoRebuild = !!existingKoBracketId;
   const lockPoSizeForKoRebuild = lockPreviousStageSizeForKoRebuild && includePO;
   const lockGroupSizeForKoRebuild =
-    lockPreviousStageSizeForKoRebuild && !includePO && includeGroup;
-  const lockPreviousStagesForKoRebuild = !!existingKoBracketId;
+    lockPreviousStageSizeForKoRebuild && includeGroup;
+  const lockPreviousStageLayoutForKoRebuild = !!existingKoBracketId;
   const hasLockedStages = stageCards.some((stage) => stage.runtime?.locked);
   const openBracketAdmin = () => navigate(`/admin/tournaments/${tournamentId}/brackets`);
   const wizardSteps = ["Tổng quan", "Thiết kế", "Kiểm tra tác động"];
@@ -3497,12 +3497,17 @@ export default function TournamentBlueprintPage() {
     if (!ok) return;
 
     try {
+      const normalizedKo = normalizeSeedsKO(koPlan);
       await saveDraft(planPayload, { silent: true });
       const result = await rebuildKnockoutBracket({
         tournamentId,
         bracketId: existingKoBracketId,
         body: {
           drawSize: size,
+          seeds: normalizedKo.seeds,
+          rules: normalizeRulesForState(koRules, DEFAULT_RULES),
+          semiRules: koSemiOverride ? normalizeRulesForState(koSemiRules, DEFAULT_RULES) : null,
+          finalRules: koFinalOverride ? normalizeRulesForState(koFinalRules, DEFAULT_RULES) : null,
           preserveSeeds: false,
           thirdPlace: koThirdPlace,
         },
@@ -4017,7 +4022,7 @@ export default function TournamentBlueprintPage() {
         </Alert>
       ) : null}
 
-      {groupRuntime?.locked ? (
+      {groupRuntime?.locked && !lockPreviousStageLayoutForKoRebuild ? (
         renderLockedStageCard("groups", "Vòng bảng", stageCardMap.groups?.config)
       ) : (
         <>
@@ -4027,7 +4032,7 @@ export default function TournamentBlueprintPage() {
                 <Checkbox
                   checked={includeGroup}
                   onChange={(e) => setIncludeGroup(e.target.checked)}
-                  disabled={lockPreviousStagesForKoRebuild}
+                  disabled={lockPreviousStageLayoutForKoRebuild}
                 />
               }
               label="Thêm Vòng bảng (Vx)"
@@ -4040,7 +4045,7 @@ export default function TournamentBlueprintPage() {
                   label="Số bảng"
                   value={groupCount}
                   onChange={(e) => setGroupCount(parseInt(e.target.value || "0", 10))}
-                  disabled={lockPreviousStagesForKoRebuild || lockGroupSizeForKoRebuild}
+                  disabled={lockGroupSizeForKoRebuild}
                 />
                 <TextField
                   size="small"
@@ -4048,7 +4053,7 @@ export default function TournamentBlueprintPage() {
                   label="Số đội / bảng (nếu không nhập tổng)"
                   value={groupSize}
                   onChange={(e) => setGroupSize(parseInt(e.target.value || "0", 10))}
-                  disabled={lockPreviousStagesForKoRebuild || lockGroupSizeForKoRebuild}
+                  disabled={lockGroupSizeForKoRebuild}
                 />
                 <TextField
                   size="small"
@@ -4057,7 +4062,7 @@ export default function TournamentBlueprintPage() {
                   value={groupTotal}
                   onChange={(e) => setGroupTotal(parseInt(e.target.value || "0", 10))}
                   helperText="Nếu >0: chia đều, dư dồn bảng cuối"
-                  disabled={lockPreviousStagesForKoRebuild || lockGroupSizeForKoRebuild}
+                  disabled={lockGroupSizeForKoRebuild}
                 />
                 <Divider orientation="vertical" flexItem />
                 <TextField
@@ -4077,7 +4082,6 @@ export default function TournamentBlueprintPage() {
                     )
                   }
                   sx={{ width: 180 }}
-                  disabled={lockPreviousStagesForKoRebuild}
                 />
                 <Chip
                   size="small"
@@ -4092,7 +4096,6 @@ export default function TournamentBlueprintPage() {
                     value={group2KOMethod}
                     onChange={(e) => setGroup2KOMethod(e.target.value)}
                     sx={{ minWidth: 240 }}
-                    disabled={lockPreviousStagesForKoRebuild}
                   >
                     <MenuItem value="default">Mặc định (theo thứ hạng)</MenuItem>
                     <MenuItem value="cross">So le (A1–B2, B1–A2)</MenuItem>
@@ -4111,7 +4114,6 @@ export default function TournamentBlueprintPage() {
                   <Button
                     variant="outlined"
                     onClick={() => prefillKOfromGroups(group2KOMethod)}
-                    disabled={lockPreviousStagesForKoRebuild}
                   >
                     Đổ seed KO từ Vòng bảng
                   </Button>
@@ -4128,7 +4130,7 @@ export default function TournamentBlueprintPage() {
                           if (!on) setGroupExtras(Array.from({ length: groupCount }, () => 0));
                         }}
                         disabled={
-                          lockPreviousStagesForKoRebuild || (Number(groupTotal) || 0) <= 0
+                          lockGroupSizeForKoRebuild || (Number(groupTotal) || 0) <= 0
                         }
                       />
                     }
@@ -4155,12 +4157,11 @@ export default function TournamentBlueprintPage() {
             label="Luật (Vòng bảng)"
             value={groupRules}
             onChange={setGroupRules}
-            disabled={lockPreviousStagesForKoRebuild}
           />
         </Box>
       ) : null}
 
-      {poRuntime?.locked ? (
+      {poRuntime?.locked && !lockPreviousStageLayoutForKoRebuild ? (
         renderLockedStageCard("po", "Play-Off", stageCardMap.po?.config)
       ) : (
         <>
@@ -4170,7 +4171,7 @@ export default function TournamentBlueprintPage() {
                 <Checkbox
                   checked={includePO}
                   onChange={(e) => setIncludePO(e.target.checked)}
-                  disabled={lockPreviousStagesForKoRebuild}
+                  disabled={lockPreviousStageLayoutForKoRebuild}
                 />
               }
               label="Thêm Play-Off (PO) trước KO"
@@ -4182,7 +4183,7 @@ export default function TournamentBlueprintPage() {
                   type="number"
                   label="PO drawSize"
                   value={poPlan.drawSize}
-                  disabled={lockPreviousStagesForKoRebuild || lockPoSizeForKoRebuild}
+                  disabled={lockPoSizeForKoRebuild}
                   onChange={(e) => {
                     const ds = parseInt(e.target.value || "0", 10);
                     const maxPossible = maxPoRoundsFor(ds);
@@ -4201,7 +4202,7 @@ export default function TournamentBlueprintPage() {
                   <Select
                     size="small"
                     value={poPlan.maxRounds || 1}
-                    disabled={lockPreviousStagesForKoRebuild || lockPoSizeForKoRebuild}
+                    disabled={lockPoSizeForKoRebuild}
                     onChange={(e) => {
                       const v = parseInt(e.target.value || "1", 10);
                       const maxPossible = maxPoRoundsFor(poPlan.drawSize);
@@ -4234,7 +4235,6 @@ export default function TournamentBlueprintPage() {
                   value={po2KOMethod}
                   onChange={(e) => setPo2KOMethod(e.target.value)}
                   sx={{ minWidth: 240 }}
-                  disabled={lockPreviousStagesForKoRebuild}
                 >
                   <MenuItem value="default">Mặc định (1–2, 3–4,…)</MenuItem>
                   <MenuItem value="cross">So le nửa nhánh</MenuItem>
@@ -4254,7 +4254,6 @@ export default function TournamentBlueprintPage() {
                 <Button
                   variant="outlined"
                   onClick={() => prefillKOfromPO(po2KOMethod)}
-                  disabled={lockPreviousStagesForKoRebuild}
                 >
                   Đổ seed KO từ PO
                 </Button>
@@ -4270,7 +4269,6 @@ export default function TournamentBlueprintPage() {
           <RulesEditor
             label="Luật (PO) – mặc định cho tất cả round"
             value={poRules}
-            disabled={lockPreviousStagesForKoRebuild}
             onChange={(val) => {
               setPoRules(val);
               setPoRoundRules((prev) => {
@@ -4290,7 +4288,6 @@ export default function TournamentBlueprintPage() {
                 key={idx}
                 label={`Luật PO • V${idx + 1}`}
                 value={poRoundRules[idx] || poRules || DEFAULT_PO_RULES}
-                disabled={lockPreviousStagesForKoRebuild}
                 onChange={(val) =>
                   setPoRoundRules((prev) => {
                     const next = prev.slice();
@@ -4304,7 +4301,7 @@ export default function TournamentBlueprintPage() {
         </Box>
       ) : null}
 
-      {koRuntime?.locked ? (
+      {koRuntime?.locked && !existingKoBracketId ? (
         renderLockedStageCard("ko", "Knockout", stageCardMap.ko?.config)
       ) : (
         <Paper
@@ -4404,13 +4401,13 @@ export default function TournamentBlueprintPage() {
             />
             {!koIsDoubleElim && existingKoBracketId ? (
               <Button
-                variant="outlined"
+                variant="contained"
                 color="warning"
                 onClick={handleRebuildPublishedKnockout}
                 disabled={rebuildingKnockout || !!koDrawSizeError}
-                sx={{ minHeight: 40 }}
+                sx={{ minHeight: 40, color: "white !important" }}
               >
-                {rebuildingKnockout ? "Đang tạo lại..." : "Tạo lại sơ đồ KO"}
+                {rebuildingKnockout ? "Đang tạo lại..." : "Xác nhận sửa knockout"}
               </Button>
             ) : null}
             {renderDoubleElimStartRoundSelect()}
