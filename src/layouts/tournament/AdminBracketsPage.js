@@ -3097,7 +3097,8 @@ export default function AdminBracketsPage() {
                 />
 
                 {ebUseCustomScale && (
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                  <>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                     <TextField
                       select
                       label="Số vòng tối đa (n)"
@@ -3152,7 +3153,8 @@ export default function AdminBracketsPage() {
                     sx={{ alignSelf: "flex-start" }}
                   >
                     Tạo lại sơ đồ knockout
-                  </Button>
+                    </Button>
+                  </>
                 )}
                 <Divider sx={{ my: 2 }} />
                 <FormControlLabel
