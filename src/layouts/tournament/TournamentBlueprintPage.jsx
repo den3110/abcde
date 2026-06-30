@@ -64,6 +64,16 @@ const BYE = { type: "bye", ref: null, label: "BYE" };
 const KO_FORMAT_SINGLE = "single_elim";
 const KO_FORMAT_DOUBLE = "double_elim";
 const KO_ROUND_KEYS = ["F", "SF", "QF", "R16", "R32", "R64", "R128", "R256", "R512", "R1024"];
+const isTruthyFlag = (value) => value === true || value === 1 || value === "true" || value === "1";
+const getKoAvoidRematchBranchesFlag = (plan = {}, fallback = {}) =>
+  isTruthyFlag(
+    plan.avoidRematchBranches ??
+      plan.protectRematches ??
+      plan.avoidRematches ??
+      fallback.avoidRematchBranches ??
+      fallback.protectRematches ??
+      fallback.avoidRematches
+  );
 const normalizeKoFormat = (value) =>
   String(value || KO_FORMAT_SINGLE).trim().toLowerCase() === KO_FORMAT_DOUBLE
     ? KO_FORMAT_DOUBLE
@@ -143,6 +153,7 @@ const buildKoPlanState = (plan = {}, fallback = {}) => {
       : Array.isArray(fallback.seeds)
         ? fallback.seeds
         : [],
+    avoidRematchBranches: getKoAvoidRematchBranchesFlag(plan, fallback),
     format,
     ...(format === KO_FORMAT_DOUBLE
       ? {
@@ -2090,6 +2101,7 @@ export default function TournamentBlueprintPage() {
           seeds: Array.isArray(plan.ko.seeds) ? plan.ko.seeds : [],
           format: plan.ko.format,
           doubleElim: plan.ko.doubleElim,
+          avoidRematchBranches: getKoAvoidRematchBranchesFlag(plan.ko),
         },
         koPlan
       );
@@ -2099,6 +2111,7 @@ export default function TournamentBlueprintPage() {
         seeds: Array.isArray(plan.ko.seeds) ? plan.ko.seeds : [],
         format: nextKoPlan.format,
         doubleElim: nextKoPlan.doubleElim,
+        avoidRematchBranches: nextKoPlan.avoidRematchBranches,
       });
       if (plan.ko.rules) setKoRules(normalizeRulesForState(plan.ko.rules, DEFAULT_RULES));
 
@@ -2247,14 +2260,38 @@ export default function TournamentBlueprintPage() {
         config: { ...poPlan },
       });
     }
+    const koPreviewPlan =
+      koPlan?.avoidRematchBranches && planPayload?.ko
+        ? buildKoPlanState(
+            {
+              ...koPlan,
+              drawSize: planPayload.ko.drawSize,
+              seeds: planPayload.ko.seeds,
+              format: planPayload.ko.format,
+              doubleElim: planPayload.ko.doubleElim,
+            },
+            koPlan
+          )
+        : buildKoPlanState(koPlan);
     arr.push({
       id: makeStageId(arr.length),
       type: "ko",
       title: "Knockout",
-      config: { ...buildKoPlanState(koPlan), thirdPlace: koIsDoubleElim ? false : koThirdPlace },
+      config: { ...koPreviewPlan, thirdPlace: koIsDoubleElim ? false : koThirdPlace },
     });
     return arr;
-  }, [includeGroup, includePO, groupCount, groupSize, groupSizes, poPlan, koPlan, koThirdPlace, koIsDoubleElim]);
+  }, [
+    includeGroup,
+    includePO,
+    groupCount,
+    groupSize,
+    groupSizes,
+    poPlan,
+    koPlan,
+    koThirdPlace,
+    koIsDoubleElim,
+    planPayload,
+  ]);
 
   // seed picker state
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -3340,7 +3377,13 @@ export default function TournamentBlueprintPage() {
         bKO.type === "double_elim" ? KO_FORMAT_DOUBLE : cfg.format || blueprintCfg.format
       );
       const doubleElim = cfg.doubleElim || blueprintCfg.doubleElim;
-      setKoPlanState({ drawSize, seeds, format, doubleElim });
+      setKoPlanState({
+        drawSize,
+        seeds,
+        format,
+        doubleElim,
+        avoidRematchBranches: getKoAvoidRematchBranchesFlag(cfg, blueprintCfg),
+      });
 
       const rules = normalizeRulesForState(bKO.rules || cfg.rules || DEFAULT_RULES, DEFAULT_RULES);
       setKoRules(rules);
@@ -3497,7 +3540,7 @@ export default function TournamentBlueprintPage() {
     if (!ok) return;
 
     try {
-      const normalizedKo = normalizeSeedsKO(koPlan);
+      const normalizedKo = planPayload?.ko || normalizeSeedsKO(koPlan);
       await saveDraft(planPayload, { silent: true });
       const result = await rebuildKnockoutBracket({
         tournamentId,
@@ -4453,6 +4496,20 @@ export default function TournamentBlueprintPage() {
                 label="Có chung kết tổng"
               />
             )}
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={!!koPlan?.avoidRematchBranches}
+                  onChange={(e) =>
+                    setKoPlanState((prev) => ({
+                      ...prev,
+                      avoidRematchBranches: e.target.checked,
+                    }))
+                  }
+                />
+              }
+              label="Tách đội đã gặp nhau sang hai nhánh KO"
+            />
           </Stack>
 
           {koIsDoubleElim ? (
@@ -5016,6 +5073,20 @@ export default function TournamentBlueprintPage() {
                     />
                   }
                   label="Có trận tranh hạng 3–4 (hai đội thua Bán kết)"
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={!!koPlan?.avoidRematchBranches}
+                      onChange={(e) =>
+                        setKoPlanState((prev) => ({
+                          ...prev,
+                          avoidRematchBranches: e.target.checked,
+                        }))
+                      }
+                    />
+                  }
+                  label="Tách đội đã gặp nhau sang hai nhánh KO"
                 />
               </Stack>
 

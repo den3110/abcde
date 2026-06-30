@@ -20,7 +20,11 @@ import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 
-import { useBackfillCccdMutation, useFillCccdForUserMutation } from "slices/adminApiSlice";
+import {
+  useBackfillCccdMutation,
+  useBatchFillCccdForUsersMutation,
+  useFillCccdForUserMutation,
+} from "slices/adminApiSlice";
 
 const MISSING_FIELD_LABEL = {
   name: "Thiếu họ tên",
@@ -38,11 +42,14 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
 
   const [backfillCccdMut, { isLoading: runningBackfill }] = useBackfillCccdMutation();
   const [fillCccdForUserMut] = useFillCccdForUserMutation();
+  const [batchFillCccdForUsersMut] = useBatchFillCccdForUsersMutation();
 
   const [scanningUserId, setScanningUserId] = useState(null);
   const [fillingUserId, setFillingUserId] = useState(null);
   const [overwritingUserId, setOverwritingUserId] = useState(null);
   const [autoScanningAll, setAutoScanningAll] = useState(false);
+  const [autoOverwritingAll, setAutoOverwritingAll] = useState(false);
+  const bulkBusy = autoScanningAll || autoOverwritingAll;
 
   const handle = async (promise, successMsg) => {
     try {
@@ -63,7 +70,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
   const removeUserFromPreview = (userId) => {
     setBackfillResult((prev) => {
       if (!prev || !Array.isArray(prev.users)) return prev;
-      const newUsers = prev.users.filter((u) => u.id !== userId);
+      const newUsers = prev.users.filter((u) => String(u.id) !== String(userId));
       return {
         ...prev,
         users: newUsers,
@@ -73,6 +80,77 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
             : prev.totalCandidates,
       };
     });
+  };
+
+  const previewUsers = () =>
+    Array.isArray(backfillResult?.users) ? [...backfillResult.users] : [];
+
+  const getErrorMessage = (err) => err?.data?.message || err?.error || err?.message || "";
+
+  const runBulkForPreviewUsers = async ({
+    confirmMessage,
+    setRunning,
+    setCurrentUserId,
+    dryRun,
+    overwrite,
+    successVerb,
+    emptyMessage,
+  }) => {
+    const users = previewUsers();
+    if (!users.length) {
+      showSnack?.("info", emptyMessage);
+      return;
+    }
+
+    // eslint-disable-next-line no-alert
+    const ok = window.confirm(confirmMessage(users.length));
+    if (!ok) return;
+
+    setRunning(true);
+    const ids = users.filter((u) => u.hasFront || u.hasBack).map((u) => u.id);
+    const skippedCount = users.length - ids.length;
+    if (!ids.length) {
+      setRunning(false);
+      showSnack?.("info", "Không có user nào có ảnh CCCD để xử lý");
+      return;
+    }
+    setCurrentUserId(ids[0]);
+
+    try {
+      const res = await batchFillCccdForUsersMut({
+        ids,
+        dryRun,
+        overwrite,
+      }).unwrap();
+      const results = Array.isArray(res?.results) ? res.results : [];
+      const successCount =
+        typeof res?.success === "number"
+          ? res.success
+          : results.filter((item) => !item.error).length;
+      const failedCount =
+        typeof res?.failed === "number"
+          ? res.failed
+          : results.filter((item) => item.error).length;
+      const firstError = results.find((item) => item.error)?.error || "";
+
+      if (!dryRun) {
+        results
+          .filter((item) => !item.error)
+          .forEach((item) => removeUserFromPreview(item.id));
+      }
+
+      showSnack?.(
+        failedCount ? "warning" : "success",
+        `Đã ${successVerb} ${successCount} user${
+          skippedCount ? `, bỏ qua ${skippedCount} user thiếu ảnh CCCD` : ""
+        }${failedCount ? `, lỗi ${failedCount} user${firstError ? ` (${firstError})` : ""}` : ""}`
+      );
+    } catch (err) {
+      showSnack?.("error", getErrorMessage(err) || "Đã xảy ra lỗi khi chạy batch CCCD");
+    } finally {
+      setCurrentUserId(null);
+      setRunning(false);
+    }
   };
 
   // chạy backfill CCCD bằng AI (toàn batch)
@@ -116,8 +194,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
 
       showSnack?.("info", summary);
 
-      // 👉 Sau khi quét thành công, loại user đó khỏi danh sách xem trước
-      removeUserFromPreview(u.id);
+      // Quét dry-run chỉ xem AI đọc được gì; giữ user lại để admin có thể bấm Tự fill/Fill đè ngay sau đó.
     } catch (err) {
       showSnack?.(
         "error",
@@ -130,51 +207,28 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
 
   // Tự động quét hết danh sách xem trước, chạy tuần tự để tránh dồn request AI.
   const scanAllPreviewUsers = async () => {
-    const users = Array.isArray(backfillResult?.users) ? [...backfillResult.users] : [];
-    if (!users.length) {
-      showSnack?.("info", "Không có user nào trong danh sách xem trước để quét");
-      return;
-    }
+    await runBulkForPreviewUsers({
+      confirmMessage: (count) => `Tự động quét ${count} user trong danh sách xem trước?`,
+      setRunning: setAutoScanningAll,
+      setCurrentUserId: setScanningUserId,
+      dryRun: true,
+      overwrite: false,
+      successVerb: "quét",
+      emptyMessage: "Không có user nào trong danh sách xem trước để quét",
+    });
+  };
 
-    // eslint-disable-next-line no-alert
-    const ok = window.confirm(`Tự động quét ${users.length} user trong danh sách xem trước?`);
-    if (!ok) return;
-
-    setAutoScanningAll(true);
-    let successCount = 0;
-    let failedCount = 0;
-    let skippedCount = 0;
-
-    try {
-      for (const u of users) {
-        if (!u.hasFront && !u.hasBack) {
-          skippedCount += 1;
-          continue;
-        }
-
-        setScanningUserId(u.id);
-        try {
-          await fillCccdForUserMut({
-            id: u.id,
-            dryRun: true,
-          }).unwrap();
-          successCount += 1;
-          removeUserFromPreview(u.id);
-        } catch {
-          failedCount += 1;
-        }
-      }
-
-      showSnack?.(
-        failedCount ? "warning" : "success",
-        `Đã quét ${successCount} user${
-          skippedCount ? `, bỏ qua ${skippedCount} user thiếu ảnh CCCD` : ""
-        }${failedCount ? `, lỗi ${failedCount} user` : ""}`
-      );
-    } finally {
-      setScanningUserId(null);
-      setAutoScanningAll(false);
-    }
+  const overwriteAllPreviewUsers = async () => {
+    await runBulkForPreviewUsers({
+      confirmMessage: (count) =>
+        `Fill đè thông tin từ CCCD cho ${count} user trong danh sách xem trước? Thao tác này ghi đè name/dob/gender/province/cccd khi AI đọc được dữ liệu.`,
+      setRunning: setAutoOverwritingAll,
+      setCurrentUserId: setOverwritingUserId,
+      dryRun: false,
+      overwrite: true,
+      successVerb: "fill đè",
+      emptyMessage: "Không có user nào trong danh sách xem trước để fill đè",
+    });
   };
 
   // Tự fill thông tin từ CCCD cho từng user trong danh sách xem trước (chỉ fill field trống)
@@ -309,7 +363,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                 variant="contained"
                 color={backfillDryRun ? "secondary" : "primary"}
                 onClick={runBackfill}
-                disabled={runningBackfill || autoScanningAll}
+                disabled={runningBackfill || bulkBusy}
                 startIcon={
                   runningBackfill ? (
                     <CircularProgress size={18} color="inherit" />
@@ -364,9 +418,25 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                             )
                           }
                           onClick={scanAllPreviewUsers}
-                          disabled={autoScanningAll || runningBackfill}
+                          disabled={bulkBusy || runningBackfill}
                         >
                           {autoScanningAll ? "Đang quét hết..." : "Tự động quét hết"}
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="warning"
+                          startIcon={
+                            autoOverwritingAll ? (
+                              <CircularProgress size={14} color="inherit" />
+                            ) : (
+                              <AutoAwesomeIcon fontSize="small" />
+                            )
+                          }
+                          onClick={overwriteAllPreviewUsers}
+                          disabled={bulkBusy || runningBackfill}
+                        >
+                          {autoOverwritingAll ? "Đang fill đè hết..." : "Fill đè hết"}
                         </Button>
                       </Stack>
                       <Stack spacing={0.75}>
@@ -422,7 +492,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                                     )
                                   }
                                   onClick={() => scanCccdForUser(u)}
-                                  disabled={autoScanningAll || isScanning || isFilling || isOverwriting}
+                                  disabled={bulkBusy || isScanning || isFilling || isOverwriting}
                                 >
                                   Quét
                                 </Button>
@@ -440,7 +510,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                                     )
                                   }
                                   onClick={() => applyCccdForUser(u)}
-                                  disabled={autoScanningAll || isScanning || isFilling || isOverwriting}
+                                  disabled={bulkBusy || isScanning || isFilling || isOverwriting}
                                 >
                                   Tự fill
                                 </Button>
@@ -458,7 +528,7 @@ export default function CccdAiBackfillCard({ showSnack, onRefetch }) {
                                     )
                                   }
                                   onClick={() => overwriteCccdForUser(u)}
-                                  disabled={autoScanningAll || isScanning || isFilling || isOverwriting}
+                                  disabled={bulkBusy || isScanning || isFilling || isOverwriting}
                                 >
                                   Fill đè
                                 </Button>

@@ -80,6 +80,7 @@ export const apiSlice = createApi({
     "CourtClusterRuntime",
     "CourtFreeManager",
     "SelfAssessment",
+    "AssessmentHistory",
     "AuthLog",
     "CheckpointAdmin",
     "CheckpointSession",

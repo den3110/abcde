@@ -87,6 +87,20 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["SelfAssessment", "User"],
     }),
+    getAssessmentHistory: builder.query({
+      query: (filters = {}) => {
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value === undefined || value === null || value === "") return;
+          params.set(key, String(value));
+        });
+        if (!params.has("page")) params.set("page", "1");
+        if (!params.has("pageSize")) params.set("pageSize", "25");
+        return `/admin/assessment-history?${params.toString()}`;
+      },
+      providesTags: ["AssessmentHistory"],
+      keepUnusedDataFor: 10,
+    }),
     getAuthLogs: builder.query({
       query: ({
         page = 1,
@@ -183,6 +197,13 @@ export const adminApiSlice = apiSlice.injectEndpoints({
         body: { dryRun, overwrite },
       }),
     }),
+    batchFillCccdForUsers: builder.mutation({
+      query: ({ ids = [], dryRun = false, overwrite = false }) => ({
+        url: "/admin/users/ai-cccd-batch",
+        method: "POST",
+        body: { ids, dryRun, overwrite },
+      }),
+    }),
 
     // ✅ Audit: summary nhóm theo user
     getAuditUsersSummary: builder.query({
@@ -250,6 +271,7 @@ export const {
   useUpdateRankingMutation,
   useGetSelfAssessmentsQuery,
   useResetSelfAssessmentsMutation,
+  useGetAssessmentHistoryQuery,
   useGetAuthLogsQuery,
   useGetAuthLogDetailQuery,
 
@@ -261,6 +283,7 @@ export const {
   useChangeUserPasswordMutation,
   useBackfillCccdMutation,
   useFillCccdForUserMutation,
+  useBatchFillCccdForUsersMutation,
   useGetAuditUsersSummaryQuery,
   useGetUserAuditQuery,
   useGetAvatarOptimizationStatusQuery,

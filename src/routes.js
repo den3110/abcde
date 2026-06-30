@@ -11,6 +11,7 @@ import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
 import UserManagement from "layouts/user/UserListPage";
 import SelfAssessmentManagementPage from "layouts/user/SelfAssessmentManagementPage";
+import AssessmentHistoryPage from "layouts/user/AssessmentHistoryPage";
 import AuthLogManagementPage from "layouts/user/AuthLogManagementPage";
 
 // 🆕 Trang quản trị giải đấu
@@ -219,6 +220,16 @@ const routes = [
     icon: <Icon fontSize="small">fact_check</Icon>,
     route: "/admin/self-assessments",
     component: <SelfAssessmentManagementPage />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Lịch sử chấm trình",
+    key: "assessment-history",
+    icon: <Icon fontSize="small">history</Icon>,
+    route: "/admin/assessment-history",
+    component: <AssessmentHistoryPage />,
     private: true,
     roles: ["admin"],
   },
