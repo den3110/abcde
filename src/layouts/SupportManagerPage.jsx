@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { skipToken } from "@reduxjs/toolkit/query";
+import PropTypes from "prop-types";
 import { toast } from "react-toastify";
 import {
   Alert,
@@ -72,6 +73,50 @@ const PRIORITY_OPTIONS = [
   { value: "urgent", label: "Khẩn cấp", color: "error" },
 ];
 
+const userShape = PropTypes.shape({
+  _id: PropTypes.string,
+  name: PropTypes.string,
+  nickname: PropTypes.string,
+  email: PropTypes.string,
+  phone: PropTypes.string,
+});
+
+const attachmentShape = PropTypes.shape({
+  url: PropTypes.string,
+  mime: PropTypes.string,
+  name: PropTypes.string,
+  size: PropTypes.number,
+});
+
+const fileShape = PropTypes.shape({
+  name: PropTypes.string,
+  size: PropTypes.number,
+  lastModified: PropTypes.number,
+});
+
+const ticketShape = PropTypes.shape({
+  _id: PropTypes.string,
+  title: PropTypes.string,
+  status: PropTypes.string,
+  category: PropTypes.string,
+  priority: PropTypes.string,
+  lastMessageAt: PropTypes.string,
+  updatedAt: PropTypes.string,
+  lastMessagePreview: PropTypes.string,
+  assignedTo: userShape,
+  user: userShape,
+});
+
+const messageShape = PropTypes.shape({
+  _id: PropTypes.string,
+  senderRole: PropTypes.string,
+  senderUser: userShape,
+  visibility: PropTypes.string,
+  createdAt: PropTypes.string,
+  text: PropTypes.string,
+  attachments: PropTypes.arrayOf(attachmentShape),
+});
+
 function formatDate(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -143,6 +188,11 @@ function FileChips({ files, onRemove }) {
   );
 }
 
+FileChips.propTypes = {
+  files: PropTypes.arrayOf(fileShape).isRequired,
+  onRemove: PropTypes.func.isRequired,
+};
+
 function AttachmentList({ attachments = [] }) {
   if (!Array.isArray(attachments) || !attachments.length) return null;
   return (
@@ -164,6 +214,10 @@ function AttachmentList({ attachments = [] }) {
     </Stack>
   );
 }
+
+AttachmentList.propTypes = {
+  attachments: PropTypes.arrayOf(attachmentShape),
+};
 
 function TicketRow({ ticket, active, onClick }) {
   const status = statusMetaOf(ticket?.status);
@@ -231,6 +285,12 @@ function TicketRow({ ticket, active, onClick }) {
   );
 }
 
+TicketRow.propTypes = {
+  ticket: ticketShape.isRequired,
+  active: PropTypes.bool.isRequired,
+  onClick: PropTypes.func.isRequired,
+};
+
 function MessageBubble({ message }) {
   const isInternal = message?.visibility === "internal";
   const fromStaff = message?.senderRole === "staff";
@@ -272,6 +332,10 @@ function MessageBubble({ message }) {
     </Stack>
   );
 }
+
+MessageBubble.propTypes = {
+  message: messageShape.isRequired,
+};
 
 export default function SupportManagerPage() {
   const [filters, setFilters] = useState({
