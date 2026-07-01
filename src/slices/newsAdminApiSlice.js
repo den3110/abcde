@@ -36,6 +36,58 @@ export const newsAdminApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["NewsCandidates"],
     }),
+    getBlogPosts: builder.query({
+      query: ({
+        page = 1,
+        limit = 50,
+        status = "",
+        keyword = "",
+      } = {}) => {
+        const params = { page, limit };
+        if (status) params.status = status;
+        if (keyword) params.keyword = keyword;
+
+        return {
+          url: "/admin/blog-posts",
+          params,
+        };
+      },
+      providesTags: ["BlogPosts"],
+    }),
+    getBlogPost: builder.query({
+      query: (id) => ({
+        url: `/admin/blog-posts/${id}`,
+      }),
+      providesTags: (_result, _error, id) => [
+        { type: "BlogPosts", id },
+      ],
+    }),
+    createBlogPost: builder.mutation({
+      query: (body) => ({
+        url: "/admin/blog-posts",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["BlogPosts"],
+    }),
+    updateBlogPost: builder.mutation({
+      query: ({ id, ...body }) => ({
+        url: `/admin/blog-posts/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: (_result, _error, arg) => [
+        "BlogPosts",
+        { type: "BlogPosts", id: arg.id },
+      ],
+    }),
+    deleteBlogPost: builder.mutation({
+      query: (id) => ({
+        url: `/admin/blog-posts/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["BlogPosts"],
+    }),
   }),
 });
 
@@ -44,4 +96,9 @@ export const {
   useUpdateNewsSettingsMutation,
   useGetNewsCandidatesQuery,
   useRunNewsSyncMutation, // 🆕
+  useGetBlogPostsQuery,
+  useGetBlogPostQuery,
+  useCreateBlogPostMutation,
+  useUpdateBlogPostMutation,
+  useDeleteBlogPostMutation,
 } = newsAdminApiSlice;

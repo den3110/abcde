@@ -51,6 +51,7 @@ import AdminEvaluatorManagement from "layouts/tournament/AdminEvaluatorManagemen
 import GroupPreassignBoard from "layouts/tournament/GroupPreassignBoard";
 import BroadcastPage from "layouts/Notifications/Broadcast";
 import PushRealtimePage from "layouts/Notifications/PushRealtime";
+import SupportManagerPage from "layouts/SupportManagerPage";
 import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
@@ -70,6 +71,7 @@ import DriveVideoManagerPage from "layouts/DriveVideoManagerPage";
 import FbVodDriveMonitorPage from "layouts/FbVodDriveMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
+import BlogManagerPage from "layouts/BlogManagerPage";
 import AdminAzureConfigPage from "layouts/AdminAzureConfigPage";
 import AzureManagerPage from "layouts/AzureManagerPage";
 import NewsImageMonitorPage from "layouts/NewsImageMonitorPage";
@@ -158,6 +160,17 @@ const routes = [
     icon: <Icon fontSize="small">article</Icon>, // có thể đổi thành 'feed' | 'newspaper'
     route: "/admin/news",
     component: <NewsAdminPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Blog & Banner",
+    key: "admin-blog",
+    icon: <Icon fontSize="small">campaign</Icon>,
+    route: "/admin/blog",
+    component: <BlogManagerPage />,
     private: true,
     roles: ["admin"],
     show: true, // hiện trên sidebar
@@ -573,6 +586,17 @@ const routes = [
     component: <BroadcastPage />,
     private: true,
     roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Hỗ trợ user",
+    key: "support-manager",
+    icon: <Icon fontSize="small">support_agent</Icon>,
+    route: "/admin/support",
+    component: <SupportManagerPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
   },
 
   {
