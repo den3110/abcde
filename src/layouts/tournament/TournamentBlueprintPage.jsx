@@ -2011,7 +2011,7 @@ export default function TournamentBlueprintPage() {
 
   // Chọn kiểu đổ KO theo nguồn
   const [group2KOMethod, setGroup2KOMethod] = useState("cross"); // default | cross | shift | random
-  const [po2KOMethod, setPo2KOMethod] = useState("default"); // default | cross | shift | random
+  const [po2KOMethod, setPo2KOMethod] = useState("default"); // default|cross|shift|random|lateFirst|interleave|pairSplit|snake|v1v2|v1ByeFirst|v1ByeBalanced|tierCascade|ladder|ladderReverse
 
   // Khi đổi số vòng PO thì sync mảng rule
   useEffect(() => {
@@ -2807,6 +2807,164 @@ export default function TournamentBlueprintPage() {
 
         toast.success("Đã đổ seed: Ladder NGƯỢC (tránh tái đấu, ghép xa nhất)");
         return { drawSize: size, seeds: finalPairs };
+      }
+
+      // ====== Option: V1 ưu tiên BYE (thừa mới gặp V2+) — 2 biến thể ======
+      // Ý tưởng: trong Play-Off, đội thắng V1 "mạnh" hơn đội từ V2/V3 (vốn là đội thua
+      // vòng trước). Nên cho V1 gặp BYE trước để đi tiếp thẳng; chỉ khi HẾT suất BYE thì
+      // V1 dư mới phải đánh, và đánh với đội yếu (V2+). BYE ưu tiên hạt giống V1 hàng đầu,
+      // đặt theo dáng ladder nên tự rải ra các nhánh khác nhau (V1 gặp nhau muộn nhất).
+      if (method === "v1ByeFirst" || method === "v1ByeBalanced") {
+        const strong = (byRound.get(1) || [])
+          .slice()
+          .sort((a, b) => (a.ref.order || 0) - (b.ref.order || 0)); // V1: T1..Tn
+        const weak = [];
+        for (const r of roundsAsc)
+          if (r >= 2)
+            weak.push(
+              ...(byRound.get(r) || [])
+                .slice()
+                .sort((a, b) => (a.ref.order || 0) - (b.ref.order || 0))
+            ); // V2,V3,… (mạnh→yếu theo round)
+
+        const Q = strong.length + weak.length; // tổng đội thật
+        const byeSlots = Math.max(0, capacity - Q); // số suất BYE khả dụng
+
+        const positions = seedPositionsPow2(size); // dáng ladder chuẩn
+        const pairIndexForRank = (rank) => Math.ceil(positions[rank - 1] / 2);
+
+        const resultPairs = Array.from({ length: firstPairs }, (_, i) => ({
+          pair: i + 1,
+          A: BYE,
+          B: BYE,
+        }));
+
+        const S = Math.min(firstPairs, strong.length); // số V1 đặt được vào nhánh
+        const overflowStrong = strong.slice(S); // V1 dư (KO nhỏ hơn số V1)
+        for (let rank = 1; rank <= S; rank++) {
+          resultPairs[pairIndexForRank(rank) - 1].A = strong[rank - 1];
+        }
+
+        // Số V1 được BYE = tối đa min(số V1, số suất BYE); ưu tiên hạt giống đầu.
+        const byeForV1 = Math.min(S, byeSlots);
+
+        // Pool đối thủ "yếu" cho các V1 phải đánh (kèm V1 dư nếu có)
+        const weakPool = [...weak, ...overflowStrong];
+        const pickOpponent = (sSeed) => {
+          if (!weakPool.length) return null;
+          if (method === "v1ByeBalanced") {
+            // Ưu tiên đối YẾU NHẤT (cuối pool = round cao nhất) & không tái đấu → V1 dễ đi tiếp
+            for (let i = weakPool.length - 1; i >= 0; i--) {
+              if (!_hasRematchPO(sSeed, weakPool[i], poN))
+                return weakPool.splice(i, 1)[0];
+            }
+            return weakPool.pop();
+          }
+          // v1ByeFirst: lấy đối đầu-pool, chỉ tránh tái đấu
+          let idx = weakPool.findIndex((w) => !_hasRematchPO(sSeed, w, poN));
+          if (idx === -1) idx = 0;
+          return weakPool.splice(idx, 1)[0];
+        };
+
+        // V1 dư (ngoài suất BYE) → ghép đối thủ yếu
+        let v1Fighting = 0;
+        for (let rank = byeForV1 + 1; rank <= S; rank++) {
+          const p = resultPairs[pairIndexForRank(rank) - 1];
+          const opp = pickOpponent(p.A);
+          p.B = opp || BYE;
+          if (opp && !isBye(opp)) v1Fighting++;
+        }
+
+        // Các cặp trống còn lại (không có V1): đổ nốt weak. Nếu còn dư suất BYE
+        // (byeSlots > số V1), phần dư tự rơi vào đây → đội V2+ auto đi tiếp.
+        for (let i = 0; i < resultPairs.length; i++) {
+          const p = resultPairs[i];
+          if (isBye(p.A) && isBye(p.B)) {
+            p.A = weakPool.shift() || BYE;
+            p.B = weakPool.shift() || BYE;
+          }
+        }
+
+        const finalPairs = fixDoubleByes(resultPairs);
+        const label =
+          method === "v1ByeBalanced"
+            ? "V1 ưu tiên BYE + gặp đối yếu nhất"
+            : "V1 ưu tiên BYE (thừa mới gặp V2+)";
+        toast.success(
+          `Đã đổ seed: ${label} • ${byeForV1} V1 gặp BYE, ${v1Fighting} V1 phải đánh V2+`
+        );
+        return { ...prev, drawSize: size, seeds: finalPairs };
+      }
+
+      // ====== Option: Bảo toàn theo TẦNG (V1>V2>V3…, BYE dồn tầng cao) ======
+      // Tổng quát cho PO nhiều vòng: suất BYE dồn cho các đội MẠNH nhất theo tầng
+      // (V1 hết mới tới V2, V2 hết mới tới V3…). Phần phải đánh ghép mạnh–yếu
+      // (đầu–cuối) để tầng cao gặp tầng thấp, tránh tái đấu.
+      if (method === "tierCascade") {
+        const ordered = [];
+        for (const r of roundsAsc)
+          ordered.push(
+            ...(byRound.get(r) || [])
+              .slice()
+              .sort((a, b) => (a.ref.order || 0) - (b.ref.order || 0))
+          ); // toàn bộ, mạnh(V1)→yếu(Vmax)
+        const trimmed = ordered.slice(0, capacity);
+        const byeSlots = Math.max(0, capacity - trimmed.length);
+
+        // BYE cho byeSlots đội mạnh nhất (đầu danh sách = tầng cao nhất)
+        const byeTeams = trimmed.slice(0, byeSlots);
+        const rest = trimmed.slice(byeSlots); // phải đánh, đã mạnh→yếu
+
+        const positions = seedPositionsPow2(size);
+        const pairIndexForRank = (rank) => Math.ceil(positions[rank - 1] / 2);
+
+        const resultPairs = Array.from({ length: firstPairs }, (_, i) => ({
+          pair: i + 1,
+          A: BYE,
+          B: BYE,
+        }));
+
+        // 1) Đội được BYE vào các vị trí hạt giống hàng đầu (ladder tự rải ra các nhánh)
+        let rank = 1;
+        for (const t of byeTeams) {
+          if (rank > firstPairs) break;
+          resultPairs[pairIndexForRank(rank) - 1].A = t; // đối thủ giữ BYE
+          rank++;
+        }
+
+        // 2) Phần "rest": ghép đầu–cuối (mạnh gặp yếu), tránh tái đấu.
+        //    Đặt nửa mạnh vào các vị trí hạt giống tiếp theo, đối thủ lấy từ cuối (yếu nhất).
+        const half = Math.ceil(rest.length / 2);
+        const strongRest = rest.slice(0, half); // mạnh hơn
+        const weakRest = rest.slice(half); // yếu hơn
+        const weakPool = weakRest.slice().reverse(); // yếu nhất trước → đối đầu mạnh nhất
+        const pickWeak = (sSeed) => {
+          if (!weakPool.length) return null;
+          let idx = weakPool.findIndex((w) => !_hasRematchPO(sSeed, w, poN));
+          if (idx === -1) idx = 0;
+          return weakPool.splice(idx, 1)[0];
+        };
+        for (const s of strongRest) {
+          if (rank > firstPairs) break;
+          const p = resultPairs[pairIndexForRank(rank) - 1];
+          p.A = s;
+          p.B = pickWeak(s) || BYE;
+          rank++;
+        }
+        // đội yếu còn dư (nếu lẻ) đổ vào cặp trống
+        for (let i = 0; i < resultPairs.length && weakPool.length; i++) {
+          const p = resultPairs[i];
+          if (isBye(p.A) && isBye(p.B)) {
+            p.A = weakPool.shift() || BYE;
+            p.B = weakPool.shift() || BYE;
+          }
+        }
+
+        const finalPairs = fixDoubleByes(resultPairs);
+        toast.success(
+          `Đã đổ seed: Bảo toàn theo tầng (V1>V2>…) • ${byeTeams.length} đội mạnh nhất gặp BYE`
+        );
+        return { ...prev, drawSize: size, seeds: finalPairs };
       }
 
       // ====== Các cách cũ (default|cross|shift|random|lateFirst|interleave|pairSplit|snake) ======
@@ -4291,6 +4449,15 @@ export default function TournamentBlueprintPage() {
                   <MenuItem value="pairSplit">Tách lẻ/chẵn</MenuItem>
                   <MenuItem value="snake">Serpentine</MenuItem>
                   <MenuItem value="v1v2">Ưu tiên V1 vs V2 (hết V2 → BYE)</MenuItem>
+                  <MenuItem value="v1ByeFirst">
+                    V1 ưu tiên BYE (thừa mới gặp V2)
+                  </MenuItem>
+                  <MenuItem value="v1ByeBalanced">
+                    V1 ưu tiên BYE + gặp đối yếu nhất
+                  </MenuItem>
+                  <MenuItem value="tierCascade">
+                    Bảo toàn theo tầng (V1&gt;V2&gt;V3…)
+                  </MenuItem>
                   <MenuItem value="ladder">Ladder (giữ dáng + tránh tái đấu)</MenuItem>
                   <MenuItem value="ladderReverse">
                     Ladder ngược (tránh tái đấu, ghép xa nhất)
@@ -4978,6 +5145,15 @@ export default function TournamentBlueprintPage() {
                       <MenuItem value="pairSplit">Tách lẻ/chẵn</MenuItem>
                       <MenuItem value="snake">Serpentine</MenuItem>
                       <MenuItem value="v1v2">Ưu tiên V1 vs V2 (hết V2 → BYE)</MenuItem>
+                      <MenuItem value="v1ByeFirst">
+                        V1 ưu tiên BYE (thừa mới gặp V2)
+                      </MenuItem>
+                      <MenuItem value="v1ByeBalanced">
+                        V1 ưu tiên BYE + gặp đối yếu nhất
+                      </MenuItem>
+                      <MenuItem value="tierCascade">
+                        Bảo toàn theo tầng (V1&gt;V2&gt;V3…)
+                      </MenuItem>
                       <MenuItem value="ladder">Ladder (giữ dáng + tránh tái đấu)</MenuItem>
                       <MenuItem value="ladderReverse">
                         Ladder ngược (tránh tái đấu, ghép xa nhất)
