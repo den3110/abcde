@@ -2960,9 +2960,90 @@ export default function TournamentBlueprintPage() {
           }
         }
 
+        // ===== Tối ưu TRÁNH TÁI ĐẤU SÂU (chỉ dựa quan hệ V1 — V2/V3 chưa xác định được
+        // đội nên bỏ qua). Đẩy các đội có quan hệ V1 (_hasRematchPO) ra các NHÁNH XA nhau
+        // để gặp lại càng MUỘN càng tốt ở KO. Chỉ hoán vị TRONG CÙNG VAI (bye↔bye,
+        // mạnh↔mạnh, yếu↔yếu) nên KHÔNG phá ưu tiên BYE theo tầng lẫn thế mạnh–yếu — chỉ
+        // đổi ĐỘI nào đứng ở NHÁNH nào. =====
+        {
+          // Mỗi "ô" = một vị trí có đội thật, gắn vai theo cách đã xếp ở trên.
+          const cells = [];
+          resultPairs.forEach((p, pi) => {
+            if (!isBye(p.A))
+              cells.push({ pi, side: "A", group: isBye(p.B) ? "bye" : "strong" });
+            if (!isBye(p.B)) cells.push({ pi, side: "B", group: "weak" });
+          });
+
+          const keyOf = (s) =>
+            s
+              ? `${s?.ref?.round}:${s?.ref?.order}:${
+                  s?.ref?.stageIndex ?? s?.ref?.stage ?? 0
+                }`
+              : "";
+          // Tập các cặp đội có quan hệ V1 (tính 1 lần theo đội, không theo vị trí).
+          const rematch = new Set();
+          const seeds0 = cells.map((c) => resultPairs[c.pi][c.side]);
+          for (let i = 0; i < seeds0.length; i++)
+            for (let j = i + 1; j < seeds0.length; j++)
+              if (_hasRematchPO(seeds0[i], seeds0[j], poN)) {
+                const ka = keyOf(seeds0[i]);
+                const kb = keyOf(seeds0[j]);
+                rematch.add(ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`);
+              }
+          const isRematch = (a, b) => {
+            const ka = keyOf(a);
+            const kb = keyOf(b);
+            return rematch.has(ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`);
+          };
+
+          // Vòng KO 2 cặp gặp lại theo dáng chuẩn: cùng cặp = 1; khác cặp = ⌊log2(i^j)⌋+2.
+          const meetRound = (pi, pj) =>
+            pi === pj ? 1 : Math.floor(Math.log2(pi ^ pj)) + 2;
+          // Gặp lại càng SỚM phạt càng nặng → tối ưu = đẩy xa nhất có thể.
+          const penalty = (r) => Math.pow(6, Math.max(0, 9 - r));
+          const totalCost = () => {
+            let sum = 0;
+            for (let i = 0; i < cells.length; i++)
+              for (let j = i + 1; j < cells.length; j++) {
+                const si = resultPairs[cells[i].pi][cells[i].side];
+                const sj = resultPairs[cells[j].pi][cells[j].side];
+                if (isRematch(si, sj))
+                  sum += penalty(meetRound(cells[i].pi, cells[j].pi));
+              }
+            return sum;
+          };
+
+          if (rematch.size) {
+            let improved = true;
+            let iter = 0;
+            while (improved && iter < 80) {
+              improved = false;
+              iter++;
+              for (let a = 0; a < cells.length; a++)
+                for (let b = a + 1; b < cells.length; b++) {
+                  if (cells[a].group !== cells[b].group) continue; // giữ đúng vai
+                  const ca = cells[a];
+                  const cb = cells[b];
+                  const before = totalCost();
+                  const tmp = resultPairs[ca.pi][ca.side];
+                  resultPairs[ca.pi][ca.side] = resultPairs[cb.pi][cb.side];
+                  resultPairs[cb.pi][cb.side] = tmp;
+                  if (totalCost() < before) {
+                    improved = true;
+                  } else {
+                    // hoàn tác nếu không cải thiện
+                    const t2 = resultPairs[ca.pi][ca.side];
+                    resultPairs[ca.pi][ca.side] = resultPairs[cb.pi][cb.side];
+                    resultPairs[cb.pi][cb.side] = t2;
+                  }
+                }
+            }
+          }
+        }
+
         const finalPairs = fixDoubleByes(resultPairs);
         toast.success(
-          `Đã đổ seed: Bảo toàn theo tầng (V1>V2>…) • ${byeTeams.length} đội mạnh nhất gặp BYE`
+          `Đã đổ seed: Bảo toàn theo tầng (V1>V2>…) • ${byeTeams.length} đội mạnh nhất gặp BYE • đã rải tránh tái đấu V1`
         );
         return { ...prev, drawSize: size, seeds: finalPairs };
       }
@@ -4457,6 +4538,19 @@ export default function TournamentBlueprintPage() {
                   </MenuItem>
                   <MenuItem value="tierCascade">
                     Bảo toàn theo tầng (V1&gt;V2&gt;V3…)
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        padding: "1px 7px",
+                        borderRadius: 999,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        background: "#16a34a",
+                        color: "#fff",
+                      }}
+                    >
+                      Khuyến nghị
+                    </span>
                   </MenuItem>
                   <MenuItem value="ladder">Ladder (giữ dáng + tránh tái đấu)</MenuItem>
                   <MenuItem value="ladderReverse">
@@ -5153,6 +5247,19 @@ export default function TournamentBlueprintPage() {
                       </MenuItem>
                       <MenuItem value="tierCascade">
                         Bảo toàn theo tầng (V1&gt;V2&gt;V3…)
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            padding: "1px 7px",
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: "#16a34a",
+                            color: "#fff",
+                          }}
+                        >
+                          Khuyến nghị
+                        </span>
                       </MenuItem>
                       <MenuItem value="ladder">Ladder (giữ dáng + tránh tái đấu)</MenuItem>
                       <MenuItem value="ladderReverse">
