@@ -1845,60 +1845,53 @@ SeedPickerDialog.propTypes = {
 
 /* ========================= Main Page ========================= */
 /* ======================= XEM SƠ ĐỒ DỰ KIẾN (CHỈ XEM) =======================
-   Sơ đồ BAN ĐẦU (trước bốc thăm) của Vòng bảng + Play-Off, dựng thuần từ cấu
-   hình đang nhập trên form — không đọc/ghi dữ liệu thật. Cấu trúc PO khớp
-   poMatchesForRound: V1 ghép Suất 1-2, 3-4,… (lẻ → trận cuối BYE); từ V2 là
-   nhánh vé vớt cho đội THUA vòng trước (trận BYE không sinh đội thua); đội
-   thắng ở mỗi vòng trở thành suất đổ vào KO. */
+   Sơ đồ BAN ĐẦU (trước bốc thăm) của Vòng bảng + Play-Off — CHỈ HIỂN THỊ,
+   không đọc/ghi gì. Dùng đúng bộ dựng sơ đồ của trang: buildPoRoundsFromPlan
+   (nhãn "Đội n" / "L-V?-T?" / BYE) + react-brackets, giống hệt sơ đồ KO. */
 function StagePreviewDialog({
   open,
   onClose,
   includeGroup,
   groupSizes,
   includePO,
-  poDrawSize,
-  poMaxRounds,
+  poPlan,
 }) {
-  const N = Math.max(0, Number(poDrawSize) || 0);
-  const maxR = Math.max(1, Number(poMaxRounds) || 1);
-
-  const poRounds = [];
-  if (includePO && N >= 2) {
-    let source = N; // V1: tổng suất; V2+: số đội thua rơi xuống từ vòng trước
-    for (let r = 1; r <= maxR && source >= 1; r++) {
-      const m = Math.max(1, Math.ceil(source / 2));
-      const matches = [];
-      for (let i = 0; i < m; i++) {
-        const ia = 2 * i + 1;
-        const ib = 2 * i + 2;
-        matches.push({
-          code: `V${r}-T${i + 1}`,
-          a: r === 1 ? `Suất ${ia}` : `Thua V${r - 1}-T${ia}`,
-          b:
-            ib <= source
-              ? r === 1
-                ? `Suất ${ib}`
-                : `Thua V${r - 1}-T${ib}`
-              : "BYE",
-        });
-      }
-      poRounds.push({ round: r, matches });
-      source = Math.floor(source / 2); // chỉ trận đủ 2 đội mới sinh đội thua
-    }
-  }
-
-  const groups =
-    includeGroup && Array.isArray(groupSizes) && groupSizes.length
-      ? groupSizes.map((sz, i) => ({
-          name:
-            String.fromCharCode(65 + (i % 26)) +
-            (i >= 26 ? Math.floor(i / 26) : ""),
-          size: Math.max(0, Number(sz) || 0),
-        }))
+  // PO: dựng rounds y hệt sơ đồ lúc tạo mới (V1: Đội 1-2, 3-4…; V2+: L-V?-T?)
+  const poRounds =
+    includePO && Number(poPlan?.drawSize) >= 2
+      ? buildPoRoundsFromPlan(poPlan, 1, includeGroup ? 2 : 1)
       : [];
 
+  // Vòng bảng: đánh số "Đội n" XUYÊN các bảng, giống preview lúc tạo mới
+  const sizes = includeGroup && Array.isArray(groupSizes) ? groupSizes : [];
+  let groupStart = 1;
+  const groups = sizes.map((sz, i) => {
+    const size = Math.max(0, Number(sz) || 0);
+    const start = groupStart;
+    groupStart += size;
+    return {
+      code:
+        String.fromCharCode(65 + (i % 26)) +
+        (i >= 26 ? Math.floor(i / 26) : ""),
+      size,
+      names: Array.from({ length: size }, (_, j) => `Đội ${start + j}`),
+    };
+  });
+
+  // Seed chỉ-xem theo đúng khung react-brackets (nhìn giống sơ đồ KO)
+  const renderViewOnlySeed = ({ seed, breakpoint }) => (
+    <Seed mobileBreakpoint={breakpoint} style={{ fontSize: 13 }}>
+      <SeedItem>
+        <div>
+          <SeedTeam>{seed?.teams?.[0]?.name || "—"}</SeedTeam>
+          <SeedTeam>{seed?.teams?.[1]?.name || "—"}</SeedTeam>
+        </div>
+      </SeedItem>
+    </Seed>
+  );
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth>
       <DialogTitle>Sơ đồ dự kiến (trước bốc thăm) — chỉ xem</DialogTitle>
       <DialogContent dividers>
         {!groups.length && !poRounds.length && (
@@ -1908,90 +1901,47 @@ function StagePreviewDialog({
         )}
 
         {groups.length > 0 && (
-          <Box sx={{ mb: poRounds.length ? 2.5 : 0 }}>
-            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.5 }}>
+          <Box sx={{ mb: poRounds.length ? 3 : 0 }}>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
               Vòng bảng • {groups.length} bảng •{" "}
-              {groups.reduce((s, g) => s + g.size, 0)} đội •{" "}
-              {groups.reduce((s, g) => s + RR_MATCHES(g.size), 0)} trận vòng tròn
+              {groups.reduce((s, g) => s + g.size, 0)} đội
             </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", mb: 1 }}
-            >
-              Slot (A1, A2,…) sẽ được gán đội cụ thể khi bốc thăm.
-            </Typography>
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5 }}>
+            <Stack gap={2}>
               {groups.map((g) => (
-                <Paper
-                  key={g.name}
-                  variant="outlined"
-                  sx={{ p: 1.25, minWidth: 170 }}
-                >
-                  <Typography variant="subtitle2" fontWeight={700}>
-                    Bảng {g.name} • {g.size} đội • {RR_MATCHES(g.size)} trận
-                  </Typography>
+                <Paper key={g.code} variant="outlined" sx={{ p: 1.5 }}>
                   <Stack
                     direction="row"
-                    flexWrap="wrap"
-                    gap={0.5}
-                    sx={{ mt: 0.75 }}
+                    alignItems="center"
+                    spacing={1}
+                    sx={{ mb: 1 }}
                   >
-                    {Array.from({ length: g.size }, (_, i) => (
-                      <Chip key={i} size="small" label={`${g.name}${i + 1}`} />
+                    <Chip size="small" color="primary" label={`Bảng ${g.code}`} />
+                    <Typography variant="body2" color="text.secondary">
+                      {g.size} đội • {RR_MATCHES(g.size)} trận vòng tròn
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" flexWrap="wrap" gap={0.75}>
+                    {g.names.map((nm) => (
+                      <Chip key={nm} size="small" variant="outlined" label={nm} />
                     ))}
                   </Stack>
                 </Paper>
               ))}
-            </Box>
+            </Stack>
           </Box>
         )}
 
         {poRounds.length > 0 && (
           <Box>
-            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.5 }}>
-              Play-Off • {N} đội • dừng sau V{poRounds.length}
+            <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+              Play-Off • {Number(poPlan?.drawSize) || 0} đội
             </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", mb: 1 }}
-            >
-              V1 ghép theo Suất bốc thăm (1–2, 3–4,…). Từ V2 là nhánh vé vớt:
-              đội THUA vòng trước gặp nhau; đội thắng ở mỗi vòng trở thành suất
-              đổ vào KO.
-            </Typography>
-            <Box sx={{ display: "flex", gap: 1.5, overflowX: "auto", pb: 1 }}>
-              {poRounds.map((rd) => (
-                <Box key={rd.round} sx={{ minWidth: 210 }}>
-                  <Chip
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    label={`V${rd.round} • ${rd.matches.length} trận`}
-                    sx={{ mb: 1 }}
-                  />
-                  <Stack
-                    spacing={0.75}
-                    sx={{ maxHeight: "52vh", overflowY: "auto", pr: 0.5 }}
-                  >
-                    {rd.matches.map((mt) => (
-                      <Paper key={mt.code} variant="outlined" sx={{ p: 0.75 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {mt.code}
-                        </Typography>
-                        <Typography variant="body2">{mt.a}</Typography>
-                        <Typography
-                          variant="body2"
-                          color={mt.b === "BYE" ? "success.main" : undefined}
-                        >
-                          {mt.b}
-                        </Typography>
-                      </Paper>
-                    ))}
-                  </Stack>
-                </Box>
-              ))}
+            <Box sx={{ overflowX: "auto", pb: 1 }}>
+              <Bracket
+                rounds={poRounds}
+                renderSeedComponent={renderViewOnlySeed}
+                mobileBreakpoint={0}
+              />
             </Box>
           </Box>
         )}
@@ -2009,16 +1959,18 @@ StagePreviewDialog.propTypes = {
   includeGroup: PropTypes.bool,
   groupSizes: PropTypes.arrayOf(PropTypes.number),
   includePO: PropTypes.bool,
-  poDrawSize: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  poMaxRounds: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  poPlan: PropTypes.shape({
+    drawSize: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+    maxRounds: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+    seeds: PropTypes.array,
+  }),
 };
 
 StagePreviewDialog.defaultProps = {
   includeGroup: false,
   groupSizes: [],
   includePO: false,
-  poDrawSize: 0,
-  poMaxRounds: 1,
+  poPlan: null,
 };
 
 export default function TournamentBlueprintPage() {
@@ -5127,8 +5079,7 @@ export default function TournamentBlueprintPage() {
           includeGroup={includeGroup}
           groupSizes={groupSizes}
           includePO={includePO}
-          poDrawSize={poPlan.drawSize}
-          poMaxRounds={poPlan.maxRounds}
+          poPlan={poPlan}
         />
       </Box>
     </DashboardLayout>
@@ -5902,8 +5853,7 @@ export default function TournamentBlueprintPage() {
           includeGroup={includeGroup}
           groupSizes={groupSizes}
           includePO={includePO}
-          poDrawSize={poPlan.drawSize}
-          poMaxRounds={poPlan.maxRounds}
+          poPlan={poPlan}
         />
       </Box>
     </DashboardLayout>
