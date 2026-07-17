@@ -2003,6 +2003,24 @@ function StagePreviewDialog({
   );
 }
 
+StagePreviewDialog.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  includeGroup: PropTypes.bool,
+  groupSizes: PropTypes.arrayOf(PropTypes.number),
+  includePO: PropTypes.bool,
+  poDrawSize: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  poMaxRounds: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+};
+
+StagePreviewDialog.defaultProps = {
+  includeGroup: false,
+  groupSizes: [],
+  includePO: false,
+  poDrawSize: 0,
+  poMaxRounds: 1,
+};
+
 export default function TournamentBlueprintPage() {
   const { id: tournamentId } = useParams();
   const navigate = useNavigate();
