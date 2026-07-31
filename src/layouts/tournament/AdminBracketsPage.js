@@ -48,6 +48,7 @@ import {
   PlayCircle as PlayIcon,
   OpenInNew as OpenInNewIcon,
   ContentCopy as ContentCopyIcon,
+  Tune as TuneIcon,
 } from "@mui/icons-material";
 
 import { useNavigate, useParams } from "react-router-dom";
@@ -79,6 +80,7 @@ import {
   useBatchAssignRefereeMutation,
   useBatchDeleteMatchesMutation,
   useClearBracketMatchesMutation,
+  useUpdateGroupStructureMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
 import { getTournamentNameDisplayMode, getTournamentPairName } from "utils/tournamentName";
@@ -351,6 +353,71 @@ export default function AdminBracketsPage() {
   const [batchAssignReferee, { isLoading: assigningRef }] = useBatchAssignRefereeMutation();
   const [batchDeleteMatches, { isLoading: deletingBatch }] = useBatchDeleteMatchesMutation();
   const [clearBracketMatches, { isLoading: clearingAll }] = useClearBracketMatchesMutation(); // ⭐ NEW
+  const [updateGroupStructure, { isLoading: updatingGroupStructure }] =
+    useUpdateGroupStructureMutation();
+
+  const [groupStructureDlg, setGroupStructureDlg] = useState({
+    open: false,
+    bracket: null,
+  });
+  const [groupStructureDrafts, setGroupStructureDrafts] = useState({});
+
+  const groupStructureKey = (group) =>
+    group?._id ? idOf(group._id) : String(group?.name || "");
+  const configuredRegistrationIdsForGroup = (bracket, group) => {
+    const groupKeys = new Set([groupStructureKey(group), String(group?.name || "")]);
+    const configuredIds = [
+      ...(group?.regIds || []),
+      ...(bracket?.slotPlan || [])
+        .filter((assignment) => groupKeys.has(String(assignment?.poolKey || "")))
+        .map((assignment) => assignment?.registration || assignment?.regId),
+    ]
+      .filter(Boolean)
+      .map(idOf);
+    return Array.from(new Set(configuredIds));
+  };
+
+  const openGroupStructureDialog = (bracket) => {
+    const drafts = {};
+    (bracket?.groups || []).forEach((group) => {
+      const configuredIds = configuredRegistrationIdsForGroup(bracket, group);
+      drafts[groupStructureKey(group)] = {
+        expectedSize: Math.max(1, Number(group?.expectedSize) || configuredIds.length || 1),
+        removeRegistrationId: "",
+      };
+    });
+    setGroupStructureDrafts(drafts);
+    setGroupStructureDlg({ open: true, bracket });
+  };
+
+  const saveGroupStructure = async (bracket, group) => {
+    const draft = groupStructureDrafts[groupStructureKey(group)] || {};
+    const expectedSize = Number(draft.expectedSize);
+    if (!Number.isInteger(expectedSize) || expectedSize < 1) {
+      showSnack("error", "Quy mô bảng phải là số nguyên lớn hơn 0.");
+      return;
+    }
+    try {
+      await updateGroupStructure({
+        bracketId: bracket._id,
+        groupId: group._id || group.name,
+        body: {
+          expectedSize,
+          ...(draft.removeRegistrationId
+            ? { removeRegistrationId: draft.removeRegistrationId }
+            : {}),
+        },
+      }).unwrap();
+      showSnack("success", `Đã cập nhật cơ cấu bảng ${group.name}.`);
+      setGroupStructureDlg({ open: false, bracket: null });
+      await Promise.all([refetchBrackets(), refetchMatches()]);
+    } catch (error) {
+      showSnack(
+        "error",
+        error?.data?.message || error?.error || "Không thể cập nhật cơ cấu bảng."
+      );
+    }
+  };
 
   // Progression mutations
   const [previewAdvancement, { isLoading: loadingPreview }] = usePreviewAdvancementMutation();
@@ -2260,6 +2327,15 @@ export default function AdminBracketsPage() {
                             }
                           >
                             Cấu hình vòng bảng
+                          </Button>
+                        )}
+                        {canManagePreassign && br.type === "group" && (
+                          <Button
+                            size="small"
+                            startIcon={<TuneIcon />}
+                            onClick={stop(() => openGroupStructureDialog(br))}
+                          >
+                            Điều chỉnh cơ cấu
                           </Button>
                         )}
                         {br.type === "group" && (
@@ -4406,6 +4482,156 @@ export default function AdminBracketsPage() {
             sx={{ color: "white !important" }}
           >
             {feedingStage ? "Đang áp dụng..." : "Áp dụng"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Điều chỉnh cơ cấu vòng bảng */}
+      <Dialog
+        open={groupStructureDlg.open}
+        onClose={() => !updatingGroupStructure && setGroupStructureDlg({ open: false, bracket: null })}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>
+          Điều chỉnh cơ cấu vòng bảng
+          {groupStructureDlg.bracket?.name ? ` · ${groupStructureDlg.bracket.name}` : ""}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            <Alert severity="info">
+              Chỉ dùng khi vòng bảng chưa bốc thăm và chưa tạo trận. Bạn có thể đổi quy mô từng
+              bảng hoặc bỏ đội đã gán về danh sách chưa phân bảng.
+            </Alert>
+
+            {(groupStructureDlg.bracket?.groups || []).map((group) => {
+              const key = groupStructureKey(group);
+              const draft = groupStructureDrafts[key] || {
+                expectedSize: Math.max(1, Number(group?.expectedSize) || 1),
+                removeRegistrationId: "",
+              };
+              const configuredIds = configuredRegistrationIdsForGroup(
+                groupStructureDlg.bracket,
+                group
+              );
+              const remainingConfigured =
+                configuredIds.length - (draft.removeRegistrationId ? 1 : 0);
+              const requestedSize = Number(draft.expectedSize);
+              const invalidSize =
+                !Number.isInteger(requestedSize) ||
+                requestedSize < 1 ||
+                requestedSize < remainingConfigured;
+
+              return (
+                <Paper key={key} variant="outlined" sx={{ p: 2 }}>
+                  <Stack spacing={1.5}>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1}
+                      alignItems={{ xs: "flex-start", sm: "center" }}
+                      justifyContent="space-between"
+                    >
+                      <Typography variant="h6">Bảng {group.name}</Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        <Chip
+                          size="small"
+                          label={`${configuredIds.length} đội đã cơ cấu`}
+                        />
+                        <Chip
+                          size="small"
+                          label={`Quy mô hiện tại: ${Math.max(
+                            1,
+                            Number(group?.expectedSize) || configuredIds.length || 1
+                          )}`}
+                        />
+                      </Stack>
+                    </Stack>
+
+                    <Grid container spacing={2} alignItems="flex-start">
+                      <Grid item xs={12} md={4}>
+                        <TextField
+                          fullWidth
+                          required
+                          type="number"
+                          label="Quy mô bảng"
+                          value={draft.expectedSize}
+                          inputProps={{ min: 1, step: 1 }}
+                          error={invalidSize}
+                          helperText={
+                            invalidSize
+                              ? `Tối thiểu ${remainingConfigured} đội sau khi bỏ đội đã chọn.`
+                              : "Số slot của bảng khi bốc thăm."
+                          }
+                          onChange={(event) =>
+                            setGroupStructureDrafts((previous) => ({
+                              ...previous,
+                              [key]: {
+                                ...draft,
+                                expectedSize: event.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </Grid>
+                      <Grid item xs={12} md={5}>
+                        <TextField
+                          select
+                          fullWidth
+                          label="Bỏ đội khỏi bảng"
+                          value={draft.removeRegistrationId}
+                          disabled={!configuredIds.length}
+                          helperText={
+                            configuredIds.length
+                              ? "Đội được chọn sẽ trở lại danh sách chưa phân bảng."
+                              : "Chưa có đội nào được gán vào bảng này."
+                          }
+                          onChange={(event) =>
+                            setGroupStructureDrafts((previous) => ({
+                              ...previous,
+                              [key]: {
+                                ...draft,
+                                removeRegistrationId: event.target.value,
+                              },
+                            }))
+                          }
+                        >
+                          <MenuItem value="">Không bỏ đội</MenuItem>
+                          {configuredIds.map((registrationId) => {
+                            const registration = regIndex.get(registrationId);
+                            return (
+                              <MenuItem key={registrationId} value={registrationId}>
+                                {registration
+                                  ? regName(registration, evType, displayMode)
+                                  : `Đội ${registrationId.slice(-6)}`}
+                              </MenuItem>
+                            );
+                          })}
+                        </TextField>
+                      </Grid>
+                      <Grid item xs={12} md={3}>
+                        <Button
+                          fullWidth
+                          variant="contained"
+                          sx={{ color: "white !important", mt: { xs: 0, md: 1 } }}
+                          disabled={updatingGroupStructure || invalidSize}
+                          onClick={() => saveGroupStructure(groupStructureDlg.bracket, group)}
+                        >
+                          {updatingGroupStructure ? "Đang lưu..." : "Lưu bảng này"}
+                        </Button>
+                      </Grid>
+                    </Grid>
+                  </Stack>
+                </Paper>
+              );
+            })}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setGroupStructureDlg({ open: false, bracket: null })}
+            disabled={updatingGroupStructure}
+          >
+            Hủy
           </Button>
         </DialogActions>
       </Dialog>

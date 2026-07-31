@@ -730,6 +730,15 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["Bracket", "Group", "Match"],
     }),
 
+    updateGroupStructure: builder.mutation({
+      query: ({ bracketId, groupId, body }) => ({
+        url: `/admin/brackets/${bracketId}/groups/${groupId}/structure`,
+        method: "PATCH",
+        body, // { expectedSize, removeRegistrationId? }
+      }),
+      invalidatesTags: ["Bracket", "Group", "Match"],
+    }),
+
     generateGroupMatchesForTeam: builder.mutation({
       query: ({ bracketId, groupId, body }) => ({
         url: `/admin/brackets/${bracketId}/groups/${groupId}/generate-matches`,
@@ -832,6 +841,7 @@ export const {
   useListRefereeMatchesByTournamentQuery,
   useRefereeNextGameMutation,
   useInsertRegIntoGroupSlotMutation,
+  useUpdateGroupStructureMutation,
   useGenerateGroupMatchesForTeamMutation,
   useSuggestTournamentPlanMutation,
   useGetTournamentPlanQuery,
