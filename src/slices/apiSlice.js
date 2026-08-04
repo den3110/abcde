@@ -60,6 +60,9 @@ export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery,
   tagTypes: [
+    "AdminFeed",
+    "AdminFeedReports",
+    "AdminChat",
     "User",
     "Registration",
     "LiveSessions",

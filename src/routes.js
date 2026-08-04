@@ -72,6 +72,8 @@ import FbVodDriveMonitorPage from "layouts/FbVodDriveMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
 import BlogManagerPage from "layouts/BlogManagerPage";
+import FeedManagerPage from "layouts/FeedManagerPage";
+import ChatManagerPage from "layouts/ChatManagerPage";
 import AdminAzureConfigPage from "layouts/AdminAzureConfigPage";
 import AzureManagerPage from "layouts/AzureManagerPage";
 import NewsImageMonitorPage from "layouts/NewsImageMonitorPage";
@@ -174,6 +176,28 @@ const routes = [
     private: true,
     roles: ["admin"],
     show: true, // hiện trên sidebar
+  },
+  {
+    type: "collapse",
+    name: "Bảng tin",
+    key: "admin-feed",
+    icon: <Icon fontSize="small">dynamic_feed</Icon>,
+    route: "/admin/feed",
+    component: <FeedManagerPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Nhắn tin",
+    key: "admin-chat",
+    icon: <Icon fontSize="small">forum</Icon>,
+    route: "/admin/chat",
+    component: <ChatManagerPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
   },
   {
     type: "collapse",
