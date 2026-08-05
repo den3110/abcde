@@ -48,6 +48,7 @@ import {
   useGetUsersQuery,
   useUpdateUserRoleMutation,
   useUpdateUserSuperAdminMutation,
+  useUpdateUserCoachMutation,
   useUpdateUserInfoMutation,
   useReviewKycMutation,
   useUpdateRankingMutation,
@@ -151,7 +152,14 @@ const KYC_COLOR = {
 const prettyDate = (d) => (d ? new Date(d).toLocaleDateString("vi-VN") : "—");
 
 /* ================== Helpers ================== */
-const roleText = (r) => (r === "admin" ? "Admin" : r === "referee" ? "Trọng tài" : "User");
+const roleText = (r) =>
+  r === "admin"
+    ? "Admin"
+    : r === "referee"
+    ? "Trọng tài"
+    : r === "courtOwner"
+    ? "Chủ sân"
+    : "User";
 
 const normalizeRole = (r) =>
   String(r || "")
@@ -198,6 +206,7 @@ export default function UserManagement() {
   // mutations
   const [updateRoleMut] = useUpdateUserRoleMutation();
   const [updateSuperAdminMut] = useUpdateUserSuperAdminMutation();
+  const [updateCoachMut] = useUpdateUserCoachMutation();
   const [updateInfoMut] = useUpdateUserInfoMutation();
   const [reviewKycMut] = useReviewKycMutation();
   const [updateRanking] = useUpdateRankingMutation();
@@ -357,6 +366,29 @@ export default function UserManagement() {
                 />
               }
               label="Admin chấm trình"
+            />
+
+            {/* Checkbox: Huấn luyện viên (co-exist với mọi role) */}
+            <FormControlLabel
+              sx={{ m: 0 }}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={Boolean(u.isCoach)}
+                  onChange={(e) =>
+                    handle(
+                      updateCoachMut({
+                        id: u._id,
+                        isCoach: e.target.checked,
+                      }).unwrap(),
+                      e.target.checked
+                        ? "Đã bật quyền huấn luyện viên"
+                        : "Đã tắt quyền huấn luyện viên"
+                    )
+                  }
+                />
+              }
+              label="Huấn luyện viên"
             />
 
             {canManageSuperAdmin && (
