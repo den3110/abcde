@@ -738,8 +738,12 @@ export default function TournamentFormPage() {
       sportType: 1,
       groupId: Number(tour.groupId ?? 0),
       eventType: tour.eventType || "double",
-      tournamentMode:
-        String(tour.tournamentMode || "").toLowerCase() === "team" ? "team" : "standard",
+      tournamentMode: (() => {
+        const m = String(tour.tournamentMode || "").toLowerCase();
+        if (m === "team") return "team";
+        if (m === "mlp") return "mlp";
+        return "standard";
+      })(),
       teamFactions: normalizeTeamFactionsForForm(tour.teamConfig?.factions),
       nameDisplayMode: tour.nameDisplayMode === "fullName" ? "fullName" : "nickname",
 
@@ -872,7 +876,9 @@ export default function TournamentFormPage() {
       sportType: 1,
       groupId: Number(form.groupId) || 0,
       eventType: form.eventType,
-      tournamentMode: form.tournamentMode === "team" ? "team" : "standard",
+      tournamentMode: ["team", "mlp"].includes(form.tournamentMode)
+        ? form.tournamentMode
+        : "standard",
       nameDisplayMode: form.nameDisplayMode === "fullName" ? "fullName" : "nickname",
 
       regOpenDate: regOpenDT,
@@ -1301,10 +1307,11 @@ export default function TournamentFormPage() {
                     onChange={onChange}
                     fullWidth
                     margin="normal"
-                    helperText="Thông thường giữ flow hiện tại. Đồng đội sẽ dùng roster theo phe và tạo trận thủ công."
+                    helperText="Thông thường giữ flow hiện tại. Đồng đội dùng roster theo phe. MLP là team-vs-team với multi sub-match + DreamBreaker (cấu hình chi tiết ở trang Quản lý giải)."
                   >
                     <MenuItem value="standard">Thông thường</MenuItem>
                     <MenuItem value="team">Đồng đội</MenuItem>
+                    <MenuItem value="mlp">MLP (Team-vs-Team)</MenuItem>
                   </TextField>
                   {form.tournamentMode === "team" ? (
                     <Card variant="outlined" sx={{ p: 2, mt: 2 }}>
