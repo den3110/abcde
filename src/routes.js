@@ -10,6 +10,7 @@ import Profile from "layouts/profile";
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
 import UserManagement from "layouts/user/UserListPage";
+import CoachApprovalsPage from "layouts/coaches/CoachApprovalsPage";
 import SelfAssessmentManagementPage from "layouts/user/SelfAssessmentManagementPage";
 import AssessmentHistoryPage from "layouts/user/AssessmentHistoryPage";
 import AuthLogManagementPage from "layouts/user/AuthLogManagementPage";
@@ -247,6 +248,16 @@ const routes = [
     icon: <Icon fontSize="small">people</Icon>,
     route: "/users",
     component: <UserManagement />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    type: "collapse",
+    name: "Duyệt HLV",
+    key: "coach-approvals",
+    icon: <Icon fontSize="small">school</Icon>,
+    route: "/admin/coach-approvals",
+    component: <CoachApprovalsPage />,
     private: true,
     roles: ["admin"],
   },

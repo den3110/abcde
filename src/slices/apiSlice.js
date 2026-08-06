@@ -64,6 +64,8 @@ export const apiSlice = createApi({
     "AdminFeedReports",
     "AdminChat",
     "User",
+    "CoachApp",
+    "CoachAch",
     "Registration",
     "LiveSessions",
     "LiveRecordingMonitor",

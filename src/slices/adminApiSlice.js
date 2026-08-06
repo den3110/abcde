@@ -41,6 +41,79 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
+    /* ===== Coach applications ===== */
+    listCoachApplications: builder.query({
+      query: ({ status = "pending", cursor, limit = 20 } = {}) => {
+        const p = new URLSearchParams();
+        if (status) p.set("status", status);
+        if (cursor) p.set("cursor", cursor);
+        if (limit) p.set("limit", String(limit));
+        return { url: `/admin/coaches/applications?${p.toString()}`, method: "GET" };
+      },
+      providesTags: ["CoachApp"],
+    }),
+    approveCoachApplication: builder.mutation({
+      query: ({ id, adminNote }) => ({
+        url: `/admin/coaches/applications/${id}/approve`,
+        method: "POST",
+        body: { adminNote },
+      }),
+      invalidatesTags: ["CoachApp", "CoachAch", "User"],
+    }),
+    rejectCoachApplication: builder.mutation({
+      query: ({ id, adminNote }) => ({
+        url: `/admin/coaches/applications/${id}/reject`,
+        method: "POST",
+        body: { adminNote },
+      }),
+      invalidatesTags: ["CoachApp"],
+    }),
+
+    /* ===== Coach achievements ===== */
+    listCoachAchievements: builder.query({
+      query: ({ status = "pending", coach, cursor, limit = 20 } = {}) => {
+        const p = new URLSearchParams();
+        if (status) p.set("status", status);
+        if (coach) p.set("coach", coach);
+        if (cursor) p.set("cursor", cursor);
+        if (limit) p.set("limit", String(limit));
+        return { url: `/admin/coaches/achievements?${p.toString()}`, method: "GET" };
+      },
+      providesTags: ["CoachAch"],
+    }),
+    approveCoachAchievement: builder.mutation({
+      query: ({ id, adminNote }) => ({
+        url: `/admin/coaches/achievements/${id}/approve`,
+        method: "POST",
+        body: { adminNote },
+      }),
+      invalidatesTags: ["CoachAch"],
+    }),
+    rejectCoachAchievement: builder.mutation({
+      query: ({ id, adminNote }) => ({
+        url: `/admin/coaches/achievements/${id}/reject`,
+        method: "POST",
+        body: { adminNote },
+      }),
+      invalidatesTags: ["CoachAch"],
+    }),
+    patchCoachAchievement: builder.mutation({
+      query: ({ id, ...body }) => ({
+        url: `/admin/coaches/achievements/${id}`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: ["CoachAch"],
+    }),
+    adminCreateCoachAchievement: builder.mutation({
+      query: (body) => ({
+        url: `/admin/coaches/achievements`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["CoachAch"],
+    }),
+
     deleteUser: builder.mutation({
       query: (id) => ({ url: `/admin/users/${id}`, method: "DELETE" }),
       invalidatesTags: ["User"],
@@ -275,6 +348,14 @@ export const {
   useUpdateUserRoleMutation,
   useUpdateUserSuperAdminMutation,
   useUpdateUserCoachMutation,
+  useListCoachApplicationsQuery,
+  useApproveCoachApplicationMutation,
+  useRejectCoachApplicationMutation,
+  useListCoachAchievementsQuery,
+  useApproveCoachAchievementMutation,
+  useRejectCoachAchievementMutation,
+  usePatchCoachAchievementMutation,
+  useAdminCreateCoachAchievementMutation,
   useDeleteUserMutation,
   useReviewKycMutation,
   useUpdateUserInfoMutation,
