@@ -1,6 +1,7 @@
 // layouts/coaches/CoachApprovalsPage.jsx
 // Admin duyệt đơn HLV + thành tích. 2 tab: Applications | Achievements.
 import { useState } from "react";
+import PropTypes from "prop-types";
 import {
   Alert,
   Avatar,
@@ -259,6 +260,27 @@ function ApplicationCard({ app, onApprove, onReject }) {
   );
 }
 
+ApplicationCard.propTypes = {
+  app: PropTypes.shape({
+    _id: PropTypes.string,
+    status: PropTypes.string,
+    headline: PropTypes.string,
+    experienceYears: PropTypes.number,
+    hourlyRate: PropTypes.number,
+    bio: PropTypes.string,
+    note: PropTypes.string,
+    adminNote: PropTypes.string,
+    createdAt: PropTypes.string,
+    reviewedAt: PropTypes.string,
+    specialties: PropTypes.array,
+    proposedAchievements: PropTypes.array,
+    user: PropTypes.object,
+    reviewedBy: PropTypes.object,
+  }).isRequired,
+  onApprove: PropTypes.func.isRequired,
+  onReject: PropTypes.func.isRequired,
+};
+
 function AchievementRow({ ach, onApprove, onReject, onEdit }) {
   const u = ach.coach || {};
   return (
@@ -325,6 +347,23 @@ function AchievementRow({ ach, onApprove, onReject, onEdit }) {
     </Card>
   );
 }
+
+AchievementRow.propTypes = {
+  ach: PropTypes.shape({
+    _id: PropTypes.string,
+    title: PropTypes.string,
+    year: PropTypes.number,
+    level: PropTypes.string,
+    description: PropTypes.string,
+    status: PropTypes.string,
+    adminNote: PropTypes.string,
+    createdAt: PropTypes.string,
+    coach: PropTypes.object,
+  }).isRequired,
+  onApprove: PropTypes.func.isRequired,
+  onReject: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
+};
 
 function EditAchievementDialog({ open, ach, onClose, onSave }) {
   const [form, setForm] = useState({});
@@ -397,6 +436,16 @@ function EditAchievementDialog({ open, ach, onClose, onSave }) {
     </Dialog>
   );
 }
+
+EditAchievementDialog.propTypes = {
+  open: PropTypes.bool.isRequired,
+  ach: PropTypes.object,
+  onClose: PropTypes.func.isRequired,
+  onSave: PropTypes.func.isRequired,
+};
+EditAchievementDialog.defaultProps = {
+  ach: null,
+};
 
 export default function CoachApprovalsPage() {
   const [tab, setTab] = useState(0);
