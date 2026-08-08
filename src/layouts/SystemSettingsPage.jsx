@@ -1846,7 +1846,7 @@ export default function SystemSettingsPage() {
 
           <Section
             title="Hồ sơ người dùng"
-            desc="Giới hạn tần suất user đổi biệt danh (nickname). Admin không bị áp cooldown này khi thao tác thay VĐV."
+            desc="Giới hạn tần suất user đổi biệt danh (nickname). Áp dụng cho tất cả tài khoản (bao gồm cả admin) ở phía user. Nếu admin cần chỉnh nickname cho user khác thì làm ở trang Admin → Danh sách user."
           >
             <TextField
               label="Cooldown đổi biệt danh (ngày)"
