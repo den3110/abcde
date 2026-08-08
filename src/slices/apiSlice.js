@@ -73,6 +73,8 @@ export const apiSlice = createApi({
     "FbVodMonitor",
     "PushDispatch",
     "SystemSettings",
+    "NicknameRequest",
+    "OverlayGeneratorKey",
     "RecordingDriveStatus",
     "AdminCache",
     "AdminLivePlayback",

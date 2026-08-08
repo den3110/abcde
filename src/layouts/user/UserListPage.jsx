@@ -29,6 +29,8 @@ import {
 import SearchIcon from "@mui/icons-material/Search";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import { toast } from "react-toastify";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import VerifiedIcon from "@mui/icons-material/HowToReg";
 import CancelIcon from "@mui/icons-material/Cancel";
@@ -57,6 +59,7 @@ import {
   useDemoteEvaluatorMutation,
   useDeleteUserMutation,
 } from "slices/adminApiSlice";
+import { useResetNicknameCooldownMutation } from "slices/nicknameRequestsApiSlice";
 
 import { setPage, setKeyword, setRole } from "slices/adminUiSlice";
 import CccdAiBackfillCard from "./CccdAiBackfillCard";
@@ -214,6 +217,23 @@ export default function UserManagement() {
   const [promoteEvaluatorMut] = usePromoteToEvaluatorMutation();
   const [demoteEvaluatorMut] = useDemoteEvaluatorMutation();
   const [deleteUserMut] = useDeleteUserMutation();
+  const [resetCooldownMut, { isLoading: resettingCooldown }] =
+    useResetNicknameCooldownMutation();
+
+  const handleResetCooldown = async (u) => {
+    if (
+      !window.confirm(
+        `Reset lần đổi biệt danh cho ${u.name || u.nickname}? User sẽ có thể đổi ngay không cần chờ cooldown.`
+      )
+    )
+      return;
+    try {
+      await resetCooldownMut(u._id).unwrap();
+      toast.success("Đã reset lần đổi biệt danh");
+    } catch (err) {
+      toast.error(err?.data?.message || err?.error || "Lỗi khi reset");
+    }
+  };
   const [score, setScore] = useState(null);
 
   const { data, isFetching, refetch } = useGetUsersQuery(
@@ -430,6 +450,27 @@ export default function UserManagement() {
               <IconButton size="small" onClick={() => setEdit({ ...u })}>
                 <EditIcon fontSize="inherit" />
               </IconButton>
+            </Tooltip>
+            {/* Reset lần đổi biệt danh — user có thể đổi ngay không chờ cooldown */}
+            <Tooltip
+              title={
+                u.nicknameChangedAt
+                  ? `Reset cooldown đổi biệt danh (lần gần nhất: ${new Date(
+                      u.nicknameChangedAt
+                    ).toLocaleDateString("vi-VN")})`
+                  : "Chưa từng đổi biệt danh — không cần reset"
+              }
+            >
+              <span>
+                <IconButton
+                  size="small"
+                  color="warning"
+                  disabled={!u.nicknameChangedAt || resettingCooldown}
+                  onClick={() => handleResetCooldown(u)}
+                >
+                  <RestartAltIcon fontSize="inherit" />
+                </IconButton>
+              </span>
             </Tooltip>
             {/* Xoá user */}
             <Tooltip title="Xoá">

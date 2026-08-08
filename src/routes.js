@@ -56,6 +56,7 @@ import SupportManagerPage from "layouts/SupportManagerPage";
 import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
+import NicknameRequestsPage from "layouts/NicknameRequestsPage";
 import AiGatewaySettingsPage from "layouts/AiGatewaySettingsPage";
 import FilesManager from "layouts/FilesManager";
 import AdminMonitorPage from "layouts/AdminMonitorPage";
@@ -838,6 +839,17 @@ const routes = [
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Duyệt đổi biệt danh",
+    key: "nickname-requests",
+    icon: <Icon fontSize="small">edit_note</Icon>,
+    route: "/admin/nickname-requests",
+    component: <NicknameRequestsPage />,
+    private: true,
+    roles: ["admin"],
     show: true,
   },
   {
