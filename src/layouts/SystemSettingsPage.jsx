@@ -20,10 +20,12 @@ import SaveIcon from "@mui/icons-material/Save";
 import { useGetLiveRecordingAiCommentaryMonitorQuery } from "slices/liveApiSlice";
 import {
   useDisconnectRecordingDriveMutation,
+  useGetOverlayGeneratorKeyStatusQuery,
   useGetRecordingDriveStatusQuery,
   useGetSystemSettingsQuery,
   useLazyRecordingDriveOAuthInitQuery,
   useLazyRecordingDrivePickerSessionQuery,
+  useSetOverlayGeneratorKeyMutation,
   useUpdateSystemSettingsMutation,
 } from "slices/settingsApiSlice";
 import { toast } from "react-toastify";
@@ -380,6 +382,83 @@ const openRecordingDriveFolderPicker = ({
 
     builder.build().setVisible(true);
   });
+
+function OverlayGeneratorKeySection() {
+  const { data, isFetching, refetch } = useGetOverlayGeneratorKeyStatusQuery();
+  const [setKey, { isLoading: saving }] = useSetOverlayGeneratorKeyMutation();
+  const [apiKey, setApiKey] = useState("");
+
+  const status = data || {};
+  const generatorUp = !status.error;
+  const keyReady = !!status.set;
+
+  const onSave = async () => {
+    const raw = apiKey.trim();
+    if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(raw)) {
+      toast.error("Khóa phải bắt đầu bằng sk-ant-… (định dạng không hợp lệ)");
+      return;
+    }
+    try {
+      const res = await setKey({ apiKey: raw }).unwrap();
+      toast.success(`Đã lưu khóa (…${res?.tail || raw.slice(-4)})`);
+      setApiKey("");
+    } catch (err) {
+      toast.error(
+        err?.data?.error || err?.data?.message || err?.error || "Lưu khóa thất bại"
+      );
+    }
+  };
+
+  return (
+    <Section
+      title="Overlay Generator — Anthropic API Key"
+      desc="Khóa dùng cho Claude vision khi Tạo overlay từ poster. Khóa lưu trên VPS (/root/overlay-generator/.env), không lưu trong DB."
+    >
+      {!generatorUp && (
+        <Alert severity="error" sx={{ mb: 1 }}>
+          Không kết nối được overlay generator: {status.error}
+          {status.generatorUrl ? ` (${status.generatorUrl})` : ""}. Kiểm tra{" "}
+          <code>systemctl status overlay-gen</code> trên VPS.
+        </Alert>
+      )}
+      {generatorUp && (
+        <Alert severity={keyReady ? "success" : "warning"} sx={{ mb: 1 }}>
+          {keyReady
+            ? `Đã cấu hình khóa (…${status.tail || "????"})`
+            : "Chưa có khóa — chức năng Tạo overlay sẽ báo lỗi"}
+        </Alert>
+      )}
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+        <TextField
+          label="ANTHROPIC_API_KEY"
+          type="password"
+          placeholder="sk-ant-..."
+          fullWidth
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          autoComplete="new-password"
+          helperText="Khóa sẽ được xác thực với Anthropic trước khi lưu."
+        />
+        <Button
+          variant="contained"
+          onClick={onSave}
+          disabled={saving || !apiKey.trim() || !generatorUp}
+          sx={{ minWidth: 180, alignSelf: { xs: "stretch", md: "flex-start" } }}
+        >
+          {saving ? "Đang lưu…" : "Lưu & kiểm tra"}
+        </Button>
+        <Button
+          variant="outlined"
+          onClick={refetch}
+          disabled={isFetching}
+          sx={{ minWidth: 120, alignSelf: { xs: "stretch", md: "flex-start" } }}
+        >
+          {isFetching ? "…" : "Làm mới"}
+        </Button>
+      </Stack>
+    </Section>
+  );
+}
 
 export default function SystemSettingsPage() {
   const { data, isLoading, isError, refetch } = useGetSystemSettingsQuery();
@@ -1782,6 +1861,8 @@ export default function SystemSettingsPage() {
               fullWidth
             />
           </Section>
+
+          <OverlayGeneratorKeySection />
 
           <Section title="Upload">
             <Stack direction="row" alignItems="center" justifyContent="space-between">

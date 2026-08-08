@@ -32,6 +32,19 @@ export const settingsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["RecordingDriveStatus"],
     }),
+    // Overlay generator API key (ANTHROPIC_API_KEY) — quản lý ngay trong Cài đặt hệ thống
+    getOverlayGeneratorKeyStatus: builder.query({
+      query: () => ({ url: "/admin/overlay-generator/keystatus" }),
+      providesTags: ["OverlayGeneratorKey"],
+    }),
+    setOverlayGeneratorKey: builder.mutation({
+      query: ({ apiKey }) => ({
+        url: "/admin/overlay-generator/setkey",
+        method: "POST",
+        body: { apiKey },
+      }),
+      invalidatesTags: ["OverlayGeneratorKey"],
+    }),
   }),
 });
 
@@ -42,4 +55,6 @@ export const {
   useLazyRecordingDriveOAuthInitQuery,
   useLazyRecordingDrivePickerSessionQuery,
   useDisconnectRecordingDriveMutation,
+  useGetOverlayGeneratorKeyStatusQuery,
+  useSetOverlayGeneratorKeyMutation,
 } = settingsApiSlice;
