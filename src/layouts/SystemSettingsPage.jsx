@@ -441,6 +441,10 @@ export default function SystemSettingsPage() {
       enforce2FAForAdmins: !!source.security?.enforce2FAForAdmins,
       sessionTTLHours: source.security?.sessionTTLHours ?? 72,
     },
+    profile: {
+      nicknameChangeCooldownDays:
+        source.profile?.nicknameChangeCooldownDays ?? 60,
+    },
     uploads: {
       maxAvatarSizeMB: source.uploads?.maxAvatarSizeMB ?? 5,
       avatarLogoEnabled: !!source.uploads?.avatarLogoEnabled,
@@ -1757,6 +1761,24 @@ export default function SystemSettingsPage() {
               inputProps={{ min: 1, max: 720 }}
               value={form.security?.sessionTTLHours ?? 72}
               onChange={onNumber("security.sessionTTLHours", { min: 1, max: 720 })}
+              fullWidth
+            />
+          </Section>
+
+          <Section
+            title="Hồ sơ người dùng"
+            desc="Giới hạn tần suất user đổi biệt danh (nickname). Admin không bị áp cooldown này khi thao tác thay VĐV."
+          >
+            <TextField
+              label="Cooldown đổi biệt danh (ngày)"
+              type="number"
+              inputProps={{ min: 0, max: 365 }}
+              helperText="0 = không giới hạn. Mặc định 60 ngày."
+              value={form.profile?.nicknameChangeCooldownDays ?? 60}
+              onChange={onNumber("profile.nicknameChangeCooldownDays", {
+                min: 0,
+                max: 365,
+              })}
               fullWidth
             />
           </Section>
