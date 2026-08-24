@@ -508,6 +508,7 @@ export default function TournamentFormPage() {
     location: "",
     contactHtml: "",
     contentHtml: "",
+    zaloGroupUrl: "",
     maxPairs: 0,
     noRankDelta: false,
     allowExceedMaxRating: false,
@@ -759,6 +760,7 @@ export default function TournamentFormPage() {
       location: tour.location || "",
       contactHtml: tour.contactHtml || "",
       contentHtml: tour.contentHtml || "",
+      zaloGroupUrl: tour.zaloGroupUrl || "",
       noRankDelta: !!tour.noRankDelta,
       allowExceedMaxRating: !!tour.allowExceedMaxRating,
       isTest: !!tour.isTest,
@@ -892,6 +894,7 @@ export default function TournamentFormPage() {
       location: form.location,
       contactHtml: form.contactHtml,
       contentHtml: form.contentHtml,
+      zaloGroupUrl: form.zaloGroupUrl,
       maxPairs: Number(form.maxPairs) || 0,
       noRankDelta: !!form.noRankDelta,
       allowExceedMaxRating: !!form.allowExceedMaxRating,
@@ -1770,6 +1773,20 @@ export default function TournamentFormPage() {
                     Mặc định toàn bộ trận trong giải này không cộng/trừ Δ (rating delta). Ở trang
                     Bracket có thể bật/tắt riêng từng Bracket (Bracket sẽ ưu tiên hơn).
                   </Typography>
+                </Grid>
+
+                {/* Link nhóm Zalo */}
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Link nhóm Zalo"
+                    placeholder="https://zalo.me/g/..."
+                    value={form.zaloGroupUrl}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, zaloGroupUrl: e.target.value }))
+                    }
+                    helperText="Người dùng bấm nút này ở trang giải để tham gia nhóm Zalo."
+                  />
                 </Grid>
 
                 {/* Editors */}
