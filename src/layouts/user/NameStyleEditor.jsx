@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 // layouts/user/NameStyleEditor.jsx
 // Trình chỉnh "Hiệu ứng tên" cho VĐV (admin) — một màu / gradient nhiều màu / cầu vồng động.
 // Shape khớp backend: { effect, color, colors[], angle, animated, speed, bold }.
