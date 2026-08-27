@@ -471,6 +471,7 @@ function ZaloZnsSection() {
   const z = data?.zaloZns || {};
   const [enabled, setEnabled] = useState(false);
   const [forcePhoneVerification, setForcePhoneVerification] = useState(false);
+  const [requireVerifiedForActions, setRequireVerifiedForActions] = useState(false);
   const [templateId, setTemplateId] = useState("");
   const [appId, setAppId] = useState("");
   const [accessToken, setAccessToken] = useState("");
@@ -485,6 +486,7 @@ function ZaloZnsSection() {
     const src = data.zaloZns || {};
     setEnabled(src.enabled === true);
     setForcePhoneVerification(src.forcePhoneVerification === true);
+    setRequireVerifiedForActions(src.requireVerifiedForActions === true);
     setTemplateId(src.templateId || "");
     setAppId(src.appId || "");
   }, [data]);
@@ -494,6 +496,7 @@ function ZaloZnsSection() {
       zaloZns: {
         enabled,
         forcePhoneVerification,
+        requireVerifiedForActions,
         templateId: templateId.trim(),
         appId: appId.trim(),
       },
@@ -564,6 +567,16 @@ function ZaloZnsSection() {
           />
           <Typography variant="body2" color={enabled ? "text.primary" : "text.disabled"}>
             Bắt buộc user (kể cả tài khoản cũ) kích hoạt SĐT khi vào app
+          </Typography>
+        </Stack>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch
+            checked={requireVerifiedForActions}
+            disabled={!enabled}
+            onChange={(e) => setRequireVerifiedForActions(e.target.checked)}
+          />
+          <Typography variant="body2" color={enabled ? "text.primary" : "text.disabled"}>
+            Chỉ user đã kích hoạt SĐT mới được đăng tin Chợ / tạo–tham gia kèo giao lưu
           </Typography>
         </Stack>
 
