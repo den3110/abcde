@@ -524,6 +524,7 @@ export default function TournamentFormPage() {
     bankAccountName: "",
     registrationFee: "",
     isFreeRegistration: false,
+    requireVerifiedPhoneToRegister: false,
 
     // điều kiện
     requireKyc: true,
@@ -775,6 +776,7 @@ export default function TournamentFormPage() {
           ? String(Number(tour.registrationFee))
           : "",
       isFreeRegistration: tour.isFreeRegistration === true,
+      requireVerifiedPhoneToRegister: tour.requireVerifiedPhoneToRegister === true,
       bankAccountName:
         tour.bankAccountName ||
         tour.accountName ||
@@ -910,6 +912,7 @@ export default function TournamentFormPage() {
       bankAccountName: (form.bankAccountName || "").trim(),
       registrationFee: Number(form.registrationFee) || 0,
       isFreeRegistration: !!form.isFreeRegistration,
+      requireVerifiedPhoneToRegister: !!form.requireVerifiedPhoneToRegister,
       allowedCourtClusterIds: Array.isArray(form.allowedCourtClusterIds)
         ? form.allowedCourtClusterIds
             .map((value) => toEntityId(value))
@@ -1483,6 +1486,25 @@ export default function TournamentFormPage() {
                     <Typography variant="caption" color="text.secondary" display="block">
                       Bật tùy chọn này tức là giải không thu phí và mọi đăng ký đều được đánh dấu là
                       đã thanh toán.
+                    </Typography>
+
+                    <FormControlLabel
+                      sx={{ mt: 1 }}
+                      control={
+                        <Checkbox
+                          checked={!!form.requireVerifiedPhoneToRegister}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              requireVerifiedPhoneToRegister: e.target.checked,
+                            }))
+                          }
+                        />
+                      }
+                      label="Chỉ VĐV đã xác thực SĐT (Zalo) mới đăng ký được"
+                    />
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Người bấm đăng ký phải đã kích hoạt số điện thoại qua Zalo. VĐV 1/VĐV 2 không cần.
                     </Typography>
 
                     {!form.isFreeRegistration ? (
