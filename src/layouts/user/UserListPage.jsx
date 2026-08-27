@@ -63,6 +63,7 @@ import { useResetNicknameCooldownMutation } from "slices/nicknameRequestsApiSlic
 
 import { setPage, setKeyword, setRole } from "slices/adminUiSlice";
 import CccdAiBackfillCard from "./CccdAiBackfillCard";
+import NameStyleEditor from "./NameStyleEditor";
 
 /* ================== Consts ================== */
 const GENDER_OPTIONS = [
@@ -900,6 +901,13 @@ export default function UserManagement() {
                 sx={{ mt: 1, ml: 0 }}
               />
 
+              {/* ====== Hiệu ứng tên hiển thị ====== */}
+              <NameStyleEditor
+                value={edit.nameStyle}
+                sampleName={edit.nickname || edit.name}
+                onChange={(ns) => setEdit({ ...edit, nameStyle: ns })}
+              />
+
               {/* ====== Đổi mật khẩu ====== */}
               <Box sx={{ mt: 1, pt: 1.5, borderTop: "1px dashed #e0e0e0" }}>
                 <FormControlLabel
@@ -1030,6 +1038,7 @@ export default function UserManagement() {
                           : "unspecified",
                         province: edit.province,
                         isPushNotificationEnabled: edit.isPushNotificationEnabled !== false,
+                        nameStyle: edit.nameStyle || { effect: "none" },
                       },
                     }).unwrap(),
                     "Đã cập nhật người dùng"
