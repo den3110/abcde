@@ -128,6 +128,9 @@ const hydrateFormState = (source) => ({
   captcha: {
     enabled: source?.captcha?.enabled ?? true,
   },
+  search: {
+    limitEnabled: source?.search?.limitEnabled ?? true,
+  },
   checkpoint: {
     enabled: source?.checkpoint?.enabled ?? true,
   },
@@ -727,6 +730,9 @@ export default function SystemSettingsPage() {
     },
     captcha: {
       enabled: source?.captcha?.enabled !== false,
+    },
+    search: {
+      limitEnabled: source?.search?.limitEnabled !== false,
     },
     checkpoint: {
       enabled: source?.checkpoint?.enabled !== false,
@@ -1970,6 +1976,24 @@ export default function SystemSettingsPage() {
               {form.captcha?.enabled === false
                 ? "CAPTCHA đang bị tắt ở mức hệ thống. Frontend public sẽ bỏ qua widget và backend sẽ không bắt buộc xác minh CAPTCHA."
                 : "CAPTCHA đang bật ở mức hệ thống. Frontend public sẽ hiển thị widget nếu các biến CAP env đã được cấu hình."}
+            </Alert>
+          </Section>
+
+          <Section
+            title="Giới hạn tìm kiếm"
+            desc="Bật/tắt giới hạn số lượt tìm kiếm (tra cứu bảng xếp hạng) mỗi ngày cho khách và người dùng."
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Typography>Giới hạn số lượt tìm kiếm</Typography>
+              <Switch
+                checked={form.search?.limitEnabled !== false}
+                onChange={onToggle("search.limitEnabled")}
+              />
+            </Stack>
+            <Alert severity={form.search?.limitEnabled === false ? "info" : "success"}>
+              {form.search?.limitEnabled === false
+                ? "Đang TẮT giới hạn — mọi người tìm kiếm không giới hạn số lượt."
+                : "Đang BẬT giới hạn — áp quota tìm kiếm theo ngày (khách/người dùng)."}
             </Alert>
           </Section>
 
