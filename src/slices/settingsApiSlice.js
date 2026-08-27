@@ -45,6 +45,21 @@ export const settingsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["OverlayGeneratorKey"],
     }),
+    // Zalo ZNS — gửi OTP thử + làm mới access_token
+    testZaloZns: builder.mutation({
+      query: ({ phone }) => ({
+        url: "/admin/zalo-zns/test",
+        method: "POST",
+        body: { phone },
+      }),
+    }),
+    refreshZaloZnsToken: builder.mutation({
+      query: () => ({
+        url: "/admin/zalo-zns/refresh-token",
+        method: "POST",
+      }),
+      invalidatesTags: ["SystemSettings"],
+    }),
   }),
 });
 
@@ -57,4 +72,6 @@ export const {
   useDisconnectRecordingDriveMutation,
   useGetOverlayGeneratorKeyStatusQuery,
   useSetOverlayGeneratorKeyMutation,
+  useTestZaloZnsMutation,
+  useRefreshZaloZnsTokenMutation,
 } = settingsApiSlice;

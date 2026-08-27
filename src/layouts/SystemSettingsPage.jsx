@@ -27,6 +27,8 @@ import {
   useLazyRecordingDrivePickerSessionQuery,
   useSetOverlayGeneratorKeyMutation,
   useUpdateSystemSettingsMutation,
+  useTestZaloZnsMutation,
+  useRefreshZaloZnsTokenMutation,
 } from "slices/settingsApiSlice";
 import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -455,6 +457,198 @@ function OverlayGeneratorKeySection() {
         >
           {isFetching ? "…" : "Làm mới"}
         </Button>
+      </Stack>
+    </Section>
+  );
+}
+
+function ZaloZnsSection() {
+  const { data, isFetching, refetch } = useGetSystemSettingsQuery();
+  const [updateSettings, { isLoading: saving }] = useUpdateSystemSettingsMutation();
+  const [testZns, { isLoading: testing }] = useTestZaloZnsMutation();
+  const [refreshTokenReq, { isLoading: refreshing }] = useRefreshZaloZnsTokenMutation();
+
+  const z = data?.zaloZns || {};
+  const [enabled, setEnabled] = useState(false);
+  const [templateId, setTemplateId] = useState("");
+  const [appId, setAppId] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [refreshTok, setRefreshTok] = useState("");
+  const [secretKey, setSecretKey] = useState("");
+  const [testPhone, setTestPhone] = useState("");
+
+  // Hydrate field không bí mật + toggle từ server. Secret luôn để trống
+  // (chỉ ghi đè khi admin nhập mới); *Set cho biết đã có hay chưa.
+  useEffect(() => {
+    if (!data) return;
+    const src = data.zaloZns || {};
+    setEnabled(src.enabled === true);
+    setTemplateId(src.templateId || "");
+    setAppId(src.appId || "");
+  }, [data]);
+
+  const onSave = async () => {
+    const body = {
+      zaloZns: {
+        enabled,
+        templateId: templateId.trim(),
+        appId: appId.trim(),
+      },
+    };
+    if (accessToken.trim()) body.zaloZns.accessToken = accessToken.trim();
+    if (refreshTok.trim()) body.zaloZns.refreshToken = refreshTok.trim();
+    if (secretKey.trim()) body.zaloZns.secretKey = secretKey.trim();
+    try {
+      await updateSettings(body).unwrap();
+      toast.success("Đã lưu cấu hình Zalo ZNS");
+      setAccessToken("");
+      setRefreshTok("");
+      setSecretKey("");
+      refetch();
+    } catch (err) {
+      toast.error(err?.data?.message || "Lưu cấu hình thất bại");
+    }
+  };
+
+  const onTest = async () => {
+    const phone = testPhone.trim();
+    if (!phone) {
+      toast.info("Nhập số điện thoại để gửi OTP thử.");
+      return;
+    }
+    try {
+      const res = await testZns({ phone }).unwrap();
+      toast.success(`Đã gửi OTP thử${res?.otp ? ` (mã: ${res.otp})` : ""}. Kiểm tra Zalo.`);
+    } catch (err) {
+      toast.error(err?.data?.message || "Gửi OTP thử thất bại");
+    }
+  };
+
+  const onRefresh = async () => {
+    try {
+      await refreshTokenReq().unwrap();
+      toast.success("Đã làm mới access_token.");
+      refetch();
+    } catch (err) {
+      toast.error(err?.data?.message || "Làm mới token thất bại");
+    }
+  };
+
+  const refreshedAt = z.tokenRefreshedAt
+    ? new Date(z.tokenRefreshedAt).toLocaleString("vi-VN")
+    : "";
+
+  return (
+    <Section
+      title="Zalo ZNS — OTP xác thực SĐT khi đăng ký"
+      desc="Gửi OTP qua Zalo Notification Service (API trực tiếp business.openapi.zalo.me). Bật để bắt buộc xác thực SĐT khi đăng ký tài khoản mới."
+    >
+      <Stack spacing={1.5}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
+          <Typography variant="body2">
+            Bật xác thực OTP qua Zalo ZNS khi đăng ký
+          </Typography>
+        </Stack>
+
+        <Alert severity={z.accessTokenSet ? "success" : "warning"}>
+          {z.accessTokenSet
+            ? `Đã cấu hình access_token${refreshedAt ? ` · làm mới lần cuối: ${refreshedAt}` : ""}`
+            : "Chưa có access_token — hãy dán access_token bên dưới."}
+        </Alert>
+
+        <TextField
+          label="access_token"
+          type="password"
+          placeholder={z.accessTokenSet ? "•••••• (để trống nếu không đổi)" : "Dán access_token Zalo OA"}
+          fullWidth
+          value={accessToken}
+          onChange={(e) => setAccessToken(e.target.value)}
+          autoComplete="new-password"
+        />
+        <TextField
+          label="template_id"
+          placeholder="VD: 7895417a7d3f9461cd2e"
+          fullWidth
+          value={templateId}
+          onChange={(e) => setTemplateId(e.target.value)}
+        />
+
+        <Divider textAlign="left" sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            Tự làm mới token (tuỳ chọn) — điền đủ 3 mục để token không bao giờ hết hạn
+          </Typography>
+        </Divider>
+        <TextField
+          label="app_id"
+          fullWidth
+          value={appId}
+          onChange={(e) => setAppId(e.target.value)}
+        />
+        <TextField
+          label="secret_key (app secret)"
+          type="password"
+          placeholder={z.secretKeySet ? "•••••• (để trống nếu không đổi)" : ""}
+          fullWidth
+          value={secretKey}
+          onChange={(e) => setSecretKey(e.target.value)}
+          autoComplete="new-password"
+        />
+        <TextField
+          label="refresh_token"
+          type="password"
+          placeholder={z.refreshTokenSet ? "•••••• (để trống nếu không đổi)" : ""}
+          fullWidth
+          value={refreshTok}
+          onChange={(e) => setRefreshTok(e.target.value)}
+          autoComplete="new-password"
+        />
+
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+          <Button
+            variant="contained"
+            onClick={onSave}
+            disabled={saving}
+            sx={{ minWidth: 160 }}
+          >
+            {saving ? "Đang lưu…" : "Lưu cấu hình"}
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={onRefresh}
+            disabled={refreshing || !z.refreshTokenSet}
+            sx={{ minWidth: 160 }}
+          >
+            {refreshing ? "…" : "Làm mới token ngay"}
+          </Button>
+          <Button variant="text" onClick={refetch} disabled={isFetching}>
+            {isFetching ? "…" : "Tải lại"}
+          </Button>
+        </Stack>
+
+        <Divider />
+        <Typography variant="body2" color="text.secondary">
+          Gửi OTP thử để kiểm tra cấu hình:
+        </Typography>
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+          <TextField
+            label="SĐT nhận thử (VD: 0987654321)"
+            fullWidth
+            value={testPhone}
+            onChange={(e) => setTestPhone(e.target.value)}
+          />
+          <Button
+            variant="outlined"
+            onClick={onTest}
+            disabled={testing || !testPhone.trim()}
+            sx={{ minWidth: 160, alignSelf: { xs: "stretch", md: "flex-start" } }}
+          >
+            {testing ? "Đang gửi…" : "Gửi OTP thử"}
+          </Button>
+        </Stack>
       </Stack>
     </Section>
   );
@@ -1863,6 +2057,8 @@ export default function SystemSettingsPage() {
           </Section>
 
           <OverlayGeneratorKeySection />
+
+          <ZaloZnsSection />
 
           <Section title="Upload">
             <Stack direction="row" alignItems="center" justifyContent="space-between">
