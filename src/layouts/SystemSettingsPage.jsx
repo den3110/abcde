@@ -470,6 +470,7 @@ function ZaloZnsSection() {
 
   const z = data?.zaloZns || {};
   const [enabled, setEnabled] = useState(false);
+  const [forcePhoneVerification, setForcePhoneVerification] = useState(false);
   const [templateId, setTemplateId] = useState("");
   const [appId, setAppId] = useState("");
   const [accessToken, setAccessToken] = useState("");
@@ -483,6 +484,7 @@ function ZaloZnsSection() {
     if (!data) return;
     const src = data.zaloZns || {};
     setEnabled(src.enabled === true);
+    setForcePhoneVerification(src.forcePhoneVerification === true);
     setTemplateId(src.templateId || "");
     setAppId(src.appId || "");
   }, [data]);
@@ -491,6 +493,7 @@ function ZaloZnsSection() {
     const body = {
       zaloZns: {
         enabled,
+        forcePhoneVerification,
         templateId: templateId.trim(),
         appId: appId.trim(),
       },
@@ -551,6 +554,16 @@ function ZaloZnsSection() {
           />
           <Typography variant="body2">
             Bật xác thực OTP qua Zalo ZNS khi đăng ký
+          </Typography>
+        </Stack>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch
+            checked={forcePhoneVerification}
+            disabled={!enabled}
+            onChange={(e) => setForcePhoneVerification(e.target.checked)}
+          />
+          <Typography variant="body2" color={enabled ? "text.primary" : "text.disabled"}>
+            Bắt buộc user (kể cả tài khoản cũ) kích hoạt SĐT khi vào app
           </Typography>
         </Stack>
 

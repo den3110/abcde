@@ -56,6 +56,7 @@ import SupportManagerPage from "layouts/SupportManagerPage";
 import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
+import ZaloZnsLogsPage from "layouts/ZaloZnsLogsPage";
 import NicknameRequestsPage from "layouts/NicknameRequestsPage";
 import AiGatewaySettingsPage from "layouts/AiGatewaySettingsPage";
 import FilesManager from "layouts/FilesManager";
@@ -847,6 +848,18 @@ const routes = [
     icon: <Icon fontSize="small">settings</Icon>,
     route: "/admin/settings",
     component: <SystemSettingsPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Logs OTP Zalo",
+    key: "zalo-zns-logs",
+    icon: <Icon fontSize="small">sms</Icon>,
+    route: "/admin/zalo-zns-logs",
+    component: <ZaloZnsLogsPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,

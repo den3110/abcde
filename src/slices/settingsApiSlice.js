@@ -60,6 +60,17 @@ export const settingsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["SystemSettings"],
     }),
+    getZaloZnsLogs: builder.query({
+      query: ({ page = 1, limit = 30, phone = "", status = "", purpose = "" } = {}) => {
+        const p = new URLSearchParams();
+        p.set("page", String(page));
+        p.set("limit", String(limit));
+        if (phone) p.set("phone", phone);
+        if (status) p.set("status", status);
+        if (purpose) p.set("purpose", purpose);
+        return { url: `/admin/zalo-zns/logs?${p.toString()}` };
+      },
+    }),
   }),
 });
 
@@ -74,4 +85,5 @@ export const {
   useSetOverlayGeneratorKeyMutation,
   useTestZaloZnsMutation,
   useRefreshZaloZnsTokenMutation,
+  useGetZaloZnsLogsQuery,
 } = settingsApiSlice;

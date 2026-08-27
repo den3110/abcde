@@ -342,7 +342,20 @@ export default function UserManagement() {
       return {
         name: <MDTypography variant="button">{u.name}</MDTypography>,
         email: <MDTypography variant="button">{u.email}</MDTypography>,
-        phone: <MDTypography variant="button">{u.phone || "-"}</MDTypography>,
+        phone: (
+          <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
+            <MDTypography variant="button">{u.phone || "-"}</MDTypography>
+            {u.phone ? (
+              <Chip
+                size="small"
+                variant="outlined"
+                color={u.phoneVerified ? "success" : "default"}
+                label={u.phoneVerified ? "Đã KH" : "Chưa KH"}
+                sx={{ height: 18, "& .MuiChip-label": { px: 0.6, fontSize: 10 } }}
+              />
+            ) : null}
+          </Stack>
+        ),
         single: <MDTypography variant="button">{u.single}</MDTypography>,
         double: <MDTypography variant="button">{u.double}</MDTypography>,
         role: (
