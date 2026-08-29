@@ -129,6 +129,16 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
+    /** ✨ Kích hoạt / bỏ kích hoạt SĐT (không cần OTP) */
+    verifyUserPhone: builder.mutation({
+      query: ({ id, verified = true }) => ({
+        url: `/admin/users/${id}/phone-verify`,
+        method: "PATCH",
+        body: { verified },
+      }),
+      invalidatesTags: ["User"],
+    }),
+
     /** ✨ DUYỆT hoặc TỪ CHỐI KYC */
     reviewKyc: builder.mutation({
       query: ({ id, action }) => ({
@@ -359,6 +369,7 @@ export const {
   useDeleteUserMutation,
   useReviewKycMutation,
   useUpdateUserInfoMutation,
+  useVerifyUserPhoneMutation,
   useUpdateRankingMutation,
   useGetSelfAssessmentsQuery,
   useResetSelfAssessmentsMutation,

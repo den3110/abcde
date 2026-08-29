@@ -52,6 +52,7 @@ import {
   useUpdateUserSuperAdminMutation,
   useUpdateUserCoachMutation,
   useUpdateUserInfoMutation,
+  useVerifyUserPhoneMutation,
   useReviewKycMutation,
   useUpdateRankingMutation,
   useChangeUserPasswordMutation,
@@ -212,6 +213,8 @@ export default function UserManagement() {
   const [updateSuperAdminMut] = useUpdateUserSuperAdminMutation();
   const [updateCoachMut] = useUpdateUserCoachMutation();
   const [updateInfoMut] = useUpdateUserInfoMutation();
+  const [verifyPhoneMut, { isLoading: verifyingPhone }] =
+    useVerifyUserPhoneMutation();
   const [reviewKycMut] = useReviewKycMutation();
   const [updateRanking] = useUpdateRankingMutation();
   const [changePasswordMut, { isLoading: changingPass }] = useChangeUserPasswordMutation();
@@ -806,6 +809,75 @@ export default function UserManagement() {
                 value={edit.phone || ""}
                 onChange={(e) => setEdit({ ...edit, phone: e.target.value })}
               />
+              {/* Kích hoạt SĐT không cần OTP */}
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 1,
+                  mt: -1,
+                }}
+              >
+                {edit.phoneVerified ? (
+                  <>
+                    <MDTypography
+                      variant="caption"
+                      sx={{ color: "success.main", fontWeight: 600 }}
+                    >
+                      ✓ Số điện thoại đã kích hoạt
+                    </MDTypography>
+                    <Button
+                      size="small"
+                      color="warning"
+                      disabled={verifyingPhone}
+                      onClick={() =>
+                        handle(
+                          verifyPhoneMut({
+                            id: edit._id,
+                            verified: false,
+                          }).unwrap(),
+                          "Đã bỏ kích hoạt số điện thoại",
+                        ).then(() =>
+                          setEdit((prev) =>
+                            prev ? { ...prev, phoneVerified: false } : prev,
+                          ),
+                        )
+                      }
+                    >
+                      Bỏ kích hoạt
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="success"
+                    disabled={verifyingPhone || !edit.phone}
+                    onClick={() =>
+                      handle(
+                        verifyPhoneMut({
+                          id: edit._id,
+                          verified: true,
+                        }).unwrap(),
+                        "Đã kích hoạt số điện thoại (không cần OTP)",
+                      ).then((r) =>
+                        setEdit((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                phoneVerified: true,
+                                phone: r?.phone || prev.phone,
+                              }
+                            : prev,
+                        ),
+                      )
+                    }
+                  >
+                    Kích hoạt SĐT (không cần OTP)
+                  </Button>
+                )}
+              </Box>
               <TextField
                 label="Email"
                 value={edit.email}
