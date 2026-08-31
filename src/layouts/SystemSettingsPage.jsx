@@ -465,6 +465,137 @@ function OverlayGeneratorKeySection() {
   );
 }
 
+function EventLiveSection() {
+  const { data, isFetching, refetch } = useGetSystemSettingsQuery();
+  const [updateSettings, { isLoading: saving }] = useUpdateSystemSettingsMutation();
+
+  const ev = data?.eventLive || {};
+  const [enabled, setEnabled] = useState(false);
+  const [eventName, setEventName] = useState("");
+  const [youtubeChannel, setYoutubeChannel] = useState("");
+  const [eventLogoUrl, setEventLogoUrl] = useState("");
+  const [bannerImageUrl, setBannerImageUrl] = useState("");
+  const [tournamentId, setTournamentId] = useState("");
+  const [youtubeApiKey, setYoutubeApiKey] = useState("");
+
+  useEffect(() => {
+    if (!data) return;
+    const src = data.eventLive || {};
+    setEnabled(src.enabled === true);
+    setEventName(src.eventName || "");
+    setYoutubeChannel(src.youtubeChannel || "");
+    setEventLogoUrl(src.eventLogoUrl || "");
+    setBannerImageUrl(src.bannerImageUrl || "");
+    setTournamentId(src.tournamentId || "");
+  }, [data]);
+
+  const onSave = async () => {
+    const body = {
+      eventLive: {
+        enabled,
+        eventName: eventName.trim(),
+        youtubeChannel: youtubeChannel.trim(),
+        eventLogoUrl: eventLogoUrl.trim(),
+        bannerImageUrl: bannerImageUrl.trim(),
+        tournamentId: tournamentId.trim(),
+      },
+    };
+    if (youtubeApiKey.trim()) body.eventLive.youtubeApiKey = youtubeApiKey.trim();
+    try {
+      await updateSettings(body).unwrap();
+      toast.success("Đã lưu cấu hình Xem live giải đấu");
+      setYoutubeApiKey("");
+      refetch();
+    } catch (err) {
+      toast.error(err?.data?.message || "Lưu cấu hình thất bại");
+    }
+  };
+
+  return (
+    <Section
+      title="Xem live giải đấu (YouTube)"
+      desc="Tổng hợp luồng trực tiếp + video xem lại từ 1 kênh YouTube, tự gom theo sân & góc camera. Bật để hiện banner trang chủ và trang /live/event (web + app)."
+    >
+      <Stack spacing={1.5}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          <Typography variant="body2">
+            Bật tính năng xem live giải đấu (banner trang chủ + trang riêng)
+          </Typography>
+        </Stack>
+
+        <Alert severity={ev.youtubeApiKeySet ? "success" : "warning"}>
+          {ev.youtubeApiKeySet
+            ? "Đã cấu hình YouTube API key."
+            : "Chưa có YouTube API key — dán key (YouTube Data API v3) bên dưới."}
+        </Alert>
+
+        <TextField
+          label="Tên giải hiển thị"
+          placeholder="VD: Heineken Pickleball World Cup 2026"
+          fullWidth
+          value={eventName}
+          onChange={(e) => setEventName(e.target.value)}
+        />
+        <TextField
+          label="Kênh YouTube (@handle hoặc UC... channelId)"
+          placeholder="VD: @PickleballTour-y2b"
+          fullWidth
+          value={youtubeChannel}
+          onChange={(e) => setYoutubeChannel(e.target.value)}
+        />
+        <TextField
+          label="YouTube API key (Data API v3)"
+          type="password"
+          placeholder={ev.youtubeApiKeySet ? "•••••• (để trống nếu không đổi)" : "Dán API key"}
+          fullWidth
+          value={youtubeApiKey}
+          onChange={(e) => setYoutubeApiKey(e.target.value)}
+          autoComplete="new-password"
+        />
+
+        <Divider textAlign="left" sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            Tuỳ chọn
+          </Typography>
+        </Divider>
+        <TextField
+          label="Logo giải (URL)"
+          fullWidth
+          value={eventLogoUrl}
+          onChange={(e) => setEventLogoUrl(e.target.value)}
+        />
+        <TextField
+          label="Ảnh nền banner (URL)"
+          fullWidth
+          value={bannerImageUrl}
+          onChange={(e) => setBannerImageUrl(e.target.value)}
+        />
+        <TextField
+          label="Tournament ID (liên kết giải trong hệ thống, nếu có)"
+          fullWidth
+          value={tournamentId}
+          onChange={(e) => setTournamentId(e.target.value)}
+        />
+
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+          <Button
+            variant="contained"
+            onClick={onSave}
+            disabled={saving}
+            sx={{ minWidth: 160 }}
+          >
+            {saving ? "Đang lưu…" : "Lưu cấu hình"}
+          </Button>
+          <Button variant="text" onClick={refetch} disabled={isFetching}>
+            {isFetching ? "…" : "Tải lại"}
+          </Button>
+        </Stack>
+      </Stack>
+    </Section>
+  );
+}
+
 function ZaloZnsSection() {
   const { data, isFetching, refetch } = useGetSystemSettingsQuery();
   const [updateSettings, { isLoading: saving }] = useUpdateSystemSettingsMutation();
@@ -2107,6 +2238,8 @@ export default function SystemSettingsPage() {
           </Section>
 
           <OverlayGeneratorKeySection />
+
+          <EventLiveSection />
 
           <ZaloZnsSection />
 
