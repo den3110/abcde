@@ -29,6 +29,7 @@ import {
   useUpdateSystemSettingsMutation,
   useTestZaloZnsMutation,
   useRefreshZaloZnsTokenMutation,
+  useGetEventLiveStatsQuery,
 } from "slices/settingsApiSlice";
 import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -465,6 +466,76 @@ function OverlayGeneratorKeySection() {
   );
 }
 
+function EventLiveStats() {
+  const [days, setDays] = useState(30);
+  const { data: stats, isFetching, refetch } = useGetEventLiveStatsQuery(days);
+  const num = (n) => (n ?? 0).toLocaleString("vi-VN");
+  const Cell = ({ label, value, sub }) => (
+    <Box
+      sx={{
+        flex: "1 1 140px",
+        minWidth: 140,
+        p: 1.5,
+        borderRadius: 2,
+        bgcolor: "rgba(0,0,0,.03)",
+        border: "1px solid rgba(0,0,0,.06)",
+      }}
+    >
+      <Typography variant="h5" fontWeight={800}>
+        {value}
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      {sub ? (
+        <Typography variant="caption" display="block" color="text.secondary">
+          {sub}
+        </Typography>
+      ) : null}
+    </Box>
+  );
+  return (
+    <Box
+      sx={{
+        p: 1.5,
+        borderRadius: 2,
+        border: "1px dashed rgba(0,0,0,.15)",
+        mb: 1,
+      }}
+    >
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+        <Typography variant="subtitle2" fontWeight={800} sx={{ flex: 1 }}>
+          📊 Lượt dùng ({days} ngày gần nhất)
+        </Typography>
+        {[7, 30, 90].map((d) => (
+          <Button
+            key={d}
+            size="small"
+            variant={days === d ? "contained" : "text"}
+            onClick={() => setDays(d)}
+            sx={{ minWidth: 0, px: 1 }}
+          >
+            {d}d
+          </Button>
+        ))}
+        <Button size="small" variant="text" onClick={refetch} disabled={isFetching}>
+          {isFetching ? "…" : "Tải lại"}
+        </Button>
+      </Stack>
+      <Stack direction="row" spacing={1.25} flexWrap="wrap" useFlexGap>
+        <Cell label="Người dùng (unique)" value={num(stats?.uniqueUsers)} sub={`đăng nhập: ${num(stats?.uniqueLoggedIn)} · ẩn danh: ${num(stats?.uniqueAnonymous)}`} />
+        <Cell label="Tổng lượt mở" value={num(stats?.totalOpens)} />
+        <Cell label="Web" value={num(stats?.web?.users)} sub={`${num(stats?.web?.opens)} lượt`} />
+        <Cell label="App (iOS+Android)" value={num(stats?.app?.users)} sub={`${num(stats?.app?.opens)} lượt`} />
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+        iOS: {num(stats?.byPlatform?.ios?.users)} user / {num(stats?.byPlatform?.ios?.opens)} lượt ·
+        Android: {num(stats?.byPlatform?.android?.users)} user / {num(stats?.byPlatform?.android?.opens)} lượt
+      </Typography>
+    </Box>
+  );
+}
+
 function EventLiveSection() {
   const { data, isFetching, refetch } = useGetSystemSettingsQuery();
   const [updateSettings, { isLoading: saving }] = useUpdateSystemSettingsMutation();
@@ -517,6 +588,7 @@ function EventLiveSection() {
       desc="Tổng hợp luồng trực tiếp + video xem lại từ 1 kênh YouTube, tự gom theo sân & góc camera. Bật để hiện banner trang chủ và trang /live/event (web + app)."
     >
       <Stack spacing={1.5}>
+        <EventLiveStats />
         <Stack direction="row" alignItems="center" spacing={1}>
           <Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
           <Typography variant="body2">

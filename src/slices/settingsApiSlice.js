@@ -71,6 +71,9 @@ export const settingsApiSlice = apiSlice.injectEndpoints({
         return { url: `/admin/zalo-zns/logs?${p.toString()}` };
       },
     }),
+    getEventLiveStats: builder.query({
+      query: (days = 30) => ({ url: `/event-live/stats?days=${days}` }),
+    }),
   }),
 });
 
@@ -86,4 +89,5 @@ export const {
   useTestZaloZnsMutation,
   useRefreshZaloZnsTokenMutation,
   useGetZaloZnsLogsQuery,
+  useGetEventLiveStatsQuery,
 } = settingsApiSlice;
