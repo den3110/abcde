@@ -538,11 +538,20 @@ function EventLiveSection() {
           onChange={(e) => setEventName(e.target.value)}
         />
         <TextField
-          label="Kênh YouTube (@handle hoặc UC... channelId)"
-          placeholder="VD: @PickleballTour-y2b"
+          label="Kênh YouTube (nhiều kênh — mỗi kênh 1 dòng)"
+          placeholder={"@PickleballTour-y2b\nUC4LvrpNXujjbGOS4RDvr41g | pickleball"}
           fullWidth
+          multiline
+          minRows={2}
+          maxRows={8}
           value={youtubeChannel}
           onChange={(e) => setYoutubeChannel(e.target.value)}
+          helperText={
+            'Mỗi kênh 1 dòng (@handle hoặc UC… channelId). Với kênh HỖN HỢP ' +
+            '(vd FPT Bóng Đá vừa bóng đá vừa pickleball), thêm " | pickleball" ' +
+            'ở cuối dòng để CHỈ lấy stream có tiêu đề chứa từ khoá đó (nhiều từ ' +
+            'khoá ngăn bằng dấu phẩy). Không có " | …" = lấy mọi luồng live của kênh.'
+          }
         />
         <TextField
           label="YouTube API key (Data API v3)"
