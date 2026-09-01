@@ -53,6 +53,7 @@ import {
   useUpdateUserCoachMutation,
   useUpdateUserInfoMutation,
   useVerifyUserPhoneMutation,
+  useSetUserPhoneRequiredMutation,
   useReviewKycMutation,
   useUpdateRankingMutation,
   useChangeUserPasswordMutation,
@@ -215,6 +216,8 @@ export default function UserManagement() {
   const [updateInfoMut] = useUpdateUserInfoMutation();
   const [verifyPhoneMut, { isLoading: verifyingPhone }] =
     useVerifyUserPhoneMutation();
+  const [setPhoneRequiredMut, { isLoading: settingPhoneRequired }] =
+    useSetUserPhoneRequiredMutation();
   const [reviewKycMut] = useReviewKycMutation();
   const [updateRanking] = useUpdateRankingMutation();
   const [changePasswordMut, { isLoading: changingPass }] = useChangeUserPasswordMutation();
@@ -877,6 +880,59 @@ export default function UserManagement() {
                     Kích hoạt SĐT (không cần OTP)
                   </Button>
                 )}
+
+                {/* Buộc RIÊNG tài khoản này phải xác minh SĐT (Zalo) mới dùng tiếp */}
+                <Box sx={{ width: "100%", mt: 0.5 }}>
+                  {edit.phoneVerificationRequired ? (
+                    <Button
+                      size="small"
+                      color="warning"
+                      variant="text"
+                      disabled={settingPhoneRequired}
+                      onClick={() =>
+                        handle(
+                          setPhoneRequiredMut({
+                            id: edit._id,
+                            required: false,
+                          }).unwrap(),
+                          "Đã bỏ yêu cầu xác minh SĐT",
+                        ).then(() =>
+                          setEdit((prev) =>
+                            prev
+                              ? { ...prev, phoneVerificationRequired: false }
+                              : prev,
+                          ),
+                        )
+                      }
+                    >
+                      ⚠ Đang buộc xác minh SĐT — Bỏ yêu cầu
+                    </Button>
+                  ) : (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      disabled={settingPhoneRequired || edit.phoneVerified}
+                      onClick={() =>
+                        handle(
+                          setPhoneRequiredMut({
+                            id: edit._id,
+                            required: true,
+                          }).unwrap(),
+                          "Đã yêu cầu tài khoản này xác minh SĐT",
+                        ).then(() =>
+                          setEdit((prev) =>
+                            prev
+                              ? { ...prev, phoneVerificationRequired: true }
+                              : prev,
+                          ),
+                        )
+                      }
+                    >
+                      Yêu cầu xác minh SĐT (bắt buộc)
+                    </Button>
+                  )}
+                </Box>
               </Box>
               <TextField
                 label="Email"

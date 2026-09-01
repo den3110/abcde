@@ -139,6 +139,16 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
+    /** ✨ Buộc / bỏ buộc tài khoản này phải xác minh SĐT (Zalo) mới dùng tiếp */
+    setUserPhoneRequired: builder.mutation({
+      query: ({ id, required = true, reason = "" }) => ({
+        url: `/admin/users/${id}/phone-required`,
+        method: "PATCH",
+        body: { required, reason },
+      }),
+      invalidatesTags: ["User"],
+    }),
+
     /** ✨ DUYỆT hoặc TỪ CHỐI KYC */
     reviewKyc: builder.mutation({
       query: ({ id, action }) => ({
@@ -370,6 +380,7 @@ export const {
   useReviewKycMutation,
   useUpdateUserInfoMutation,
   useVerifyUserPhoneMutation,
+  useSetUserPhoneRequiredMutation,
   useUpdateRankingMutation,
   useGetSelfAssessmentsQuery,
   useResetSelfAssessmentsMutation,
