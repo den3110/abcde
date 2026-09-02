@@ -549,6 +549,8 @@ function EventLiveSection() {
   const [bannerImageUrl, setBannerImageUrl] = useState("");
   const [tournamentId, setTournamentId] = useState("");
   const [youtubeApiKey, setYoutubeApiKey] = useState("");
+  const [autoNotify, setAutoNotify] = useState(false);
+  const [autoNotifyCooldownMinutes, setAutoNotifyCooldownMinutes] = useState(180);
 
   useEffect(() => {
     if (!data) return;
@@ -559,6 +561,8 @@ function EventLiveSection() {
     setEventLogoUrl(src.eventLogoUrl || "");
     setBannerImageUrl(src.bannerImageUrl || "");
     setTournamentId(src.tournamentId || "");
+    setAutoNotify(src.autoNotify === true);
+    setAutoNotifyCooldownMinutes(Number(src.autoNotifyCooldownMinutes) || 180);
   }, [data]);
 
   const onSave = async () => {
@@ -570,6 +574,9 @@ function EventLiveSection() {
         eventLogoUrl: eventLogoUrl.trim(),
         bannerImageUrl: bannerImageUrl.trim(),
         tournamentId: tournamentId.trim(),
+        autoNotify,
+        autoNotifyCooldownMinutes:
+          Math.max(5, Number(autoNotifyCooldownMinutes) || 180),
       },
     };
     if (youtubeApiKey.trim()) body.eventLive.youtubeApiKey = youtubeApiKey.trim();
@@ -596,6 +603,28 @@ function EventLiveSection() {
             Bật tính năng xem live giải đấu (banner trang chủ + trang riêng)
           </Typography>
         </Stack>
+
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch
+            checked={autoNotify}
+            disabled={!enabled}
+            onChange={(e) => setAutoNotify(e.target.checked)}
+          />
+          <Typography variant="body2" color={enabled ? "text.primary" : "text.disabled"}>
+            Tự động push cho TẤT CẢ user khi có giải bắt đầu LIVE (dò mỗi 5 phút)
+          </Typography>
+        </Stack>
+        {autoNotify && enabled ? (
+          <TextField
+            label="Giãn cách tối thiểu giữa 2 lần auto-push (phút)"
+            type="number"
+            size="small"
+            value={autoNotifyCooldownMinutes}
+            onChange={(e) => setAutoNotifyCooldownMinutes(e.target.value)}
+            helperText="Tránh spam khi nhiều sân lên sóng lệch giờ. Mặc định 180 (3 giờ), tối thiểu 5."
+            sx={{ maxWidth: 360 }}
+          />
+        ) : null}
 
         <Alert severity={ev.youtubeApiKeySet ? "success" : "warning"}>
           {ev.youtubeApiKeySet
