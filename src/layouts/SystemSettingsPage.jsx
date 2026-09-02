@@ -470,6 +470,7 @@ function EventLiveStats() {
   const [days, setDays] = useState(30);
   const { data: stats, isFetching, refetch } = useGetEventLiveStatsQuery(days);
   const num = (n) => (n ?? 0).toLocaleString("vi-VN");
+  // eslint-disable-next-line react/prop-types
   const Cell = ({ label, value, sub }) => (
     <Box
       sx={{
