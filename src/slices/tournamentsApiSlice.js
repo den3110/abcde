@@ -42,6 +42,15 @@ export const tournamentsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (res, err, { tourId }) => [{ type: "Registration", id: tourId }],
     }),
+    importRoster: builder.mutation({
+      query: ({ tourId, pairs, dryRun = false, markInternal = true }) => ({
+        url: `/admin/tournaments/${tourId}/roster-import`,
+        method: "POST",
+        body: { pairs, dryRun, markInternal },
+      }),
+      invalidatesTags: (res, err, { tourId }) =>
+        res && res.dryRun ? [] : [{ type: "Registration", id: tourId }],
+    }),
     adminUpdateRegistration: builder.mutation({
       query: ({ regId, body }) => ({
         url: `/admin/tournaments/registrations/${regId}`,
@@ -775,6 +784,7 @@ export const {
   useGetRegistrationsQuery,
   useGetRegistrationHistoryQuery,
   useAdminCreateRegistrationMutation,
+  useImportRosterMutation,
   useAdminUpdateRegistrationMutation,
   useCreateRegistrationMutation,
   useUpdatePaymentMutation,

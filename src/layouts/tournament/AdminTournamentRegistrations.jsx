@@ -34,6 +34,7 @@ import {
   History as HistoryIcon,
   MoneyOff,
   Paid,
+  UploadFile as UploadFileIcon,
 } from "@mui/icons-material";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import { useNavigate, useParams } from "react-router-dom";
@@ -57,6 +58,7 @@ import {
   useUpdatePaymentMutation,
 } from "slices/tournamentsApiSlice";
 import { useGetUsersQuery } from "slices/adminApiSlice";
+import RosterImportDialog from "./RosterImportDialog";
 import { getTournamentNameDisplayMode, getTournamentPlayerName } from "utils/tournamentName";
 
 const PLACE = "";
@@ -136,6 +138,7 @@ export default function AdminTournamentRegistrations() {
 
   const eventType = normType(tournament?.eventType);
   const isSingles = eventType === "single";
+  const [importOpen, setImportOpen] = useState(false);
   const displayMode = getTournamentNameDisplayMode(tournament);
   const isFreeTournament = tournament?.isFreeRegistration === true;
 
@@ -787,6 +790,13 @@ export default function AdminTournamentRegistrations() {
           </Button>
           <Button
             variant="outlined"
+            startIcon={<UploadFileIcon />}
+            onClick={() => setImportOpen(true)}
+          >
+            Import Excel
+          </Button>
+          <Button
+            variant="outlined"
             startIcon={<SmartToyIcon />}
             onClick={() => nav(`/admin/ai-registration-import?t=${encodeURIComponent(id)}`)}
           >
@@ -1065,6 +1075,13 @@ export default function AdminTournamentRegistrations() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <RosterImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        tournamentId={id}
+        eventType={eventType}
+      />
     </DashboardLayout>
   );
 }
