@@ -56,6 +56,7 @@ import SupportManagerPage from "layouts/SupportManagerPage";
 import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPage";
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
+import FinancePage from "layouts/finance/FinancePage";
 import ZaloZnsLogsPage from "layouts/ZaloZnsLogsPage";
 import NicknameRequestsPage from "layouts/NicknameRequestsPage";
 import AiGatewaySettingsPage from "layouts/AiGatewaySettingsPage";
@@ -155,6 +156,19 @@ const routes = [
     private: true,
     roles: ["admin"],
     show: true, // hiện trên sidebar
+  },
+
+  // 🆕 Thu chi & Lợi nhuận (Admin)
+  {
+    type: "collapse",
+    name: "Thu chi & Lợi nhuận",
+    key: "admin-finance",
+    icon: <Icon fontSize="small">payments</Icon>,
+    route: "/admin/finance",
+    component: <FinancePage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
   },
 
   // 🆕 Tin tức (AI) (Admin)
