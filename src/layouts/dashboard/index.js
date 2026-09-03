@@ -14,8 +14,12 @@ import LinearProgress from "@mui/material/LinearProgress";
 import { useMemo } from "react";
 
 import { useGetDashboardMetricsQuery, useGetDashboardSeriesQuery } from "slices/dashboardApiSlice";
+import { useGetFinanceSummaryQuery } from "slices/financeApiSlice";
 import { fillSeries, toBarLineDataset } from "./utils/chartTransforms.js";
+import { Link as RouterLink } from "react-router-dom";
 import PropTypes from "prop-types";
+
+const fmtVND = (n) => `${Number(n || 0).toLocaleString("vi-VN")} ₫`;
 
 /* ============ Skeleton helpers ============ */
 function KpiSkeleton() {
@@ -167,9 +171,139 @@ function TodosCard({ todos, loading = false }) {
   );
 }
 
+/* ============ Finance overview (Thu/Chi & Lợi nhuận) ============ */
+function FinanceMiniStat({ label, value, color }) {
+  return (
+    <MDBox
+      flex={1}
+      minWidth={140}
+      p={1.5}
+      borderRadius="lg"
+      sx={{ border: "1px solid", borderColor: "grey.300", bgcolor: "grey.100" }}
+    >
+      <MDBox fontSize={13} color="text" mb={0.5}>
+        {label}
+      </MDBox>
+      <MDBox fontWeight="bold" fontSize={20} sx={{ color }}>
+        {value}
+      </MDBox>
+    </MDBox>
+  );
+}
+FinanceMiniStat.propTypes = {
+  label: PropTypes.string,
+  value: PropTypes.node,
+  color: PropTypes.string,
+};
+
+function FinanceOverviewCard({ summary, loading = false }) {
+  const totals = summary?.totals || { revenue: 0, expense: 0, profit: 0 };
+  const tops = (summary?.tournaments || []).slice(0, 5);
+  return (
+    <Card>
+      <MDBox p={2} display="flex" alignItems="center" justifyContent="space-between">
+        <MDBox variant="h6" fontWeight="bold">
+          Thu chi &amp; Lợi nhuận
+        </MDBox>
+        <MDBox
+          component={RouterLink}
+          to="/admin/finance"
+          display="flex"
+          alignItems="center"
+          gap={0.5}
+          fontSize={13}
+          fontWeight="medium"
+          sx={{ color: "info.main", textDecoration: "none" }}
+        >
+          Xem chi tiết
+          <Icon fontSize="small">chevron_right</Icon>
+        </MDBox>
+      </MDBox>
+      <MDBox px={2} pb={2}>
+        {loading ? (
+          <Skeleton variant="rounded" height={92} />
+        ) : (
+          <MDBox display="flex" gap={1.5} flexWrap="wrap">
+            <FinanceMiniStat label="Doanh thu" value={fmtVND(totals.revenue)} color="#16a34a" />
+            <FinanceMiniStat label="Chi phí" value={fmtVND(totals.expense)} color="#dc2626" />
+            <FinanceMiniStat
+              label="Lợi nhuận"
+              value={fmtVND(totals.profit)}
+              color={totals.profit >= 0 ? "#2563EB" : "#dc2626"}
+            />
+          </MDBox>
+        )}
+
+        {!loading && tops.length > 0 && (
+          <MDBox mt={2}>
+            <MDBox fontSize={13} fontWeight="bold" color="text" mb={1}>
+              Lợi nhuận theo giải (Top 5)
+            </MDBox>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ fontSize: 12, color: "#7b809a" }}>
+                  <th align="left" style={{ padding: "4px 0" }}>
+                    Giải
+                  </th>
+                  <th align="right" style={{ padding: "4px 0" }}>
+                    Doanh thu
+                  </th>
+                  <th align="right" style={{ padding: "4px 0" }}>
+                    Chi phí
+                  </th>
+                  <th align="right" style={{ padding: "4px 0" }}>
+                    Lợi nhuận
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {tops.map((t) => (
+                  <tr key={t.name} style={{ fontSize: 13, borderTop: "1px solid #eee" }}>
+                    <td style={{ padding: "6px 0" }}>{t.name}</td>
+                    <td align="right" style={{ color: "#16a34a" }}>
+                      {fmtVND(t.revenue)}
+                    </td>
+                    <td align="right" style={{ color: "#dc2626" }}>
+                      {fmtVND(t.expense)}
+                    </td>
+                    <td
+                      align="right"
+                      style={{ fontWeight: 700, color: t.profit >= 0 ? "#2563EB" : "#dc2626" }}
+                    >
+                      {fmtVND(t.profit)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </MDBox>
+        )}
+
+        {!loading && tops.length === 0 && (
+          <MDBox mt={2} color="text" fontSize={13}>
+            Chưa có dữ liệu thu/chi. Thêm ở trang{" "}
+            <MDBox component={RouterLink} to="/admin/finance" sx={{ color: "info.main" }}>
+              Thu chi &amp; Lợi nhuận
+            </MDBox>
+            .
+          </MDBox>
+        )}
+      </MDBox>
+    </Card>
+  );
+}
+FinanceOverviewCard.propTypes = {
+  summary: PropTypes.shape({
+    totals: PropTypes.object,
+    tournaments: PropTypes.array,
+  }),
+  loading: PropTypes.bool,
+};
+
 function Dashboard() {
   const { data: metrics, isLoading: mLoading } = useGetDashboardMetricsQuery();
   const { data: series, isLoading: sLoading } = useGetDashboardSeriesQuery({ days: 30 });
+  const { data: financeSummary, isLoading: fLoading } = useGetFinanceSummaryQuery();
 
   // KPI cards
   const openTournaments = metrics?.cards?.openTournaments?.count ?? 0;
@@ -348,6 +482,11 @@ function Dashboard() {
               </MDBox>
             </Grid>
           </Grid>
+        </MDBox>
+
+        {/* Finance overview */}
+        <MDBox mb={3}>
+          <FinanceOverviewCard summary={financeSummary} loading={fLoading} />
         </MDBox>
 
         {/* Lists */}
