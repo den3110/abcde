@@ -18,14 +18,20 @@ import {
   IconButton,
   LinearProgress,
   MenuItem,
+  Pagination,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Delete, Send, Cancel, Edit, Email as EmailIcon, Refresh } from "@mui/icons-material";
+import { Delete, Send, Cancel, Edit, Email as EmailIcon, Refresh, People } from "@mui/icons-material";
 
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -41,8 +47,55 @@ import {
   useSendEmailCampaignMutation,
   useCancelEmailCampaignMutation,
   useDeleteEmailCampaignMutation,
+  useGetContactListsQuery,
+  useGetCampaignRecipientsQuery,
 } from "slices/emailCampaignApiSlice";
 import { useGetTournamentsQuery } from "slices/tournamentsApiSlice";
+
+function RecipientsDialog({ campaign, onClose }) {
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const { data } = useGetCampaignRecipientsQuery(
+    { id: campaign?._id, status, page, limit: 50 },
+    { skip: !campaign }
+  );
+  const items = data?.items || [];
+  const totals = data?.totals || { sent: 0, failed: 0 };
+  const pages = Math.max(1, Math.ceil((data?.total || 0) / 50));
+  return (
+    <Dialog open={!!campaign} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Người nhận · {campaign?.name || campaign?.subject}</DialogTitle>
+      <DialogContent dividers>
+        <Stack direction="row" spacing={1} mb={2}>
+          <Chip label={`Đã gửi ${totals.sent.toLocaleString("vi-VN")}`} color="success" size="small" onClick={() => { setStatus("sent"); setPage(1); }} variant={status === "sent" ? "filled" : "outlined"} />
+          <Chip label={`Lỗi ${totals.failed.toLocaleString("vi-VN")}`} color="error" size="small" onClick={() => { setStatus("failed"); setPage(1); }} variant={status === "failed" ? "filled" : "outlined"} />
+          <Chip label="Tất cả" size="small" onClick={() => { setStatus(""); setPage(1); }} variant={status === "" ? "filled" : "outlined"} />
+        </Stack>
+        <Box sx={{ overflowX: "auto" }}>
+          <Table size="small">
+            <TableHead><TableRow><TableCell>Tên</TableCell><TableCell>Email</TableCell><TableCell>Trạng thái</TableCell></TableRow></TableHead>
+            <TableBody>
+              {items.map((r) => (
+                <TableRow key={r._id}>
+                  <TableCell>{r.name || "—"}</TableCell>
+                  <TableCell>{r.email}</TableCell>
+                  <TableCell>
+                    <Chip size="small" label={r.status === "sent" ? "Đã gửi" : r.status === "failed" ? "Lỗi" : "Bỏ qua"} color={r.status === "sent" ? "success" : r.status === "failed" ? "error" : "default"} />
+                  </TableCell>
+                </TableRow>
+              ))}
+              {items.length === 0 ? <TableRow><TableCell colSpan={3} align="center">Chưa có dữ liệu.</TableCell></TableRow> : null}
+            </TableBody>
+          </Table>
+        </Box>
+        {pages > 1 ? (
+          <Stack alignItems="center" mt={2}><Pagination count={pages} page={page} onChange={(e, p) => setPage(p)} size="small" /></Stack>
+        ) : null}
+      </DialogContent>
+      <DialogActions><Button onClick={onClose}>Đóng</Button></DialogActions>
+    </Dialog>
+  );
+}
 
 const STATUS = {
   draft: { label: "Nháp", color: "default" },
@@ -64,6 +117,7 @@ const emptyForm = {
   ctaUrl: "",
   scope: "all",
   tournament: null,
+  contactList: "",
   emailsText: "",
 };
 
@@ -73,6 +127,10 @@ export default function EmailCampaignsPage() {
   const [testEmails, setTestEmails] = useState("");
   const [msg, setMsg] = useState(null); // {type,text}
   const [confirmSend, setConfirmSend] = useState(null); // campaign obj
+  const [recipientsOf, setRecipientsOf] = useState(null); // campaign obj
+
+  const { data: contactListsData } = useGetContactListsQuery();
+  const contactLists = contactListsData?.items || [];
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target ? e.target.value : e }));
 
@@ -99,6 +157,7 @@ export default function EmailCampaignsPage() {
   const buildAudience = () => ({
     scope: form.scope,
     tournament: form.scope === "tournament" ? form.tournament?.id || null : null,
+    contactList: form.scope === "contactList" ? form.contactList || null : null,
     emails:
       form.scope === "list"
         ? form.emailsText.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean)
@@ -204,6 +263,7 @@ export default function EmailCampaignsPage() {
             name: "Giải đã chọn",
           }
         : null,
+      contactList: c.audience?.contactList || "",
       emailsText: (c.audience?.emails || []).join("\n"),
     });
     setEstimate(c.audience?.estimatedCount ?? null);
@@ -272,7 +332,8 @@ export default function EmailCampaignsPage() {
                 >
                   <ToggleButton value="all">Tất cả người dùng</ToggleButton>
                   <ToggleButton value="tournament">Theo giải đấu</ToggleButton>
-                  <ToggleButton value="list">Danh sách email</ToggleButton>
+                  <ToggleButton value="contactList">Danh sách khách hàng</ToggleButton>
+                  <ToggleButton value="list">Nhập email</ToggleButton>
                 </ToggleButtonGroup>
 
                 {form.scope === "tournament" ? (
@@ -287,6 +348,24 @@ export default function EmailCampaignsPage() {
                     }}
                     renderInput={(p) => <TextField {...p} size="small" label="Chọn giải đấu" />}
                   />
+                ) : null}
+                {form.scope === "contactList" ? (
+                  <TextField
+                    select
+                    size="small"
+                    label="Chọn danh sách khách hàng"
+                    value={form.contactList}
+                    onChange={(e) => { setForm((f) => ({ ...f, contactList: e.target.value })); setEstimate(null); }}
+                  >
+                    {contactLists.length === 0 ? (
+                      <MenuItem value="" disabled>Chưa có danh sách — tạo ở mục “Danh sách khách hàng”</MenuItem>
+                    ) : null}
+                    {contactLists.map((l) => (
+                      <MenuItem key={l._id} value={l._id}>
+                        {l.name} ({(l.contactCount || 0).toLocaleString("vi-VN")})
+                      </MenuItem>
+                    ))}
+                  </TextField>
                 ) : null}
                 {form.scope === "list" ? (
                   <TextField
@@ -392,6 +471,11 @@ export default function EmailCampaignsPage() {
                         </Box>
                       ) : null}
                       <Stack direction="row" spacing={0.5} mt={1} justifyContent="flex-end">
+                        {["running", "completed", "canceled", "failed"].includes(c.status) ? (
+                          <Tooltip title="Xem người nhận đã gửi">
+                            <IconButton size="small" color="info" onClick={() => setRecipientsOf(c)}><People fontSize="small" /></IconButton>
+                          </Tooltip>
+                        ) : null}
                         <Tooltip title="Nạp vào trình soạn">
                           <IconButton size="small" onClick={() => loadInto(c)}><Edit fontSize="small" /></IconButton>
                         </Tooltip>
@@ -413,6 +497,8 @@ export default function EmailCampaignsPage() {
           </Grid>
         </Grid>
       </MDBox>
+
+      <RecipientsDialog campaign={recipientsOf} onClose={() => setRecipientsOf(null)} />
 
       <Dialog open={!!confirmSend} onClose={() => setConfirmSend(null)}>
         <DialogTitle>Gửi chiến dịch email?</DialogTitle>

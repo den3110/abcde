@@ -62,6 +62,9 @@ export const apiSlice = createApi({
   tagTypes: [
     "Finance",
     "EmailCampaign",
+    "EmailContactList",
+    "EmailContacts",
+    "EmailRecipients",
     "AdminFeed",
     "AdminFeedReports",
     "AdminChat",

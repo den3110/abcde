@@ -58,6 +58,7 @@ import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
 import FinancePage from "layouts/finance/FinancePage";
 import EmailCampaignsPage from "layouts/email-campaigns/EmailCampaignsPage";
+import EmailContactListsPage from "layouts/email-campaigns/EmailContactListsPage";
 import ZaloZnsLogsPage from "layouts/ZaloZnsLogsPage";
 import NicknameRequestsPage from "layouts/NicknameRequestsPage";
 import AiGatewaySettingsPage from "layouts/AiGatewaySettingsPage";
@@ -180,6 +181,17 @@ const routes = [
     icon: <Icon fontSize="small">forward_to_inbox</Icon>,
     route: "/admin/email-campaigns",
     component: <EmailCampaignsPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Danh sách khách hàng",
+    key: "admin-email-contacts",
+    icon: <Icon fontSize="small">contacts</Icon>,
+    route: "/admin/email-contacts",
+    component: <EmailContactListsPage />,
     private: true,
     roles: ["admin"],
     show: true,

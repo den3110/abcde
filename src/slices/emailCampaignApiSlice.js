@@ -43,6 +43,57 @@ export const emailCampaignApiSlice = apiSlice.injectEndpoints({
       query: (id) => ({ url: `/admin/email-campaigns/${id}`, method: "DELETE" }),
       invalidatesTags: ["EmailCampaign"],
     }),
+    getCampaignRecipients: builder.query({
+      query: ({ id, status = "", page = 1, limit = 50, q = "" }) => {
+        const p = new URLSearchParams({ page, limit });
+        if (status) p.set("status", status);
+        if (q) p.set("q", q);
+        return { url: `/admin/email-campaigns/${id}/recipients?${p.toString()}` };
+      },
+      providesTags: ["EmailRecipients"],
+    }),
+
+    // ---- Danh sách khách hàng ----
+    getContactLists: builder.query({
+      query: () => ({ url: `/admin/email-contact-lists` }),
+      providesTags: ["EmailContactList"],
+    }),
+    getContactList: builder.query({
+      query: (id) => ({ url: `/admin/email-contact-lists/${id}` }),
+      providesTags: ["EmailContactList"],
+    }),
+    createContactList: builder.mutation({
+      query: (body) => ({ url: `/admin/email-contact-lists`, method: "POST", body }),
+      invalidatesTags: ["EmailContactList"],
+    }),
+    deleteContactList: builder.mutation({
+      query: (id) => ({ url: `/admin/email-contact-lists/${id}`, method: "DELETE" }),
+      invalidatesTags: ["EmailContactList"],
+    }),
+    addContacts: builder.mutation({
+      query: ({ id, contacts }) => ({
+        url: `/admin/email-contact-lists/${id}/contacts`,
+        method: "POST",
+        body: { contacts },
+      }),
+      invalidatesTags: ["EmailContactList", "EmailContacts"],
+    }),
+    getContacts: builder.query({
+      query: ({ id, page = 1, limit = 50, q = "", status = "" }) => {
+        const p = new URLSearchParams({ page, limit });
+        if (q) p.set("q", q);
+        if (status) p.set("status", status);
+        return { url: `/admin/email-contact-lists/${id}/contacts?${p.toString()}` };
+      },
+      providesTags: ["EmailContacts"],
+    }),
+    deleteContact: builder.mutation({
+      query: ({ id, contactId }) => ({
+        url: `/admin/email-contact-lists/${id}/contacts/${contactId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["EmailContactList", "EmailContacts"],
+    }),
   }),
   overrideExisting: false,
 });
@@ -57,4 +108,12 @@ export const {
   useSendEmailCampaignMutation,
   useCancelEmailCampaignMutation,
   useDeleteEmailCampaignMutation,
+  useGetCampaignRecipientsQuery,
+  useGetContactListsQuery,
+  useGetContactListQuery,
+  useCreateContactListMutation,
+  useDeleteContactListMutation,
+  useAddContactsMutation,
+  useGetContactsQuery,
+  useDeleteContactMutation,
 } = emailCampaignApiSlice;
