@@ -57,6 +57,7 @@ import AdminInsertIntoGroupPage from "layouts/tournament/AdminInsertIntoGroupPag
 import AdminAppVersionPage from "layouts/AdminAppVersionPage";
 import SystemSettingsPage from "layouts/SystemSettingsPage";
 import FinancePage from "layouts/finance/FinancePage";
+import EmailCampaignsPage from "layouts/email-campaigns/EmailCampaignsPage";
 import ZaloZnsLogsPage from "layouts/ZaloZnsLogsPage";
 import NicknameRequestsPage from "layouts/NicknameRequestsPage";
 import AiGatewaySettingsPage from "layouts/AiGatewaySettingsPage";
@@ -166,6 +167,19 @@ const routes = [
     icon: <Icon fontSize="small">payments</Icon>,
     route: "/admin/finance",
     component: <FinancePage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+
+  // 🆕 Chiến dịch gửi email (Admin)
+  {
+    type: "collapse",
+    name: "Chiến dịch email",
+    key: "admin-email-campaigns",
+    icon: <Icon fontSize="small">forward_to_inbox</Icon>,
+    route: "/admin/email-campaigns",
+    component: <EmailCampaignsPage />,
     private: true,
     roles: ["admin"],
     show: true,
