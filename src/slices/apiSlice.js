@@ -65,6 +65,7 @@ export const apiSlice = createApi({
     "EmailContactList",
     "EmailContacts",
     "EmailRecipients",
+    "EventLiveComments",
     "AdminFeed",
     "AdminFeedReports",
     "AdminChat",
