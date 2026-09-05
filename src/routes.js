@@ -61,6 +61,7 @@ import EmailCampaignsPage from "layouts/email-campaigns/EmailCampaignsPage";
 import EmailContactListsPage from "layouts/email-campaigns/EmailContactListsPage";
 import ZaloZnsLogsPage from "layouts/ZaloZnsLogsPage";
 import EventLiveMonitorPage from "layouts/event-live/EventLiveMonitorPage";
+import ReviewModerationPage from "layouts/reviews/ReviewModerationPage";
 import NicknameRequestsPage from "layouts/NicknameRequestsPage";
 import AiGatewaySettingsPage from "layouts/AiGatewaySettingsPage";
 import FilesManager from "layouts/FilesManager";
@@ -889,6 +890,18 @@ const routes = [
     icon: <Icon fontSize="small">live_tv</Icon>,
     route: "/admin/event-live-monitor",
     component: <EventLiveMonitorPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Kiểm duyệt đánh giá",
+    key: "review-moderation",
+    icon: <Icon fontSize="small">star_rate</Icon>,
+    route: "/admin/review-moderation",
+    component: <ReviewModerationPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,
