@@ -17,7 +17,9 @@ import {
   Typography,
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import { useGetLiveRecordingAiCommentaryMonitorQuery } from "slices/liveApiSlice";
+import { useGlobalBroadcastMutation } from "slices/adminNotifyApi";
 import {
   useDisconnectRecordingDriveMutation,
   useGetOverlayGeneratorKeyStatusQuery,
@@ -540,6 +542,7 @@ function EventLiveStats() {
 function EventLiveSection() {
   const { data, isFetching, refetch } = useGetSystemSettingsQuery();
   const [updateSettings, { isLoading: saving }] = useUpdateSystemSettingsMutation();
+  const [globalBroadcast, { isLoading: pushing }] = useGlobalBroadcastMutation();
 
   const ev = data?.eventLive || {};
   const [enabled, setEnabled] = useState(false);
@@ -702,6 +705,46 @@ function EventLiveSection() {
             {isFetching ? "…" : "Tải lại"}
           </Button>
         </Stack>
+
+        {enabled && (
+          <>
+            <Divider textAlign="left" sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Gửi push thông báo
+              </Typography>
+            </Divider>
+            <Alert severity="info" icon={<NotificationsActiveIcon fontSize="small" />}>
+              Gửi push thông báo tới <b>tất cả user</b> rằng giải đấu đang phát trực tiếp.
+              Thông báo sẽ được gửi ngay lập tức (không cần chờ dò tự động 5 phút).
+            </Alert>
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<NotificationsActiveIcon />}
+              disabled={pushing || !eventName.trim()}
+              sx={{ minWidth: 200, alignSelf: "flex-start" }}
+              onClick={async () => {
+                const name = eventName.trim() || "Giải đấu";
+                const ok = window.confirm(
+                  `Gửi push thông báo tới TẤT CẢ user:\n\n🔴 ${name} đang trực tiếp!\nXem trực tiếp ngay trên PickleTour! 🎾\n\nBạn chắc chắn?`
+                );
+                if (!ok) return;
+                try {
+                  await globalBroadcast({
+                    title: `🔴 ${name} đang trực tiếp!`,
+                    body: "Xem trực tiếp ngay trên PickleTour! 🎾",
+                    url: "https://pickletour.vn/live/event",
+                  }).unwrap();
+                  toast.success("Đã gửi push thông báo live tới tất cả user!");
+                } catch (err) {
+                  toast.error(err?.data?.message || "Gửi push thất bại");
+                }
+              }}
+            >
+              {pushing ? "Đang gửi…" : "🔴 Gửi push LIVE ngay"}
+            </Button>
+          </>
+        )}
       </Stack>
     </Section>
   );
