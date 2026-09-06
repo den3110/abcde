@@ -29,7 +29,8 @@ const dt = (iso) =>
   iso ? new Date(iso).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", ...tz }) : "—";
 
 const BOOKING_STATUS = {
-  pending: { label: "Chờ duyệt", color: "warning" },
+  pending: { label: "Chờ thanh toán", color: "warning" },
+  awaiting_approval: { label: "Chờ duyệt bill", color: "info" },
   confirmed: { label: "Đã xác nhận", color: "success" },
   cancelled: { label: "Đã huỷ", color: "default" },
   completed: { label: "Hoàn tất", color: "info" },

@@ -60,6 +60,7 @@ export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery,
   tagTypes: [
+    "CourtOwnerRequests",
     "Finance",
     "EmailCampaign",
     "EmailContactList",

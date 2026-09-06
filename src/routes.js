@@ -62,6 +62,7 @@ import EmailContactListsPage from "layouts/email-campaigns/EmailContactListsPage
 import ZaloZnsLogsPage from "layouts/ZaloZnsLogsPage";
 import EventLiveMonitorPage from "layouts/event-live/EventLiveMonitorPage";
 import ReviewModerationPage from "layouts/reviews/ReviewModerationPage";
+import CourtOwnerRequestsPage from "layouts/court-owner/CourtOwnerRequestsPage";
 import NicknameRequestsPage from "layouts/NicknameRequestsPage";
 import AiGatewaySettingsPage from "layouts/AiGatewaySettingsPage";
 import FilesManager from "layouts/FilesManager";
@@ -902,6 +903,18 @@ const routes = [
     icon: <Icon fontSize="small">star_rate</Icon>,
     route: "/admin/review-moderation",
     component: <ReviewModerationPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Yêu cầu làm chủ sân",
+    key: "court-owner-requests",
+    icon: <Icon fontSize="small">how_to_reg</Icon>,
+    route: "/admin/court-owner-requests",
+    component: <CourtOwnerRequestsPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,
