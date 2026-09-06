@@ -4,9 +4,11 @@ import {
   Alert,
   Box,
   Button,
+  Card,
   CircularProgress,
   Divider,
   Fab,
+  IconButton,
   MenuItem,
   Paper,
   Skeleton,
@@ -18,6 +20,8 @@ import {
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
+import DeleteIcon from "@mui/icons-material/Delete";
+import AddIcon from "@mui/icons-material/Add";
 import { useGetLiveRecordingAiCommentaryMonitorQuery } from "slices/liveApiSlice";
 import { useGlobalBroadcastMutation } from "slices/adminNotifyApi";
 import {
@@ -554,6 +558,7 @@ function EventLiveSection() {
   const [youtubeApiKey, setYoutubeApiKey] = useState("");
   const [autoNotify, setAutoNotify] = useState(false);
   const [autoNotifyCooldownMinutes, setAutoNotifyCooldownMinutes] = useState(180);
+  const [manualStreams, setManualStreams] = useState([]);
 
   useEffect(() => {
     if (!data) return;
@@ -566,7 +571,30 @@ function EventLiveSection() {
     setTournamentId(src.tournamentId || "");
     setAutoNotify(src.autoNotify === true);
     setAutoNotifyCooldownMinutes(Number(src.autoNotifyCooldownMinutes) || 180);
+    setManualStreams(
+      Array.isArray(src.manualStreams)
+        ? src.manualStreams.map((m) => ({
+            url: m.url || "",
+            title: m.title || "",
+            courtLabel: m.courtLabel || "",
+            angleLabel: m.angleLabel || "",
+            kind: m.kind === "replay" ? "replay" : "live",
+            thumbnail: m.thumbnail || "",
+            enabled: m.enabled !== false,
+          }))
+        : []
+    );
   }, [data]);
+
+  const addManualStream = () =>
+    setManualStreams((prev) => [
+      ...prev,
+      { url: "", title: "", courtLabel: "", angleLabel: "Toàn cảnh", kind: "live", thumbnail: "", enabled: true },
+    ]);
+  const updateManualStream = (idx, patch) =>
+    setManualStreams((prev) => prev.map((m, i) => (i === idx ? { ...m, ...patch } : m)));
+  const removeManualStream = (idx) =>
+    setManualStreams((prev) => prev.filter((_, i) => i !== idx));
 
   const onSave = async () => {
     const body = {
@@ -580,6 +608,17 @@ function EventLiveSection() {
         autoNotify,
         autoNotifyCooldownMinutes:
           Math.max(5, Number(autoNotifyCooldownMinutes) || 180),
+        manualStreams: manualStreams
+          .map((m) => ({
+            url: (m.url || "").trim(),
+            title: (m.title || "").trim(),
+            courtLabel: (m.courtLabel || "").trim(),
+            angleLabel: (m.angleLabel || "").trim(),
+            kind: m.kind === "replay" ? "replay" : "live",
+            thumbnail: (m.thumbnail || "").trim(),
+            enabled: m.enabled !== false,
+          }))
+          .filter((m) => m.url),
       },
     };
     if (youtubeApiKey.trim()) body.eventLive.youtubeApiKey = youtubeApiKey.trim();
@@ -691,6 +730,85 @@ function EventLiveSection() {
           value={tournamentId}
           onChange={(e) => setTournamentId(e.target.value)}
         />
+
+        <Divider textAlign="left" sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            Luồng thêm thủ công (HLS/URL)
+          </Typography>
+        </Divider>
+        <Alert severity="info">
+          Dành cho sân KHÔNG có video YouTube — dán link .m3u8 (HLS) hoặc mp4.
+          Hiển thị song song với luồng YouTube trên web &amp; app.
+        </Alert>
+
+        {manualStreams.map((m, idx) => (
+          <Card key={idx} variant="outlined" sx={{ p: 1.5 }}>
+            <Stack spacing={1}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Typography variant="subtitle2" sx={{ flex: 1 }}>
+                  Luồng #{idx + 1}
+                </Typography>
+                <Switch
+                  size="small"
+                  checked={m.enabled !== false}
+                  onChange={(e) => updateManualStream(idx, { enabled: e.target.checked })}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {m.enabled !== false ? "Bật" : "Tắt"}
+                </Typography>
+                <IconButton size="small" color="error" onClick={() => removeManualStream(idx)}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+              <TextField
+                label="URL luồng (.m3u8 / mp4)"
+                placeholder="https://.../index.m3u8?sign=..."
+                fullWidth
+                size="small"
+                value={m.url}
+                onChange={(e) => updateManualStream(idx, { url: e.target.value })}
+              />
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                <TextField
+                  label="Tên sân"
+                  placeholder="VD: Sân Grandstand"
+                  size="small"
+                  fullWidth
+                  value={m.courtLabel}
+                  onChange={(e) => updateManualStream(idx, { courtLabel: e.target.value })}
+                />
+                <TextField
+                  label="Góc camera / nhãn"
+                  placeholder="VD: Toàn cảnh"
+                  size="small"
+                  fullWidth
+                  value={m.angleLabel}
+                  onChange={(e) => updateManualStream(idx, { angleLabel: e.target.value })}
+                />
+                <TextField
+                  select
+                  label="Loại"
+                  size="small"
+                  sx={{ minWidth: 130 }}
+                  SelectProps={{ native: true }}
+                  value={m.kind}
+                  onChange={(e) => updateManualStream(idx, { kind: e.target.value })}
+                >
+                  <option value="live">Trực tiếp</option>
+                  <option value="replay">Xem lại</option>
+                </TextField>
+              </Stack>
+            </Stack>
+          </Card>
+        ))}
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={addManualStream}
+          sx={{ alignSelf: "flex-start" }}
+        >
+          Thêm luồng thủ công
+        </Button>
 
         <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
           <Button
