@@ -61,6 +61,7 @@ export const apiSlice = createApi({
   baseQuery,
   tagTypes: [
     "CourtOwnerRequests",
+    "Reconciliation",
     "Finance",
     "EmailCampaign",
     "EmailContactList",
