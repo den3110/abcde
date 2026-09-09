@@ -61,6 +61,125 @@ const canView = (route, user) => {
   return true;
 };
 
+/* ───────────────── gom nhóm menu theo phân loại ───────────────── */
+const GROUP_ORDER = [
+  "Tổng quan",
+  "Sân & Đặt sân",
+  "Giải đấu & Trận đấu",
+  "Trọng tài & Overlay",
+  "Người dùng & Điểm trình",
+  "Nội dung & Truyền thông",
+  "Email & Tài chính",
+  "Livestream · FB · YouTube",
+  "Hệ thống & Cấu hình",
+  "Giám sát & Nhật ký",
+  "Bảo mật & Hạ tầng",
+];
+
+// key của route -> nhóm hiển thị. Route không có trong map rơi vào "Khác".
+const KEY_GROUP = {
+  dashboard: "Tổng quan",
+
+  "venue-management": "Sân & Đặt sân",
+  "venue-detail": "Sân & Đặt sân",
+  "booking-management": "Sân & Đặt sân",
+  "admin-court-free-manager": "Sân & Đặt sân",
+  "court-owner-requests": "Sân & Đặt sân",
+  reconciliation: "Sân & Đặt sân",
+
+  tournaments: "Giải đấu & Trận đấu",
+  "tournament-new": "Giải đấu & Trận đấu",
+  "tournament-edit": "Giải đấu & Trận đấu",
+  "tournament-registrations": "Giải đấu & Trận đấu",
+  "tournament-brackets": "Giải đấu & Trận đấu",
+  "admin-matches": "Giải đấu & Trận đấu",
+  "match-viewer": "Giải đấu & Trận đấu",
+  "admin-match-detail": "Giải đấu & Trận đấu",
+  "admin-live-sessions": "Giải đấu & Trận đấu",
+  "admin-court-clusters": "Giải đấu & Trận đấu",
+  "tournament-matches": "Giải đấu & Trận đấu",
+  "tournament-bracket-view": "Giải đấu & Trận đấu",
+  "tournament-bracket-story": "Giải đấu & Trận đấu",
+  "bracket-preassign": "Giải đấu & Trận đấu",
+  "tournament-blueprint": "Giải đấu & Trận đấu",
+  "auto-registrations": "Giải đấu & Trận đấu",
+  "admin-bracket-courts": "Giải đấu & Trận đấu",
+  "rating-tester": "Giải đấu & Trận đấu",
+  "bracket-group-insert": "Giải đấu & Trận đấu",
+  "ai-registration-import": "Giải đấu & Trận đấu",
+
+  "overlay-index": "Trọng tài & Overlay",
+  "admin-referee-console-match": "Trọng tài & Overlay",
+  "admin-referee-console": "Trọng tài & Overlay",
+  "admin-referee-matches": "Trọng tài & Overlay",
+  "referee-matches": "Trọng tài & Overlay",
+
+  "user-management": "Người dùng & Điểm trình",
+  "nickname-requests": "Người dùng & Điểm trình",
+  "coach-approvals": "Người dùng & Điểm trình",
+  "self-assessment-management": "Người dùng & Điểm trình",
+  "assessment-history": "Người dùng & Điểm trình",
+  "evaluator-management": "Người dùng & Điểm trình",
+  "review-moderation": "Người dùng & Điểm trình",
+  "auto-users": "Người dùng & Điểm trình",
+  "sign-in": "Người dùng & Điểm trình",
+  "sign-up": "Người dùng & Điểm trình",
+
+  "admin-news": "Nội dung & Truyền thông",
+  "admin-blog": "Nội dung & Truyền thông",
+  "admin-feed": "Nội dung & Truyền thông",
+  "admin-chat": "Nội dung & Truyền thông",
+  "news-list": "Nội dung & Truyền thông",
+  "news-detail": "Nội dung & Truyền thông",
+  "cms-hero": "Nội dung & Truyền thông",
+  "cms-contact": "Nội dung & Truyền thông",
+  "admin-sponsors": "Nội dung & Truyền thông",
+  "admin-broadcast": "Nội dung & Truyền thông",
+  "support-manager": "Nội dung & Truyền thông",
+  "news-image-monitor": "Nội dung & Truyền thông",
+
+  "admin-email-campaigns": "Email & Tài chính",
+  "admin-email-contacts": "Email & Tài chính",
+  "admin-finance": "Email & Tài chính",
+
+  "fb-live-config": "Livestream · FB · YouTube",
+  "fb-page-monitor": "Livestream · FB · YouTube",
+  "fb-page-tokens": "Livestream · FB · YouTube",
+  "event-live-monitor": "Livestream · FB · YouTube",
+  "admin-youtube-live": "Livestream · FB · YouTube",
+  "admin-live-playback": "Livestream · FB · YouTube",
+  "push-realtime": "Livestream · FB · YouTube",
+  "live-recording-monitor": "Livestream · FB · YouTube",
+  "live-recording-drive-monitor": "Livestream · FB · YouTube",
+  "live-recording-ai-commentary-monitor": "Livestream · FB · YouTube",
+  "drive-video-manager": "Livestream · FB · YouTube",
+  "fb-vod-drive-monitor": "Livestream · FB · YouTube",
+
+  "system-settings": "Hệ thống & Cấu hình",
+  "system-config": "Hệ thống & Cấu hình",
+  "ai-gateway-settings": "Hệ thống & Cấu hình",
+  "zalo-zns-logs": "Hệ thống & Cấu hình",
+  "algo-settings": "Hệ thống & Cấu hình",
+  "admin-app-version": "Hệ thống & Cấu hình",
+  "admin-files": "Hệ thống & Cấu hình",
+  "admin-cache-manager": "Hệ thống & Cấu hình",
+  "admin-avatar-optimization": "Hệ thống & Cấu hình",
+  "admin-ota": "Hệ thống & Cấu hình",
+
+  "admin-primary-logs": "Giám sát & Nhật ký",
+  "admin-system-monitor": "Giám sát & Nhật ký",
+  "admin-monitor": "Giám sát & Nhật ký",
+  "admin-audit-logs": "Giám sát & Nhật ký",
+  "auth-log-management": "Giám sát & Nhật ký",
+  "admin-peak-runtime": "Giám sát & Nhật ký",
+  "admin-observer-vps": "Giám sát & Nhật ký",
+
+  "identity-security": "Bảo mật & Hạ tầng",
+  "checkpoint-engine": "Bảo mật & Hạ tầng",
+  "admin-azure-config": "Bảo mật & Hạ tầng",
+  "admin-azure-manager": "Bảo mật & Hạ tầng",
+};
+
 /* ───────────────── component ───────────────── */
 function Sidenav({ color, brand, brandName, routes, ...rest }) {
   const [controller, dispatchCtrl] = useMaterialUIController();
@@ -98,103 +217,68 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
   }, [dispatchCtrl, transparentSidenav, whiteSidenav]);
 
   // Build menu items (lọc theo role + private + show)
-  const renderRoutes = routes
-    .filter((r) => r.show !== false) // vẫn tôn trọng show=false để ẩn form/edit
-    .map((cfg) => {
-      const { type, name, icon, title, noCollapse, key, href, route } = cfg;
+  // Render 1 mục collapse (Link ngoài hoặc NavLink nội bộ)
+  const renderCollapseItem = (cfg) => {
+    const { name, icon, noCollapse, key, href, route } = cfg;
+    const active = route ? location.pathname.startsWith(route) : false;
+    return href ? (
+      <Link
+        href={href}
+        key={key}
+        target="_blank"
+        rel="noreferrer"
+        sx={{ textDecoration: "none" }}
+        aria-label={`Mở ${name} trong tab mới`}
+      >
+        <SidenavCollapse name={name} icon={icon} active={active} noCollapse={noCollapse} />
+      </Link>
+    ) : (
+      <NavLink key={key} to={route} style={{ textDecoration: "none" }} aria-label={`Đi tới ${name}`}>
+        <SidenavCollapse name={name} icon={icon} active={active} noCollapse={noCollapse} />
+      </NavLink>
+    );
+  };
 
-      if (type === "collapse") {
-        // chặn hiển thị nếu không đủ quyền
-        if (!canView(cfg, userInfo)) return null;
-
-        const active = route ? location.pathname.startsWith(route) : false;
-
-        return href ? (
-          <Link
-            href={href}
-            key={key}
-            target="_blank"
-            rel="noreferrer"
-            sx={{ textDecoration: "none" }}
-            aria-label={`Mở ${name} trong tab mới`}
-          >
-            <SidenavCollapse name={name} icon={icon} active={active} noCollapse={noCollapse} />
-          </Link>
-        ) : (
-          <NavLink
-            key={key}
-            to={route}
-            style={{ textDecoration: "none" }}
-            aria-label={`Đi tới ${name}`}
-          >
-            <SidenavCollapse name={name} icon={icon} active={active} noCollapse={noCollapse} />
-          </NavLink>
-        );
-      }
-
-      // Title/Divider: chỉ hiện nếu có ít nhất 1 collapse item phía sau visible
-      if (type === "title") {
-        const idx = routes.indexOf(cfg);
-        const hasVisibleChild = routes
-          .slice(idx + 1)
-          .some(
-            (next) => next.type === "collapse" && next.show !== false && canView(next, userInfo)
-          );
-        if (!hasVisibleChild) return null;
-
-        return (
-          <MDTypography
-            key={key}
-            color={textColor}
-            display="block"
-            variant="caption"
-            fontWeight="bold"
-            textTransform="uppercase"
-            pl={3}
-            mt={2}
-            mb={1}
-            ml={1}
-          >
-            {title}
-          </MDTypography>
-        );
-      }
-
-      if (type === "divider") {
-        // Ẩn divider nếu không có item visible nào phía sau
-        const idx = routes.indexOf(cfg);
-        const hasVisibleAfter = routes
-          .slice(idx + 1)
-          .some(
-            (next) =>
-              (next.type === "collapse" && next.show !== false && canView(next, userInfo)) ||
-              next.type === "title"
-          );
-        // Nếu phía sau là title mà title bị ẩn thì divider cũng ẩn
-        const nextTitle = routes.slice(idx + 1).find((n) => n.type === "title");
-        if (nextTitle) {
-          const titleIdx = routes.indexOf(nextTitle);
-          const titleHasChild = routes
-            .slice(titleIdx + 1)
-            .some(
-              (next) => next.type === "collapse" && next.show !== false && canView(next, userInfo)
-            );
-          if (!titleHasChild) return null;
-        }
-
-        return (
-          <Divider
-            key={key}
-            light={
-              (!darkMode && !whiteSidenav && !transparentSidenav) ||
-              (darkMode && !transparentSidenav && whiteSidenav)
-            }
-          />
-        );
-      }
-
-      return null;
-    });
+  // Gom các mục collapse hiển thị được vào nhóm rồi render theo GROUP_ORDER
+  const visibleCollapses = routes.filter(
+    (r) => r.type === "collapse" && r.show !== false && canView(r, userInfo)
+  );
+  const buckets = new Map();
+  visibleCollapses.forEach((r) => {
+    const g = KEY_GROUP[r.key] || "Khác";
+    if (!buckets.has(g)) buckets.set(g, []);
+    buckets.get(g).push(r);
+  });
+  const orderedGroups = [
+    ...GROUP_ORDER.filter((g) => buckets.has(g)),
+    ...[...buckets.keys()].filter((g) => !GROUP_ORDER.includes(g)),
+  ];
+  const renderRoutes = orderedGroups.map((group, gi) => (
+    <MDBox key={`grp-${group}`}>
+      {gi > 0 && (
+        <Divider
+          light={
+            (!darkMode && !whiteSidenav && !transparentSidenav) ||
+            (darkMode && !transparentSidenav && whiteSidenav)
+          }
+        />
+      )}
+      <MDTypography
+        color={textColor}
+        display="block"
+        variant="caption"
+        fontWeight="bold"
+        textTransform="uppercase"
+        pl={3}
+        mt={gi === 0 ? 1 : 2}
+        mb={1}
+        ml={1}
+      >
+        {group}
+      </MDTypography>
+      {buckets.get(group).map((cfg) => renderCollapseItem(cfg))}
+    </MDBox>
+  ));
 
   // Đăng xuất
   const handleLogout = async () => {
