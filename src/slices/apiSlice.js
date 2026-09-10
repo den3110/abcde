@@ -85,6 +85,7 @@ export const apiSlice = createApi({
     "NicknameRequest",
     "OverlayGeneratorKey",
     "RecordingDriveStatus",
+    "OpsStatus",
     "AdminCache",
     "AdminLivePlayback",
     "DashboardMetrics",

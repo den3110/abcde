@@ -36,6 +36,10 @@ import {
   useTestZaloZnsMutation,
   useRefreshZaloZnsTokenMutation,
   useGetEventLiveStatsQuery,
+  useGetOpsStatusQuery,
+  useTestOpsChannelMutation,
+  useRunOpsCheckMutation,
+  useSendOpsDigestMutation,
 } from "slices/settingsApiSlice";
 import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -1081,6 +1085,216 @@ function ZaloZnsSection() {
             {testing ? "Đang gửi…" : "Gửi OTP thử"}
           </Button>
         </Stack>
+      </Stack>
+    </Section>
+  );
+}
+
+const OPS_STATUS_META = {
+  ok: { color: "success.main", icon: "✅" },
+  warn: { color: "warning.main", icon: "⚠️" },
+  error: { color: "error.main", icon: "🔴" },
+  critical: { color: "error.main", icon: "🚨" },
+  skip: { color: "text.disabled", icon: "⚪️" },
+};
+
+function OpsMonitorSection() {
+  const { data, refetch } = useGetSystemSettingsQuery();
+  const {
+    data: opsStatus,
+    isFetching: statusFetching,
+    refetch: refetchStatus,
+  } = useGetOpsStatusQuery({});
+  const [updateSettings, { isLoading: saving }] = useUpdateSystemSettingsMutation();
+  const [testChannel, { isLoading: testing }] = useTestOpsChannelMutation();
+  const [runCheck, { isLoading: running }] = useRunOpsCheckMutation();
+  const [sendDigest, { isLoading: sendingDigest }] = useSendOpsDigestMutation();
+
+  const o = data?.opsMonitor || {};
+  const [enabled, setEnabled] = useState(false);
+  const [digestEnabled, setDigestEnabled] = useState(true);
+  const [chatId, setChatId] = useState("");
+  const [threadId, setThreadId] = useState("");
+  const [appLabel, setAppLabel] = useState("");
+  const [botToken, setBotToken] = useState("");
+
+  useEffect(() => {
+    if (!data) return;
+    const src = data.opsMonitor || {};
+    setEnabled(src.enabled === true);
+    setDigestEnabled(src.digestEnabled !== false);
+    setChatId(src.chatId || "");
+    setThreadId(src.threadId || "");
+    setAppLabel(src.appLabel || "");
+  }, [data]);
+
+  const onSave = async () => {
+    const body = {
+      opsMonitor: {
+        enabled,
+        digestEnabled,
+        chatId: chatId.trim(),
+        threadId: threadId.trim(),
+        appLabel: appLabel.trim(),
+      },
+    };
+    if (botToken.trim()) body.opsMonitor.botToken = botToken.trim();
+    try {
+      await updateSettings(body).unwrap();
+      toast.success("Đã lưu cấu hình Giám sát vận hành");
+      setBotToken("");
+      refetch();
+      refetchStatus();
+    } catch (err) {
+      toast.error(err?.data?.message || "Lưu cấu hình thất bại");
+    }
+  };
+
+  const onTest = async () => {
+    try {
+      const res = await testChannel().unwrap();
+      if (res?.delivered) toast.success("Đã gửi tin test — kiểm tra group Telegram.");
+      else toast.warning(res?.message || "Không gửi được. Kiểm tra token/chat id.");
+    } catch (err) {
+      toast.error(err?.data?.message || "Gửi tin test thất bại");
+    }
+  };
+
+  const onRunCheck = async () => {
+    try {
+      const res = await runCheck({ notify: true }).unwrap();
+      toast.success(`Đã quét — ${res?.notified?.length || 0} cảnh báo được gửi.`);
+      refetchStatus();
+    } catch (err) {
+      toast.error(err?.data?.message || "Quét thất bại");
+    }
+  };
+
+  const onSendDigest = async () => {
+    try {
+      await sendDigest().unwrap();
+      toast.success("Đã gửi báo cáo tổng hợp.");
+    } catch (err) {
+      toast.error(err?.data?.message || "Gửi báo cáo thất bại");
+    }
+  };
+
+  const snapshot = opsStatus?.snapshot;
+  const results = Array.isArray(snapshot?.results) ? snapshot.results : [];
+  const counts = snapshot?.counts || {};
+
+  return (
+    <Section
+      title="Giám sát vận hành — cảnh báo Telegram"
+      desc="Tự động báo lên 1 group Telegram khi: token sắp/đã hết hạn (Zalo, Google Drive, YouTube, Facebook), SSL sắp hết hạn, lỗi server, có phiếu hỗ trợ / đơn duyệt HLV–chủ sân, tồn đọng cần xử lý. Bỏ trống token/chat id sẽ dùng biến môi trường TELEGRAM_OPS_*."
+    >
+      <Stack spacing={1.5}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          <Typography variant="body2">Bật giám sát &amp; cảnh báo Telegram</Typography>
+        </Stack>
+
+        <Alert severity={o.botTokenSet ? "success" : "warning"}>
+          {o.botTokenSet
+            ? `Đã lưu bot token${
+                opsStatus ? ` · nguồn cấu hình: ${opsStatus.configSource === "settings" ? "Cài đặt" : "ENV"} · ${opsStatus.chatCount} group` : ""
+              }`
+            : "Chưa có bot token trong Cài đặt — dán bên dưới, hoặc để trống nếu đã cấu hình qua ENV."}
+        </Alert>
+
+        <TextField
+          label="Bot token (Telegram)"
+          type="password"
+          placeholder={o.botTokenSet ? "•••••• (để trống nếu không đổi)" : "123456:ABC-..."}
+          fullWidth
+          value={botToken}
+          onChange={(e) => setBotToken(e.target.value)}
+          autoComplete="new-password"
+          helperText="Tạo bot qua @BotFather. Bot PHẢI được thêm vào group nhận cảnh báo."
+        />
+        <TextField
+          label="Chat ID (nhiều group: phân tách bằng dấu phẩy)"
+          placeholder="VD: -1004307465456"
+          fullWidth
+          value={chatId}
+          onChange={(e) => setChatId(e.target.value)}
+          helperText="ID group thường bắt đầu bằng -100. Dùng @userinfobot hoặc lệnh /getchatid của bot KYC để lấy."
+        />
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+          <TextField
+            label="Thread ID (tuỳ chọn — topic)"
+            fullWidth
+            value={threadId}
+            onChange={(e) => setThreadId(e.target.value)}
+          />
+          <TextField
+            label="Nhãn hệ thống (tuỳ chọn)"
+            placeholder="PickleTour"
+            fullWidth
+            value={appLabel}
+            onChange={(e) => setAppLabel(e.target.value)}
+          />
+        </Stack>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch
+            checked={digestEnabled}
+            disabled={!enabled}
+            onChange={(e) => setDigestEnabled(e.target.checked)}
+          />
+          <Typography variant="body2" color={enabled ? "text.primary" : "text.disabled"}>
+            Gửi báo cáo tổng hợp hằng ngày (mặc định 08:00)
+          </Typography>
+        </Stack>
+
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} flexWrap="wrap">
+          <Button variant="contained" onClick={onSave} disabled={saving} sx={{ minWidth: 150 }}>
+            {saving ? "Đang lưu…" : "Lưu cấu hình"}
+          </Button>
+          <Button variant="outlined" onClick={onTest} disabled={testing} sx={{ minWidth: 150 }}>
+            {testing ? "…" : "Gửi tin test"}
+          </Button>
+          <Button variant="outlined" onClick={onRunCheck} disabled={running} sx={{ minWidth: 150 }}>
+            {running ? "…" : "Quét ngay"}
+          </Button>
+          <Button variant="text" onClick={onSendDigest} disabled={sendingDigest}>
+            {sendingDigest ? "…" : "Gửi báo cáo ngay"}
+          </Button>
+        </Stack>
+
+        <Divider textAlign="left" sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            Trạng thái hiện tại
+            {snapshot?.checkedAt
+              ? ` · cập nhật ${new Date(snapshot.checkedAt).toLocaleString("vi-VN")}`
+              : ""}
+          </Typography>
+        </Divider>
+        {statusFetching && !results.length ? (
+          <Typography variant="body2" color="text.secondary">
+            Đang tải trạng thái…
+          </Typography>
+        ) : results.length ? (
+          <Stack spacing={0.5}>
+            <Typography variant="caption" color="text.secondary">
+              {`OK: ${counts.ok || 0} · Cảnh báo: ${counts.warn || 0} · Lỗi: ${
+                (counts.error || 0) + (counts.critical || 0)
+              } · Bỏ qua: ${counts.skip || 0}`}
+            </Typography>
+            {results.map((r) => {
+              const meta = OPS_STATUS_META[r.status] || OPS_STATUS_META.skip;
+              return (
+                <Typography key={r.key} variant="body2" sx={{ color: meta.color }}>
+                  {meta.icon} <b>{r.label || r.key}</b> — {r.message}
+                  {r.hint ? ` · 👉 ${r.hint}` : ""}
+                </Typography>
+              );
+            })}
+          </Stack>
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            Chưa có dữ liệu. Bấm “Quét ngay” để chạy kiểm tra.
+          </Typography>
+        )}
       </Stack>
     </Section>
   );
@@ -2514,6 +2728,8 @@ export default function SystemSettingsPage() {
           <EventLiveSection />
 
           <ZaloZnsSection />
+
+          <OpsMonitorSection />
 
           <Section title="Upload">
             <Stack direction="row" alignItems="center" justifyContent="space-between">

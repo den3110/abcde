@@ -74,6 +74,23 @@ export const settingsApiSlice = apiSlice.injectEndpoints({
     getEventLiveStats: builder.query({
       query: (days = 30) => ({ url: `/event-live/stats?days=${days}` }),
     }),
+    // Giám sát vận hành (ops monitor)
+    getOpsStatus: builder.query({
+      query: ({ refresh = false } = {}) => ({
+        url: `/admin/ops/status${refresh ? "?refresh=1" : ""}`,
+      }),
+      providesTags: ["OpsStatus"],
+    }),
+    testOpsChannel: builder.mutation({
+      query: () => ({ url: "/admin/ops/test", method: "POST" }),
+    }),
+    runOpsCheck: builder.mutation({
+      query: (body = {}) => ({ url: "/admin/ops/run", method: "POST", body }),
+      invalidatesTags: ["OpsStatus"],
+    }),
+    sendOpsDigest: builder.mutation({
+      query: () => ({ url: "/admin/ops/digest", method: "POST" }),
+    }),
   }),
 });
 
@@ -90,4 +107,8 @@ export const {
   useRefreshZaloZnsTokenMutation,
   useGetZaloZnsLogsQuery,
   useGetEventLiveStatsQuery,
+  useGetOpsStatusQuery,
+  useTestOpsChannelMutation,
+  useRunOpsCheckMutation,
+  useSendOpsDigestMutation,
 } = settingsApiSlice;
