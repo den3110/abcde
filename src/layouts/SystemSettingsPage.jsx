@@ -246,7 +246,7 @@ const FRONTEND_UI_OPTIONS = [
   {
     value: "v3",
     label: "V3",
-    description: "Slot dự phòng cho đợt UI tiếp theo, hiện tại dùng chung shell với V2.",
+    description: "Modern Sports UI theo nhận diện navy–cyan của ứng dụng PickleTour mobile.",
   },
 ];
 
@@ -1701,9 +1701,9 @@ export default function SystemSettingsPage() {
               })}
             </Stack>
 
-            <Alert severity={form.frontendUi?.version === "v3" ? "warning" : "info"}>
+            <Alert severity="info">
               {form.frontendUi?.version === "v3"
-                ? "V3 hiện đang để sẵn slot triển khai. Trong giai đoạn này, frontend sẽ dùng cùng shell với V2 cho đến khi có giao diện V3 riêng."
+                ? "V3 sử dụng giao diện Modern Sports riêng; V1 và V2 vẫn được giữ nguyên để có thể chuyển đổi bất kỳ lúc nào."
                 : "Thay đổi này áp dụng cho frontend public và vẫn giữ nguyên toàn bộ giao diện cũ ở V1."}
             </Alert>
           </Section>
