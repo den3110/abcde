@@ -42,6 +42,7 @@ const DEFAULTS = {
   animated: false,
   speed: 6,
   bold: false,
+  selfOnly: false,
 };
 
 const PRESETS = [
@@ -319,6 +320,16 @@ export default function NameStyleEditor({ value, onChange, sampleName }) {
               />
             }
             label="In đậm"
+          />
+          <FormControlLabel
+            sx={{ display: "flex", mt: 0.5 }}
+            control={
+              <Switch
+                checked={!!ns.selfOnly}
+                onChange={(e) => set({ selfOnly: e.target.checked })}
+              />
+            }
+            label="Chỉ mình VĐV thấy màu (người khác thấy tên thường)"
           />
         </>
       )}
