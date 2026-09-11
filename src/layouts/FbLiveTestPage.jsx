@@ -9,7 +9,6 @@ import {
   Alert,
   Divider,
   Chip,
-  TextField,
   CircularProgress,
   Table,
   TableBody,
@@ -18,6 +17,9 @@ import {
   TableRow,
   Link,
   Tooltip,
+  Checkbox,
+  FormControlLabel,
+  Grid,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import StopCircleIcon from "@mui/icons-material/StopCircle";
@@ -28,6 +30,7 @@ import { toast } from "react-toastify";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import {
+  useFbLiveTestPagesQuery,
   useFbLiveTestSessionsQuery,
   useStartFbLiveTestMutation,
   useStopFbLiveTestMutation,
@@ -55,18 +58,42 @@ export default function FbLiveTestPage() {
   const { data, isFetching, refetch } = useFbLiveTestSessionsQuery(undefined, {
     pollingInterval: 4000,
   });
+  const {
+    data: pagesData,
+    isFetching: pagesFetching,
+    refetch: refetchPages,
+  } = useFbLiveTestPagesQuery(undefined, { pollingInterval: 6000 });
   const [startTest, { isLoading: starting }] = useStartFbLiveTestMutation();
   const [stopOne] = useStopFbLiveTestMutation();
   const [stopAll, { isLoading: stoppingAll }] = useStopAllFbLiveTestMutation();
 
-  const [count, setCount] = React.useState(3);
+  const [selected, setSelected] = React.useState(() => new Set());
 
   const items = data?.items || [];
   const liveCount = data?.liveCount ?? 0;
+  const pages = pagesData?.pages || [];
+  const testablePages = pages.filter((p) => p.testable);
+
+  const toggle = (pageId) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(pageId)) next.delete(pageId);
+      else next.add(pageId);
+      return next;
+    });
+  };
+  const selectAllFree = () =>
+    setSelected(new Set(testablePages.map((p) => p.pageId)));
+  const clearSelection = () => setSelected(new Set());
 
   const onStart = async () => {
+    const pageIds = [...selected];
+    if (!pageIds.length) {
+      toast.info("Chọn ít nhất 1 page để test.");
+      return;
+    }
     try {
-      const res = await startTest({ count: Number(count) || 1 }).unwrap();
+      const res = await startTest({ pageIds }).unwrap();
       const okN = (res.created || []).filter((c) => c.status === "live").length;
       const errN = (res.created || []).filter((c) => c.status === "error").length;
       toast.success(
@@ -74,7 +101,9 @@ export default function FbLiveTestPage() {
           res.stoppedReason ? ` · ${res.stoppedReason}` : ""
         }`
       );
+      clearSelection();
       refetch();
+      refetchPages();
     } catch (err) {
       toast.error(err?.data?.message || "Bắt đầu test thất bại");
     }
@@ -84,6 +113,7 @@ export default function FbLiveTestPage() {
     try {
       await stopOne(sessionId).unwrap();
       toast.info("Đã dừng 1 phiên.");
+      refetchPages();
     } catch (err) {
       toast.error(err?.data?.message || "Dừng thất bại");
     }
@@ -94,6 +124,7 @@ export default function FbLiveTestPage() {
     try {
       const res = await stopAll().unwrap();
       toast.success(`Đã dừng ${res.stopped || 0} phiên.`);
+      refetchPages();
     } catch (err) {
       toast.error(err?.data?.message || "Dừng tất cả thất bại");
     }
@@ -121,27 +152,89 @@ export default function FbLiveTestPage() {
           Chạy nhiều luồng tốn CPU/băng thông VPS — theo dõi tải máy.
         </Alert>
 
-        {/* Điều khiển */}
+        {/* Chọn page + điều khiển */}
         <Card variant="outlined" sx={{ mb: 2 }}>
           <CardContent>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }}>
-              <TextField
-                type="number"
-                label="Số page muốn test cùng lúc"
-                value={count}
-                onChange={(e) => setCount(e.target.value)}
-                inputProps={{ min: 1, max: 10 }}
-                sx={{ width: 240 }}
-                helperText="Sẽ chọn lần lượt các page rảnh (tối đa 10)."
-              />
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              flexWrap="wrap"
+              spacing={1}
+              mb={1}
+            >
+              <Typography variant="subtitle1" fontWeight={700}>
+                Chọn page để test ({selected.size} đã chọn / {testablePages.length} rảnh)
+              </Typography>
+              <Stack direction="row" spacing={1}>
+                <Button size="small" onClick={selectAllFree} disabled={!testablePages.length}>
+                  Chọn tất cả rảnh
+                </Button>
+                <Button size="small" onClick={clearSelection} disabled={!selected.size}>
+                  Bỏ chọn
+                </Button>
+                <Tooltip title="Tải lại danh sách page">
+                  <span>
+                    <Button
+                      size="small"
+                      startIcon={pagesFetching ? <CircularProgress size={12} /> : <RefreshIcon />}
+                      onClick={refetchPages}
+                      disabled={pagesFetching}
+                    >
+                      Tải lại
+                    </Button>
+                  </span>
+                </Tooltip>
+              </Stack>
+            </Stack>
+
+            {pages.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                {pagesFetching ? "Đang tải danh sách page…" : "Không có page nào trong pool."}
+              </Typography>
+            ) : (
+              <Grid container spacing={0.5}>
+                {pages.map((p) => (
+                  <Grid item xs={12} sm={6} md={4} key={p.pageId}>
+                    <FormControlLabel
+                      sx={{ m: 0 }}
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={selected.has(p.pageId)}
+                          disabled={!p.testable}
+                          onChange={() => toggle(p.pageId)}
+                        />
+                      }
+                      label={
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <Typography variant="body2">{p.pageName}</Typography>
+                          {!p.testable && (
+                            <Chip
+                              size="small"
+                              color={p.needsReauth ? "error" : "warning"}
+                              variant="outlined"
+                              label={p.reason}
+                            />
+                          )}
+                        </Stack>
+                      }
+                    />
+                  </Grid>
+                ))}
+              </Grid>
+            )}
+
+            <Divider sx={{ my: 1.5 }} />
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} flexWrap="wrap">
               <Button
                 variant="contained"
                 color="error"
                 startIcon={starting ? <CircularProgress size={16} color="inherit" /> : <PlayCircleIcon />}
                 onClick={onStart}
-                disabled={starting}
+                disabled={starting || selected.size === 0}
               >
-                {starting ? "Đang bắt đầu…" : `Bắt đầu test ${count} page`}
+                {starting ? "Đang bắt đầu…" : `Bắt đầu test ${selected.size} page đã chọn`}
               </Button>
               <Button
                 variant="outlined"
@@ -152,14 +245,14 @@ export default function FbLiveTestPage() {
               >
                 Dừng tất cả ({liveCount})
               </Button>
-              <Tooltip title="Tải lại danh sách">
+              <Tooltip title="Tải lại phiên">
                 <span>
                   <Button
                     startIcon={isFetching ? <CircularProgress size={14} /> : <RefreshIcon />}
                     onClick={refetch}
                     disabled={isFetching}
                   >
-                    Tải lại
+                    Tải lại phiên
                   </Button>
                 </span>
               </Tooltip>

@@ -39,6 +39,10 @@ export const adminFacebookApi = apiSlice.injectEndpoints({
       invalidatesTags: ["FbBootTokens"],
     }),
     // Test live nhiều page cùng lúc
+    fbLiveTestPages: builder.query({
+      query: () => ({ url: "/admin/fb/live-test/pages" }),
+      providesTags: ["FbLiveTest"],
+    }),
     fbLiveTestSessions: builder.query({
       query: () => ({ url: "/admin/fb/live-test/sessions" }),
       providesTags: ["FbLiveTest"],
@@ -67,6 +71,7 @@ export const {
   useInspectBootTokensQuery,
   useAddBootTokenMutation,
   useDeleteBootTokenMutation,
+  useFbLiveTestPagesQuery,
   useFbLiveTestSessionsQuery,
   useStartFbLiveTestMutation,
   useStopFbLiveTestMutation,
