@@ -80,6 +80,7 @@ import DriveExportMonitorPage from "layouts/DriveExportMonitorPage";
 import DriveVideoManagerPage from "layouts/DriveVideoManagerPage";
 import FbVodDriveMonitorPage from "layouts/FbVodDriveMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
+import FbBootTokensPage from "layouts/FbBootTokensPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
 import BlogManagerPage from "layouts/BlogManagerPage";
 import FeedManagerPage from "layouts/FeedManagerPage";
@@ -880,6 +881,18 @@ const routes = [
     icon: <Icon fontSize="small">vpn_key</Icon>,
     route: "/admin/fb-tokens",
     component: <FbTokensPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "FB Login Tokens",
+    key: "fb-boot-tokens",
+    icon: <Icon fontSize="small">key</Icon>,
+    route: "/admin/fb-boot-tokens",
+    component: <FbBootTokensPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,

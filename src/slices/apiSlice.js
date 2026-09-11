@@ -86,6 +86,7 @@ export const apiSlice = createApi({
     "OverlayGeneratorKey",
     "RecordingDriveStatus",
     "OpsStatus",
+    "FbBootTokens",
     "AdminCache",
     "AdminLivePlayback",
     "DashboardMetrics",
