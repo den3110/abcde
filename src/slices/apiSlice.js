@@ -88,6 +88,7 @@ export const apiSlice = createApi({
     "OpsStatus",
     "FbBootTokens",
     "FbLiveTest",
+    "YtLiveTest",
     "AdminCache",
     "AdminLivePlayback",
     "DashboardMetrics",

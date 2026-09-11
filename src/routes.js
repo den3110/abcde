@@ -82,6 +82,7 @@ import FbVodDriveMonitorPage from "layouts/FbVodDriveMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
 import FbBootTokensPage from "layouts/FbBootTokensPage";
 import FbLiveTestPage from "layouts/FbLiveTestPage";
+import YtLiveTestPage from "layouts/YtLiveTestPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
 import BlogManagerPage from "layouts/BlogManagerPage";
 import FeedManagerPage from "layouts/FeedManagerPage";
@@ -906,6 +907,18 @@ const routes = [
     icon: <Icon fontSize="small">live_tv</Icon>,
     route: "/admin/fb-live-test",
     component: <FbLiveTestPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "YouTube Live Test",
+    key: "yt-live-test",
+    icon: <Icon fontSize="small">smart_display</Icon>,
+    route: "/admin/yt-live-test",
+    component: <YtLiveTestPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,
