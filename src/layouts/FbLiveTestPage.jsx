@@ -74,6 +74,17 @@ export default function FbLiveTestPage() {
   const pages = pagesData?.pages || [];
   const testablePages = pages.filter((p) => p.testable);
 
+  // Nhóm page theo tài khoản Facebook sở hữu.
+  const accountGroups = React.useMemo(() => {
+    const m = new Map();
+    for (const p of pages) {
+      const key = p.ownerName || p.account || "Không rõ tài khoản";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(p);
+    }
+    return [...m.entries()];
+  }, [pages]);
+
   const toggle = (pageId) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -193,36 +204,63 @@ export default function FbLiveTestPage() {
                 {pagesFetching ? "Đang tải danh sách page…" : "Không có page nào trong pool."}
               </Typography>
             ) : (
-              <Grid container spacing={0.5}>
-                {pages.map((p) => (
-                  <Grid item xs={12} sm={6} md={4} key={p.pageId}>
-                    <FormControlLabel
-                      sx={{ m: 0 }}
-                      control={
-                        <Checkbox
+              accountGroups.map(([account, groupPages]) => {
+                const freeInGroup = groupPages.filter((p) => p.testable);
+                return (
+                  <Box key={account} mb={1}>
+                    <Stack direction="row" alignItems="center" spacing={1} mt={1} mb={0.5}>
+                      <Chip size="small" color="info" label={`👤 ${account}`} />
+                      <Typography variant="caption" color="text.secondary">
+                        {groupPages.length} page · {freeInGroup.length} rảnh
+                      </Typography>
+                      {freeInGroup.length > 0 && (
+                        <Button
                           size="small"
-                          checked={selected.has(p.pageId)}
-                          disabled={!p.testable}
-                          onChange={() => toggle(p.pageId)}
-                        />
-                      }
-                      label={
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <Typography variant="body2">{p.pageName}</Typography>
-                          {!p.testable && (
-                            <Chip
-                              size="small"
-                              color={p.needsReauth ? "error" : "warning"}
-                              variant="outlined"
-                              label={p.reason}
-                            />
-                          )}
-                        </Stack>
-                      }
-                    />
-                  </Grid>
-                ))}
-              </Grid>
+                          onClick={() =>
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              freeInGroup.forEach((p) => next.add(p.pageId));
+                              return next;
+                            })
+                          }
+                        >
+                          Chọn hết nhóm
+                        </Button>
+                      )}
+                    </Stack>
+                    <Grid container spacing={0.5}>
+                      {groupPages.map((p) => (
+                        <Grid item xs={12} sm={6} md={4} key={p.pageId}>
+                          <FormControlLabel
+                            sx={{ m: 0 }}
+                            control={
+                              <Checkbox
+                                size="small"
+                                checked={selected.has(p.pageId)}
+                                disabled={!p.testable}
+                                onChange={() => toggle(p.pageId)}
+                              />
+                            }
+                            label={
+                              <Stack direction="row" spacing={0.5} alignItems="center">
+                                <Typography variant="body2">{p.pageName}</Typography>
+                                {!p.testable && (
+                                  <Chip
+                                    size="small"
+                                    color={p.needsReauth ? "error" : "default"}
+                                    variant="outlined"
+                                    label={p.reason}
+                                  />
+                                )}
+                              </Stack>
+                            }
+                          />
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </Box>
+                );
+              })
             )}
 
             <Divider sx={{ my: 1.5 }} />
@@ -276,6 +314,7 @@ export default function FbLiveTestPage() {
                   <TableHead>
                     <TableRow>
                       <TableCell>Page</TableCell>
+                      <TableCell>Tài khoản</TableCell>
                       <TableCell>Trạng thái</TableCell>
                       <TableCell>Bắt đầu</TableCell>
                       <TableCell>Xem</TableCell>
@@ -297,6 +336,11 @@ export default function FbLiveTestPage() {
                                 {s.error}
                               </Typography>
                             )}
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {s.ownerName || "—"}
+                            </Typography>
                           </TableCell>
                           <TableCell>
                             <Chip size="small" color={meta.color} label={meta.label} />
