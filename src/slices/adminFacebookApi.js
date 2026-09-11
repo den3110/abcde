@@ -38,6 +38,26 @@ export const adminFacebookApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["FbBootTokens"],
     }),
+    // Test live nhiều page cùng lúc
+    fbLiveTestSessions: builder.query({
+      query: () => ({ url: "/admin/fb/live-test/sessions" }),
+      providesTags: ["FbLiveTest"],
+    }),
+    startFbLiveTest: builder.mutation({
+      query: (body) => ({ url: "/admin/fb/live-test/start", method: "POST", body }),
+      invalidatesTags: ["FbLiveTest"],
+    }),
+    stopFbLiveTest: builder.mutation({
+      query: (sessionId) => ({
+        url: `/admin/fb/live-test/${sessionId}/stop`,
+        method: "POST",
+      }),
+      invalidatesTags: ["FbLiveTest"],
+    }),
+    stopAllFbLiveTest: builder.mutation({
+      query: () => ({ url: "/admin/fb/live-test/stop-all", method: "POST" }),
+      invalidatesTags: ["FbLiveTest"],
+    }),
   }),
   overrideExisting: true,
 });
@@ -47,4 +67,8 @@ export const {
   useInspectBootTokensQuery,
   useAddBootTokenMutation,
   useDeleteBootTokenMutation,
+  useFbLiveTestSessionsQuery,
+  useStartFbLiveTestMutation,
+  useStopFbLiveTestMutation,
+  useStopAllFbLiveTestMutation,
 } = adminFacebookApi;

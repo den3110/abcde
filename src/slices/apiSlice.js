@@ -87,6 +87,7 @@ export const apiSlice = createApi({
     "RecordingDriveStatus",
     "OpsStatus",
     "FbBootTokens",
+    "FbLiveTest",
     "AdminCache",
     "AdminLivePlayback",
     "DashboardMetrics",

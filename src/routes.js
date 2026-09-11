@@ -81,6 +81,7 @@ import DriveVideoManagerPage from "layouts/DriveVideoManagerPage";
 import FbVodDriveMonitorPage from "layouts/FbVodDriveMonitorPage";
 import FbTokensPage from "layouts/FbTokensPage";
 import FbBootTokensPage from "layouts/FbBootTokensPage";
+import FbLiveTestPage from "layouts/FbLiveTestPage";
 import NewsAdminPage from "layouts/NewsAdminPage";
 import BlogManagerPage from "layouts/BlogManagerPage";
 import FeedManagerPage from "layouts/FeedManagerPage";
@@ -893,6 +894,18 @@ const routes = [
     icon: <Icon fontSize="small">key</Icon>,
     route: "/admin/fb-boot-tokens",
     component: <FbBootTokensPage />,
+    private: true,
+    roles: ["admin"],
+    requireAdminAndSuperAdmin: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "FB Live Test",
+    key: "fb-live-test",
+    icon: <Icon fontSize="small">live_tv</Icon>,
+    route: "/admin/fb-live-test",
+    component: <FbLiveTestPage />,
     private: true,
     roles: ["admin"],
     requireAdminAndSuperAdmin: true,
