@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import {
   Box,
   Card,
@@ -153,6 +154,32 @@ function TokenCard({ item, onDelete, deleting }) {
     </Card>
   );
 }
+
+TokenCard.propTypes = {
+  item: PropTypes.shape({
+    index: PropTypes.number,
+    fingerprint: PropTypes.string,
+    preview: PropTypes.string,
+    valid: PropTypes.bool,
+    neverExpires: PropTypes.bool,
+    expiresAt: PropTypes.string,
+    dataAccessExpiresAt: PropTypes.string,
+    message: PropTypes.string,
+    scopes: PropTypes.arrayOf(PropTypes.string),
+    pageCount: PropTypes.number,
+    pagesError: PropTypes.string,
+    pages: PropTypes.arrayOf(
+      PropTypes.shape({ id: PropTypes.string, name: PropTypes.string })
+    ),
+    owner: PropTypes.shape({ id: PropTypes.string, name: PropTypes.string }),
+  }).isRequired,
+  onDelete: PropTypes.func.isRequired,
+  deleting: PropTypes.bool,
+};
+
+TokenCard.defaultProps = {
+  deleting: false,
+};
 
 export default function FbBootTokensPage() {
   const { data, isFetching, refetch, isError, error } = useInspectBootTokensQuery();
