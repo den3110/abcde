@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 // Access analytics — số lượt truy cập gần đây (1/7/30 ngày) + chi tiết ai truy cập.
 import { useEffect, useMemo, useState } from "react";
 import {
