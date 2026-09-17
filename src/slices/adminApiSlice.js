@@ -230,6 +230,28 @@ export const adminApiSlice = apiSlice.injectEndpoints({
     }),
 
     // =========================
+    // ACCESS ANALYTICS — số lượt truy cập 1/7/30 ngày
+    // =========================
+    getAccessAnalyticsSummary: builder.query({
+      query: () => `/admin/stats/access-analytics/summary`,
+      providesTags: ["AuthLog"],
+      keepUnusedDataFor: 30,
+    }),
+    getAccessAnalyticsUsers: builder.query({
+      query: ({ days = 7, channel = "", page = 1, pageSize = 30, keyword = "" } = {}) => {
+        const params = new URLSearchParams();
+        params.set("days", String(days));
+        if (channel) params.set("channel", channel);
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
+        if (keyword) params.set("keyword", keyword);
+        return `/admin/stats/access-analytics/users?${params.toString()}`;
+      },
+      providesTags: ["AuthLog"],
+      keepUnusedDataFor: 15,
+    }),
+
+    // =========================
     // EVALUATOR MANAGEMENT (mới)
     // =========================
     /** Danh sách evaluator + filter */
@@ -387,6 +409,8 @@ export const {
   useGetAssessmentHistoryQuery,
   useGetAuthLogsQuery,
   useGetAuthLogDetailQuery,
+  useGetAccessAnalyticsSummaryQuery,
+  useGetAccessAnalyticsUsersQuery,
 
   // evaluators
   useGetEvaluatorsQuery,

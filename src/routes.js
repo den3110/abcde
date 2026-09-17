@@ -14,6 +14,7 @@ import CoachApprovalsPage from "layouts/coaches/CoachApprovalsPage";
 import SelfAssessmentManagementPage from "layouts/user/SelfAssessmentManagementPage";
 import AssessmentHistoryPage from "layouts/user/AssessmentHistoryPage";
 import AuthLogManagementPage from "layouts/user/AuthLogManagementPage";
+import AccessAnalyticsPage from "layouts/user/AccessAnalyticsPage";
 
 // 🆕 Trang quản trị giải đấu
 import TournamentsListPage from "layouts/tournament/TournamentsListPage";
@@ -718,6 +719,17 @@ const routes = [
     private: true,
     roles: ["superadmin", "superuser"],
     requireAdminAndSuperUser: true,
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Thống kê truy cập",
+    key: "access-analytics",
+    icon: <Icon fontSize="small">insights</Icon>,
+    route: "/admin/access-analytics",
+    component: <AccessAnalyticsPage />,
+    private: true,
+    roles: ["admin", "superadmin", "superuser"],
     show: true,
   },
   {
