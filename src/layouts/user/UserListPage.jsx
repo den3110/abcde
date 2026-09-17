@@ -25,6 +25,13 @@ import {
   Checkbox,
   FormControlLabel,
   InputAdornment,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  Divider,
+  Typography,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -32,6 +39,8 @@ import EditIcon from "@mui/icons-material/Edit";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { toast } from "react-toastify";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import DocumentScannerIcon from "@mui/icons-material/DocumentScanner";
+import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import VerifiedIcon from "@mui/icons-material/HowToReg";
 import CancelIcon from "@mui/icons-material/Cancel";
 import Visibility from "@mui/icons-material/Visibility";
@@ -55,6 +64,7 @@ import {
   useVerifyUserPhoneMutation,
   useSetUserPhoneRequiredMutation,
   useReviewKycMutation,
+  useFillCccdForUserMutation,
   useUpdateRankingMutation,
   useChangeUserPasswordMutation,
   usePromoteToEvaluatorMutation,
@@ -252,6 +262,71 @@ export default function UserManagement() {
   const [edit, setEdit] = useState(null);
   const [kyc, setKyc] = useState(null);
   const [zoom, setZoom] = useState(null);
+  // ==== OCR CCCD (Cedrus) — đọc trực tiếp trong dialog KYC ====
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrData, setOcrData] = useState(null);
+  const [ocrError, setOcrError] = useState(null);
+  const [ocrApplying, setOcrApplying] = useState(false);
+  const [autoRunOcr, setAutoRunOcr] = useState(false);
+  const [fillCccdForUserMut] = useFillCccdForUserMutation();
+  const resetOcr = () => {
+    setOcrData(null);
+    setOcrError(null);
+    setOcrLoading(false);
+    setOcrApplying(false);
+  };
+  const runOcr = async (userId) => {
+    if (!userId) return;
+    setOcrLoading(true);
+    setOcrError(null);
+    setOcrData(null);
+    try {
+      const r = await fillCccdForUserMut({ id: userId, dryRun: true }).unwrap();
+      setOcrData(r);
+    } catch (e) {
+      setOcrError(
+        e?.data?.message || e?.error || e?.message || "Đọc OCR thất bại",
+      );
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+  const applyOcr = async (overwrite) => {
+    if (!kyc?._id) return;
+    setOcrApplying(true);
+    try {
+      const r = await fillCccdForUserMut({
+        id: kyc._id,
+        dryRun: false,
+        overwrite,
+      }).unwrap();
+      showSnack(
+        "success",
+        r?.changed ? "Đã áp dụng OCR CCCD" : "Không có gì thay đổi",
+      );
+      resetOcr();
+      setKyc(null);
+      refetch?.();
+    } catch (e) {
+      showSnack(
+        "error",
+        e?.data?.message || e?.error || e?.message || "Áp dụng OCR lỗi",
+      );
+    } finally {
+      setOcrApplying(false);
+    }
+  };
+  useEffect(() => {
+    if (!kyc) {
+      resetOcr();
+      return;
+    }
+    if (autoRunOcr) {
+      setAutoRunOcr(false);
+      runOcr(kyc._id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kyc, autoRunOcr]);
   const [del, setDel] = useState(null);
 
   // Snackbar
@@ -451,11 +526,25 @@ export default function UserManagement() {
           <Stack direction="row" spacing={1} justifyContent="center">
             <Chip size="small" label={KYC_LABEL[st]} color={KYC_COLOR[st]} />
             {u.cccdImages?.front && (
-              <Tooltip title="Xem ảnh CCCD">
-                <IconButton size="small" onClick={() => setKyc(u)}>
-                  <ZoomInIcon fontSize="inherit" />
-                </IconButton>
-              </Tooltip>
+              <>
+                <Tooltip title="Xem ảnh CCCD">
+                  <IconButton size="small" onClick={() => setKyc(u)}>
+                    <ZoomInIcon fontSize="inherit" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Đọc CCCD bằng OCR (Cedrus)">
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={() => {
+                      setAutoRunOcr(true);
+                      setKyc(u);
+                    }}
+                  >
+                    <DocumentScannerIcon fontSize="inherit" />
+                  </IconButton>
+                </Tooltip>
+              </>
             )}
           </Stack>
         ),
@@ -752,6 +841,182 @@ export default function UserManagement() {
                           {kyc.note}
                         </MDTypography>
                       </Box>
+                    )}
+                  </Card>
+                </Grid>
+
+                {/* OCR CCCD panel */}
+                <Grid item xs={12}>
+                  <Card
+                    variant="outlined"
+                    sx={{ p: 2, borderColor: "primary.main" }}
+                  >
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      spacing={1}
+                      mb={1.5}
+                      flexWrap="wrap"
+                    >
+                      <DocumentScannerIcon fontSize="small" color="primary" />
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        Đọc thông tin bằng OCR
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label="Cedrus OCR"
+                        variant="outlined"
+                        color="primary"
+                      />
+                      <Box flexGrow={1} />
+                      <Button
+                        size="small"
+                        variant={ocrData ? "outlined" : "contained"}
+                        color="primary"
+                        onClick={() => runOcr(kyc._id)}
+                        disabled={
+                          ocrLoading || ocrApplying || !kyc?.cccdImages?.front
+                        }
+                        startIcon={
+                          ocrLoading ? (
+                            <CircularProgress size={14} />
+                          ) : (
+                            <DocumentScannerIcon fontSize="small" />
+                          )
+                        }
+                      >
+                        {ocrData ? "Đọc lại" : "Đọc CCCD"}
+                      </Button>
+                    </Stack>
+
+                    {ocrError && (
+                      <Alert severity="error" sx={{ mb: 1 }}>
+                        {ocrError}
+                      </Alert>
+                    )}
+
+                    {ocrData?.extracted ? (
+                      <>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ width: 140 }}>Trường</TableCell>
+                              <TableCell>Hiện tại (DB)</TableCell>
+                              <TableCell>OCR đọc được</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {[
+                              ["Họ & tên", "name"],
+                              ["Ngày sinh", "dob"],
+                              ["Giới tính", "gender"],
+                              ["Tỉnh/Thành", "province"],
+                              ["Số CCCD", "cccd"],
+                            ].map(([label, k]) => {
+                              const cur = kyc?.[k] ?? "";
+                              const ocr = ocrData.extracted?.[k] ?? "";
+                              const eqCur = String(cur ?? "").trim();
+                              const eqOcr = String(ocr ?? "").trim();
+                              const different =
+                                eqOcr && eqCur !== eqOcr;
+                              return (
+                                <TableRow
+                                  key={k}
+                                  sx={
+                                    different
+                                      ? { backgroundColor: "warning.lightest" }
+                                      : {}
+                                  }
+                                >
+                                  <TableCell sx={{ color: "text.secondary" }}>
+                                    {label}
+                                  </TableCell>
+                                  <TableCell>
+                                    {k === "dob"
+                                      ? prettyDate(cur) || "—"
+                                      : cur || "—"}
+                                  </TableCell>
+                                  <TableCell
+                                    sx={
+                                      k === "cccd"
+                                        ? { fontFamily: "monospace" }
+                                        : undefined
+                                    }
+                                  >
+                                    {k === "dob"
+                                      ? ocr
+                                        ? prettyDate(ocr)
+                                        : "—"
+                                      : ocr || "—"}
+                                    {different && (
+                                      <Chip
+                                        size="small"
+                                        label={
+                                          eqCur ? "khác" : "trống → có"
+                                        }
+                                        color={
+                                          eqCur ? "warning" : "success"
+                                        }
+                                        variant="outlined"
+                                        sx={{ ml: 1, height: 20 }}
+                                      />
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                        <Divider sx={{ my: 1.5 }} />
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          justifyContent="flex-end"
+                          flexWrap="wrap"
+                        >
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="primary"
+                            startIcon={<AutoFixHighIcon fontSize="small" />}
+                            onClick={() => applyOcr(false)}
+                            disabled={ocrApplying}
+                          >
+                            Chỉ điền trường trống
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="warning"
+                            startIcon={<AutoFixHighIcon fontSize="small" />}
+                            onClick={() => applyOcr(true)}
+                            disabled={ocrApplying}
+                          >
+                            {ocrApplying ? (
+                              <>
+                                <CircularProgress
+                                  size={14}
+                                  sx={{ mr: 1, color: "inherit" }}
+                                />
+                                Đang ghi đè…
+                              </>
+                            ) : (
+                              "Ghi đè theo OCR"
+                            )}
+                          </Button>
+                        </Stack>
+                      </>
+                    ) : (
+                      !ocrLoading &&
+                      !ocrError && (
+                        <Typography variant="caption" color="text.secondary">
+                          Bấm{" "}
+                          <strong>Đọc CCCD</strong> để trích xuất các trường
+                          từ ảnh CCCD bằng OCR mới (ocr.cedrus.dev). Kết quả
+                          sẽ so sánh với dữ liệu hiện tại; bạn có thể áp dụng
+                          chỉ điền trường trống hoặc ghi đè.
+                        </Typography>
+                      )
                     )}
                   </Card>
                 </Grid>
