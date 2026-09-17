@@ -325,7 +325,7 @@ export default function UserManagement() {
       setAutoRunOcr(false);
       runOcr(kyc._id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [kyc, autoRunOcr]);
   const [del, setDel] = useState(null);
 
