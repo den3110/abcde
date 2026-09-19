@@ -65,6 +65,16 @@ export default function AutoLivePage() {
     }
     return m;
   }, [sessions]);
+  // Session error gần nhất theo court — để hiển thị lý do lỗi nếu chưa có
+  // phiên đang chạy.
+  const lastErrorByCourt = useMemo(() => {
+    const m = new Map();
+    for (const s of sessions) {
+      const cid = String(s.court?._id || s.court);
+      if (s.status === "error" && !m.has(cid)) m.set(cid, s);
+    }
+    return m;
+  }, [sessions]);
 
   const doStop = async (id) => {
     if (!window.confirm("Dừng phiên live cho court này?")) return;
@@ -115,6 +125,7 @@ export default function AutoLivePage() {
               <TableBody>
                 {(courts?.items || courts || []).map((c) => {
                   const running = runningByCourt.get(String(c._id));
+                  const lastErr = !running && lastErrorByCourt.get(String(c._id));
                   return (
                     <TableRow key={c._id}>
                       <TableCell>
@@ -133,6 +144,15 @@ export default function AutoLivePage() {
                             <Typography variant="caption" color="text.secondary">
                               {running.currentMatchLabel || "chờ trận…"}
                             </Typography>
+                          </Stack>
+                        ) : lastErr ? (
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            {statusChip("error")}
+                            <Tooltip title={lastErr.lastError || ""}>
+                              <Typography variant="caption" color="error" sx={{ maxWidth: 200 }} noWrap>
+                                {lastErr.lastError || "lỗi worker"}
+                              </Typography>
+                            </Tooltip>
                           </Stack>
                         ) : (
                           <Chip size="small" label="—" />
