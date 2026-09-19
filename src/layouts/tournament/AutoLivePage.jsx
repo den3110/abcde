@@ -195,7 +195,6 @@ export default function AutoLivePage() {
 
 function CamPicker({ deviceId, onChange }) {
   const { data: cams = [], isLoading } = useListAvailableCamsQuery();
-  // Group theo venue để dropdown gọn: <venueName>/<courtName> · <camName>
   const items = useMemo(() => {
     const arr = [...cams];
     arr.sort((a, b) =>
@@ -222,7 +221,10 @@ function CamPicker({ deviceId, onChange }) {
       <Select
         label="Chọn cam Imou"
         value={deviceId}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          const cam = items.find((c) => c.deviceId === e.target.value);
+          onChange(e.target.value, cam);
+        }}
       >
         {items.map((c) => (
           <MenuItem key={`${c.courtId}:${c.deviceId}`} value={c.deviceId}>
@@ -236,6 +238,7 @@ function CamPicker({ deviceId, onChange }) {
 
 function StartDialog({ tournamentId, court, onClose }) {
   const [deviceId, setDeviceId] = useState("");
+  const [venueId, setVenueId] = useState("");
   const [destinations, setDestinations] = useState([]);
   const [dtype, setDtype] = useState("rtmp");
   const [durl, setDurl] = useState("");
@@ -274,6 +277,7 @@ function StartDialog({ tournamentId, court, onClose }) {
         tournamentId,
         courtStationId: court._id,
         imouDeviceId: deviceId,
+        venueId,
         destinations,
       }).unwrap();
       onClose();
@@ -287,7 +291,10 @@ function StartDialog({ tournamentId, court, onClose }) {
       <DialogTitle>Bắt đầu Auto-Live — {court.label || court.name}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} mt={1}>
-          <CamPicker deviceId={deviceId} onChange={setDeviceId} />
+          <CamPicker
+            deviceId={deviceId}
+            onChange={(id, cam) => { setDeviceId(id); setVenueId(cam?.venueId || ""); }}
+          />
 
           <Divider>Điểm đến livestream</Divider>
 
