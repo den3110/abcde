@@ -90,6 +90,11 @@ export default function AutoLivePage() {
           hiện tại kết thúc và court được assign trận mới, overlay tự đổi mà
           không đứt live.
         </Alert>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          MVP giai đoạn 1: cam Imou hiện gắn vào <b>sân vật lý (VenueCourt)</b>,
+          chưa auto-link với CourtStation của giải. Admin cần copy tay
+          <code> deviceId </code> của cam từ trang chủ sân → dán vào dialog Start.
+        </Alert>
 
         <Card>
           <CardContent>
@@ -100,7 +105,6 @@ export default function AutoLivePage() {
               <TableHead>
                 <TableRow>
                   <TableCell>Sân</TableCell>
-                  <TableCell>Cam Imou</TableCell>
                   <TableCell>Phiên hiện tại</TableCell>
                   <TableCell>Điểm đến</TableCell>
                   <TableCell>Uptime</TableCell>
@@ -108,23 +112,18 @@ export default function AutoLivePage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {courts.map((c) => {
+                {(courts?.items || courts || []).map((c) => {
                   const running = runningByCourt.get(String(c._id));
-                  const cams = c.imouCams || [];
                   return (
                     <TableRow key={c._id}>
                       <TableCell>
-                        <b>{c.name}</b>
+                        <b>{c.label || c.name}</b>
                         {c.code ? <Chip size="small" label={c.code} sx={{ ml: 1 }} /> : null}
-                      </TableCell>
-                      <TableCell>
-                        {cams.length === 0 ? (
-                          <Chip size="small" color="warning" label="Chưa gắn cam" />
-                        ) : (
-                          cams.map((cam) => (
-                            <Chip key={cam.deviceId} size="small" label={cam.name || cam.deviceId} sx={{ mr: 0.5 }} />
-                          ))
-                        )}
+                        {c.clusterName ? (
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            {c.clusterName}
+                          </Typography>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         {running ? (
@@ -160,7 +159,6 @@ export default function AutoLivePage() {
                           <Button
                             size="small" variant="contained"
                             startIcon={<PlayArrowIcon />}
-                            disabled={cams.length === 0}
                             onClick={() => setStartOpen(c)}
                           >Bắt đầu</Button>
                         )}
@@ -168,11 +166,11 @@ export default function AutoLivePage() {
                     </TableRow>
                   );
                 })}
-                {courts.length === 0 && (
+                {(courts?.items || courts || []).length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} align="center">
+                    <TableCell colSpan={5} align="center">
                       <Typography variant="caption" color="text.secondary">
-                        Giải chưa có court được gán venue có cam Imou.
+                        Giải chưa có sân được phân bổ.
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -195,7 +193,7 @@ export default function AutoLivePage() {
 }
 
 function StartDialog({ tournamentId, court, onClose }) {
-  const [deviceId, setDeviceId] = useState((court.imouCams || [])[0]?.deviceId || "");
+  const [deviceId, setDeviceId] = useState("");
   const [destinations, setDestinations] = useState([]);
   const [dtype, setDtype] = useState("rtmp");
   const [durl, setDurl] = useState("");
@@ -244,19 +242,15 @@ function StartDialog({ tournamentId, court, onClose }) {
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Bắt đầu Auto-Live — {court.name}</DialogTitle>
+      <DialogTitle>Bắt đầu Auto-Live — {court.label || court.name}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} mt={1}>
-          <FormControl fullWidth size="small">
-            <InputLabel>Cam Imou</InputLabel>
-            <Select label="Cam Imou" value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
-              {(court.imouCams || []).map((cam) => (
-                <MenuItem key={cam.deviceId} value={cam.deviceId}>
-                  {cam.name || cam.deviceId}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <TextField
+            size="small" fullWidth
+            label="Imou deviceId (copy từ trang cụm sân → Camera Imou)"
+            value={deviceId} onChange={(e) => setDeviceId(e.target.value)}
+            helperText="MVP: nhập tay. Sẽ auto-link với court sau."
+          />
 
           <Divider>Điểm đến livestream</Divider>
 
