@@ -22,6 +22,7 @@ import {
   useStopAutoLiveMutation,
   useListTournamentCourtsForAutoLiveQuery,
   useListAdminFbPagesQuery,
+  useListAvailableCamsQuery,
 } from "slices/tournamentAutoLiveApiSlice";
 
 function statusChip(status) {
@@ -192,6 +193,47 @@ export default function AutoLivePage() {
   );
 }
 
+function CamPicker({ deviceId, onChange }) {
+  const { data: cams = [], isLoading } = useListAvailableCamsQuery();
+  // Group theo venue để dropdown gọn: <venueName>/<courtName> · <camName>
+  const items = useMemo(() => {
+    const arr = [...cams];
+    arr.sort((a, b) =>
+      (a.venueName || "").localeCompare(b.venueName || "") ||
+      (a.courtName || "").localeCompare(b.courtName || "") ||
+      (a.camName || "").localeCompare(b.camName || "")
+    );
+    return arr;
+  }, [cams]);
+  if (isLoading) {
+    return <TextField size="small" fullWidth disabled label="Đang tải danh sách cam..." />;
+  }
+  if (!items.length) {
+    return (
+      <Alert severity="warning">
+        Chưa có cam Imou nào được gắn vào sân. Chủ sân cần login Imou trong app
+        mobile rồi gắn cam vào sân trước.
+      </Alert>
+    );
+  }
+  return (
+    <FormControl fullWidth size="small">
+      <InputLabel>Chọn cam Imou</InputLabel>
+      <Select
+        label="Chọn cam Imou"
+        value={deviceId}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {items.map((c) => (
+          <MenuItem key={`${c.courtId}:${c.deviceId}`} value={c.deviceId}>
+            {c.venueName} / {c.courtName} · {c.camName}
+          </MenuItem>
+        ))}
+      </Select>
+    </FormControl>
+  );
+}
+
 function StartDialog({ tournamentId, court, onClose }) {
   const [deviceId, setDeviceId] = useState("");
   const [destinations, setDestinations] = useState([]);
@@ -245,12 +287,7 @@ function StartDialog({ tournamentId, court, onClose }) {
       <DialogTitle>Bắt đầu Auto-Live — {court.label || court.name}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} mt={1}>
-          <TextField
-            size="small" fullWidth
-            label="Imou deviceId (copy từ trang cụm sân → Camera Imou)"
-            value={deviceId} onChange={(e) => setDeviceId(e.target.value)}
-            helperText="MVP: nhập tay. Sẽ auto-link với court sau."
-          />
+          <CamPicker deviceId={deviceId} onChange={setDeviceId} />
 
           <Divider>Điểm đến livestream</Divider>
 

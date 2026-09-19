@@ -27,6 +27,9 @@ export const tournamentAutoLiveApiSlice = apiSlice.injectEndpoints({
     listAdminFbPages: builder.query({
       query: () => `/live-app/facebook-pages`,
     }),
+    listAvailableCams: builder.query({
+      query: () => `/tournament-auto-live/available-cams`,
+    }),
   }),
 });
 
@@ -36,4 +39,5 @@ export const {
   useStopAutoLiveMutation,
   useListTournamentCourtsForAutoLiveQuery,
   useListAdminFbPagesQuery,
+  useListAvailableCamsQuery,
 } = tournamentAutoLiveApiSlice;
