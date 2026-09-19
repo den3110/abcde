@@ -28,6 +28,7 @@ import AdminMatchesList from "layouts/match/AdminMatchesList";
 // 🆕 Trọng tài
 import Icon from "@mui/material/Icon";
 import AdminTournamentMatches from "layouts/tournament/AdminTournamentMatches";
+import AutoLivePage from "layouts/tournament/AutoLivePage";
 import TournamentBracketView from "layouts/tournament/TournamentBracketView";
 import AdminRefereeConsole from "layouts/tournament/referee/AdminRefereeConsole";
 import RefereeMatches from "layouts/tournament/referee/RefereeMatches";
@@ -537,6 +538,16 @@ const routes = [
     key: "tournament-matches",
     route: "/admin/tournaments/:id/matches",
     component: <AdminTournamentMatches />,
+    private: true,
+    roles: ["admin"],
+  },
+  {
+    show: false,
+    type: "collapse",
+    name: "Auto-Live giải đấu",
+    key: "tournament-auto-live",
+    route: "/admin/tournaments/:id/auto-live",
+    component: <AutoLivePage />,
     private: true,
     roles: ["admin"],
   },
