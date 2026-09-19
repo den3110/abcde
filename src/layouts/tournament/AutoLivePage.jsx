@@ -14,6 +14,7 @@ import {
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import {
@@ -162,8 +163,21 @@ export default function AutoLivePage() {
                         {running ? (
                           <Stack direction="row" spacing={0.5}>
                             {(running.destinations || []).map((d, i) => (
-                              <Tooltip key={i} title={`${d.type.toUpperCase()} ${d.pageName || ""}`}>
-                                <Chip size="small" label={d.type.toUpperCase()} />
+                              <Tooltip
+                                key={i}
+                                title={d.watchUrl ? `Mở link xem: ${d.watchUrl}` : `${d.type.toUpperCase()} ${d.pageName || ""}`}
+                              >
+                                <Chip
+                                  size="small"
+                                  color={d.watchUrl ? "primary" : "default"}
+                                  icon={d.watchUrl ? <OpenInNewIcon fontSize="small" /> : undefined}
+                                  label={`${d.type.toUpperCase()}${d.pageName ? ` · ${d.pageName}` : ""}`}
+                                  clickable={!!d.watchUrl}
+                                  component={d.watchUrl ? "a" : "div"}
+                                  href={d.watchUrl || undefined}
+                                  target={d.watchUrl ? "_blank" : undefined}
+                                  rel={d.watchUrl ? "noopener noreferrer" : undefined}
+                                />
                               </Tooltip>
                             ))}
                           </Stack>
