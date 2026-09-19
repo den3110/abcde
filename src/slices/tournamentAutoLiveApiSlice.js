@@ -30,6 +30,9 @@ export const tournamentAutoLiveApiSlice = apiSlice.injectEndpoints({
     listAvailableCams: builder.query({
       query: () => `/tournament-auto-live/available-cams`,
     }),
+    getAutoLiveStats: builder.query({
+      query: () => `/tournament-auto-live/stats`,
+    }),
   }),
 });
 
@@ -40,4 +43,5 @@ export const {
   useListTournamentCourtsForAutoLiveQuery,
   useListAdminFbPagesQuery,
   useListAvailableCamsQuery,
+  useGetAutoLiveStatsQuery,
 } = tournamentAutoLiveApiSlice;

@@ -24,6 +24,7 @@ import {
   useListTournamentCourtsForAutoLiveQuery,
   useListAdminFbPagesQuery,
   useListAvailableCamsQuery,
+  useGetAutoLiveStatsQuery,
 } from "slices/tournamentAutoLiveApiSlice";
 
 function statusChip(status) {
@@ -54,6 +55,7 @@ export default function AutoLivePage() {
     { pollingInterval: 10_000 }
   );
   const { data: courts = [] } = useListTournamentCourtsForAutoLiveQuery(tournamentId);
+  const { data: stats } = useGetAutoLiveStatsQuery(undefined, { pollingInterval: 10_000 });
   const [startOpen, setStartOpen] = useState(null); // court object đang mở dialog
   const [stopAutoLive] = useStopAutoLiveMutation();
 
@@ -108,6 +110,27 @@ export default function AutoLivePage() {
           <code> deviceId </code> của cam từ trang chủ sân → dán vào dialog Start.
         </Alert>
 
+        {stats && (
+          <Card sx={{ mb: 2 }}>
+            <CardContent>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Tài nguyên máy chủ
+              </Typography>
+              <Grid container spacing={2}>
+                <ResCard label="Đang live" value={`${stats.liveCount} luồng`} />
+                <ResCard label="CPU" value={`${stats.cores} lõi · load ${stats.load1}`} />
+                <ResCard label="RAM" value={`${Math.round((stats.totalMemMB - stats.freeMemMB) / 1024)}/${Math.round(stats.totalMemMB / 1024)} GB`} />
+                <ResCard
+                  label="Ước tính tối đa"
+                  value={`~${stats.maxConcurrent} luồng`}
+                  hint={`${stats.avgCorePerStream || "?"} lõi + ${stats.avgMemPerStreamMB || "?"}MB/luồng · nghẽn ${stats.limitedBy === "cpu" ? "CPU" : "RAM"}`}
+                  highlight
+                />
+              </Grid>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardContent>
             <Typography variant="subtitle1" fontWeight={700} mb={1}>
@@ -119,6 +142,7 @@ export default function AutoLivePage() {
                   <TableCell>Sân</TableCell>
                   <TableCell>Phiên hiện tại</TableCell>
                   <TableCell>Điểm đến</TableCell>
+                  <TableCell>CPU / RAM</TableCell>
                   <TableCell>Uptime</TableCell>
                   <TableCell align="right">Hành động</TableCell>
                 </TableRow>
@@ -183,6 +207,13 @@ export default function AutoLivePage() {
                           </Stack>
                         ) : "—"}
                       </TableCell>
+                      <TableCell>
+                        {running ? (
+                          <Typography variant="caption" color="text.secondary">
+                            {(running.cpuPct || 0)}% · {(running.memMB || 0)}MB
+                          </Typography>
+                        ) : "—"}
+                      </TableCell>
                       <TableCell>{running ? fmtUptime(running.startedAt) : "—"}</TableCell>
                       <TableCell align="right">
                         {running ? (
@@ -203,7 +234,7 @@ export default function AutoLivePage() {
                 })}
                 {(courts?.items || courts || []).length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={6} align="center">
                       <Typography variant="caption" color="text.secondary">
                         Giải chưa có sân được phân bổ.
                       </Typography>
@@ -381,5 +412,25 @@ function StartDialog({ tournamentId, court, onClose }) {
         </Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+function ResCard({ label, value, hint, highlight }) {
+  return (
+    <Grid item xs={6} md={3}>
+      <Box
+        sx={{
+          p: 1.5, borderRadius: 2, height: "100%",
+          border: (t) => `1px solid ${highlight ? t.palette.primary.main : t.palette.divider}`,
+          bgcolor: (t) => (highlight ? t.palette.action.hover : "transparent"),
+        }}
+      >
+        <Typography variant="caption" color="text.secondary">{label}</Typography>
+        <Typography variant="h6" fontWeight={800} lineHeight={1.2}>{value}</Typography>
+        {hint ? (
+          <Typography variant="caption" color="text.secondary">{hint}</Typography>
+        ) : null}
+      </Box>
+    </Grid>
   );
 }
