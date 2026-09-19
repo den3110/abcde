@@ -301,9 +301,17 @@ function CamPicker({ deviceId, onChange }) {
   );
 }
 
+const CORNER_OPTS = [
+  { v: "top-left", l: "Trên · Trái" },
+  { v: "top-right", l: "Trên · Phải" },
+  { v: "bottom-left", l: "Dưới · Trái" },
+  { v: "bottom-right", l: "Dưới · Phải" },
+];
+
 function StartDialog({ tournamentId, court, onClose }) {
   const [deviceId, setDeviceId] = useState("");
   const [venueId, setVenueId] = useState("");
+  const [layout, setLayout] = useState({ scoreboard: "top-left", brand: "top-right", sponsor: "bottom-right" });
   const [destinations, setDestinations] = useState([]);
   const [dtype, setDtype] = useState("rtmp");
   const [durl, setDurl] = useState("");
@@ -344,6 +352,7 @@ function StartDialog({ tournamentId, court, onClose }) {
         imouDeviceId: deviceId,
         venueId,
         destinations,
+        layout,
       }).unwrap();
       onClose();
     } catch (e) {
@@ -360,6 +369,28 @@ function StartDialog({ tournamentId, court, onClose }) {
             deviceId={deviceId}
             onChange={(id, cam) => { setDeviceId(id); setVenueId(cam?.venueId || ""); }}
           />
+
+          <Divider>Vị trí overlay</Divider>
+          <Stack direction="row" spacing={1}>
+            {[
+              { key: "scoreboard", label: "Bảng điểm" },
+              { key: "brand", label: "Logo PickleTour" },
+              { key: "sponsor", label: "Tài trợ" },
+            ].map((f) => (
+              <FormControl key={f.key} size="small" fullWidth>
+                <InputLabel>{f.label}</InputLabel>
+                <Select
+                  label={f.label}
+                  value={layout[f.key]}
+                  onChange={(e) => setLayout((l) => ({ ...l, [f.key]: e.target.value }))}
+                >
+                  {CORNER_OPTS.map((o) => (
+                    <MenuItem key={o.v} value={o.v}>{o.l}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ))}
+          </Stack>
 
           <Divider>Điểm đến livestream</Divider>
 
