@@ -311,6 +311,8 @@ const CORNER_OPTS = [
 function StartDialog({ tournamentId, court, onClose }) {
   const [deviceId, setDeviceId] = useState("");
   const [venueId, setVenueId] = useState("");
+  const [srcType, setSrcType] = useState("imou"); // imou | url
+  const [sourceUrl, setSourceUrl] = useState("");
   const [layout, setLayout] = useState({ scoreboard: "top-left", brand: "top-right", sponsor: "bottom-right" });
   const [destinations, setDestinations] = useState([]);
   const [dtype, setDtype] = useState("rtmp");
@@ -343,14 +345,16 @@ function StartDialog({ tournamentId, court, onClose }) {
 
   const submit = async () => {
     setErr("");
-    if (!deviceId) { setErr("Chọn cam"); return; }
+    if (srcType === "imou" && !deviceId) { setErr("Chọn cam"); return; }
+    if (srcType === "url" && !sourceUrl.trim()) { setErr("Nhập Custom link"); return; }
     if (destinations.length === 0) { setErr("Thêm tối thiểu 1 điểm đến"); return; }
     try {
       await startAutoLive({
         tournamentId,
         courtStationId: court._id,
-        imouDeviceId: deviceId,
-        venueId,
+        imouDeviceId: srcType === "imou" ? deviceId : "",
+        venueId: srcType === "imou" ? venueId : "",
+        sourceUrl: srcType === "url" ? sourceUrl.trim() : "",
         destinations,
         layout,
       }).unwrap();
@@ -365,10 +369,25 @@ function StartDialog({ tournamentId, court, onClose }) {
       <DialogTitle>Bắt đầu Auto-Live — {court.label || court.name}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} mt={1}>
-          <CamPicker
-            deviceId={deviceId}
-            onChange={(id, cam) => { setDeviceId(id); setVenueId(cam?.venueId || ""); }}
-          />
+          <FormControl fullWidth size="small">
+            <InputLabel>Nguồn video</InputLabel>
+            <Select label="Nguồn video" value={srcType} onChange={(e) => setSrcType(e.target.value)}>
+              <MenuItem value="imou">Camera Imou</MenuItem>
+              <MenuItem value="url">Custom link (m3u8 / RTSP / RTMP)</MenuItem>
+            </Select>
+          </FormControl>
+          {srcType === "imou" ? (
+            <CamPicker
+              deviceId={deviceId}
+              onChange={(id, cam) => { setDeviceId(id); setVenueId(cam?.venueId || ""); }}
+            />
+          ) : (
+            <TextField
+              size="small" fullWidth label="Link nguồn"
+              placeholder="https://cam.lavong.club/hls/cam_1/stream.m3u8"
+              value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)}
+            />
+          )}
 
           <Divider>Vị trí overlay</Divider>
           <Stack direction="row" spacing={1}>
