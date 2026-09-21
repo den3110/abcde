@@ -9,8 +9,10 @@ import {
   Card, CardContent, Grid, Typography, Chip, Button, IconButton,
   Table, TableBody, TableCell, TableHead, TableRow, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, MenuItem, Select, InputLabel,
-  FormControl, Alert, Box, Stack, Tooltip, Divider,
+  FormControl, Alert, Box, Stack, Tooltip, Divider, Collapse,
 } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -105,9 +107,11 @@ export default function AutoLivePage() {
           không đứt live.
         </Alert>
         <Alert severity="warning" sx={{ mb: 2 }}>
-          MVP giai đoạn 1: cam Imou hiện gắn vào <b>sân vật lý (VenueCourt)</b>,
-          chưa auto-link với CourtStation của giải. Admin cần copy tay
-          <code> deviceId </code> của cam từ trang chủ sân → dán vào dialog Start.
+          <b>Độ mượt phụ thuộc nguồn.</b> Cam Imou qua <b>cloud</b> bị relay giới
+          hạn (~0.85× realtime) nên live dài có thể trễ/giật — hãy bật tuỳ chọn
+          <b>Luồng phụ</b>, <b>Tắt tiếng cam</b>, <b>Re-sync</b> trong dialog Bắt
+          đầu. Mượt & trễ thấp nhất: dùng <b>Custom link RTSP nội bộ</b> của cam
+          (bỏ qua cloud Imou), hoặc chạy <b>app desktop</b> tại sân dùng GPU.
         </Alert>
 
         {stats && (
@@ -315,12 +319,22 @@ function StartDialog({ tournamentId, court, onClose }) {
   const [sourceUrl, setSourceUrl] = useState("");
   const [layout, setLayout] = useState({ scoreboard: "top-left", brand: "top-right", sponsor: "bottom-right" });
   const [destinations, setDestinations] = useState([]);
-  const [dtype, setDtype] = useState("rtmp");
+  const [dtype, setDtype] = useState("fb");
   const [durl, setDurl] = useState("");
   const [dkey, setDkey] = useState("");
   const [dlabel, setDlabel] = useState("");
+  const [ytKey, setYtKey] = useState("");
   const [selectedFbPage, setSelectedFbPage] = useState("");
   const [err, setErr] = useState("");
+  // Cấu hình nâng cao (khớp advancedEnv backend)
+  const [advOpen, setAdvOpen] = useState(false);
+  const [adv, setAdv] = useState({
+    resolutionH: 1080, fps: 0, videoBitrateKbps: 4500, audioBitrateKbps: 128, encoder: "auto",
+  });
+  // Tuỳ chọn riêng cho cam Imou (cloud)
+  const [imouStreamId, setImouStreamId] = useState("0"); // 0=chính, 1=phụ (nhẹ)
+  const [imouAudio, setImouAudio] = useState("0");        // 0=tắt tiếng cam
+  const [resyncSec, setResyncSec] = useState(600);        // re-sync mép live (Imou)
   const { data: fbPages = [] } = useListAdminFbPagesQuery();
   const [startAutoLive, { isLoading }] = useStartAutoLiveMutation();
 
@@ -333,6 +347,15 @@ function StartDialog({ tournamentId, court, onClose }) {
         type: "fb", label: page.pageName, pageId: page.pageId, pageName: page.pageName,
         streamUrl: "", // backend fill sau khi tạo live_video
       }]);
+      return;
+    }
+    if (dtype === "youtube") {
+      if (!ytKey.trim()) { setErr("Nhập YouTube stream key (từ YouTube Studio)"); return; }
+      setDestinations((d) => [...d, {
+        type: "rtmp", label: "YouTube",
+        streamUrl: "rtmp://a.rtmp.youtube.com/live2", streamKey: ytKey.trim(),
+      }]);
+      setYtKey("");
       return;
     }
     if (!durl) { setErr("Nhập URL RTMP"); return; }
@@ -348,6 +371,17 @@ function StartDialog({ tournamentId, court, onClose }) {
     if (srcType === "imou" && !deviceId) { setErr("Chọn cam"); return; }
     if (srcType === "url" && !sourceUrl.trim()) { setErr("Nhập Custom link"); return; }
     if (destinations.length === 0) { setErr("Thêm tối thiểu 1 điểm đến"); return; }
+    const advanced = {
+      resolutionH: Number(adv.resolutionH) || 1080,
+      fps: Number(adv.fps) || 0,
+      videoBitrateKbps: Number(adv.videoBitrateKbps) || 4500,
+      audioBitrateKbps: Number(adv.audioBitrateKbps) || 128,
+      encoder: adv.encoder || "auto",
+      // Chỉ áp cho nguồn Imou (cloud)
+      ...(srcType === "imou"
+        ? { imouStreamId, imouAudio, resyncSec: Number(resyncSec) || 0 }
+        : {}),
+    };
     try {
       await startAutoLive({
         tournamentId,
@@ -357,6 +391,7 @@ function StartDialog({ tournamentId, court, onClose }) {
         sourceUrl: srcType === "url" ? sourceUrl.trim() : "",
         destinations,
         layout,
+        advanced,
       }).unwrap();
       onClose();
     } catch (e) {
@@ -384,9 +419,45 @@ function StartDialog({ tournamentId, court, onClose }) {
           ) : (
             <TextField
               size="small" fullWidth label="Link nguồn"
-              placeholder="https://cam.lavong.club/hls/cam_1/stream.m3u8"
+              placeholder="rtsp://admin:pass@192.168.1.10:554/cam/realmonitor?channel=1&subtype=0"
               value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)}
+              helperText="RTSP/HLS/RTMP. Nguồn nội bộ (LAN) mượt & trễ thấp nhất."
             />
+          )}
+
+          {srcType === "imou" && (
+            <>
+              <Alert severity="info" sx={{ py: 0.5 }}>
+                Cam Imou kéo qua <b>cloud Imou</b> có thể trễ/giật khi live dài
+                (relay giới hạn ~0.85× realtime). Mượt nhất: dùng <b>Custom link
+                RTSP nội bộ</b> của cam. Các tuỳ chọn dưới giúp giảm nhẹ.
+              </Alert>
+              <Stack direction="row" spacing={1}>
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Luồng cam</InputLabel>
+                  <Select label="Luồng cam" value={imouStreamId} onChange={(e) => setImouStreamId(e.target.value)}>
+                    <MenuItem value="0">Chính (nét, nặng)</MenuItem>
+                    <MenuItem value="1">Phụ (nhẹ, đỡ trễ)</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Tiếng cam</InputLabel>
+                  <Select label="Tiếng cam" value={imouAudio} onChange={(e) => setImouAudio(e.target.value)}>
+                    <MenuItem value="0">Tắt (khuyến nghị)</MenuItem>
+                    <MenuItem value="1">Bật</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Re-sync</InputLabel>
+                  <Select label="Re-sync" value={resyncSec} onChange={(e) => setResyncSec(e.target.value)}>
+                    <MenuItem value={0}>Tắt</MenuItem>
+                    <MenuItem value={300}>Mỗi 5 phút</MenuItem>
+                    <MenuItem value={600}>Mỗi 10 phút</MenuItem>
+                    <MenuItem value={900}>Mỗi 15 phút</MenuItem>
+                  </Select>
+                </FormControl>
+              </Stack>
+            </>
           )}
 
           <Divider>Vị trí overlay</Divider>
@@ -411,6 +482,71 @@ function StartDialog({ tournamentId, court, onClose }) {
             ))}
           </Stack>
 
+          <Box>
+            <Button
+              size="small" color="inherit"
+              onClick={() => setAdvOpen((v) => !v)}
+              endIcon={advOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            >
+              Cấu hình nâng cao (bitrate, độ phân giải, encoder…)
+            </Button>
+            <Collapse in={advOpen}>
+              <Stack spacing={1.5} mt={1}>
+                <Stack direction="row" spacing={1}>
+                  <FormControl size="small" fullWidth>
+                    <InputLabel>Độ phân giải</InputLabel>
+                    <Select label="Độ phân giải" value={adv.resolutionH}
+                      onChange={(e) => setAdv((a) => ({ ...a, resolutionH: e.target.value }))}>
+                      <MenuItem value={1080}>1080p</MenuItem>
+                      <MenuItem value={720}>720p</MenuItem>
+                      <MenuItem value={480}>480p</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" fullWidth>
+                    <InputLabel>FPS</InputLabel>
+                    <Select label="FPS" value={adv.fps}
+                      onChange={(e) => setAdv((a) => ({ ...a, fps: e.target.value }))}>
+                      <MenuItem value={0}>Khớp nguồn</MenuItem>
+                      <MenuItem value={30}>30</MenuItem>
+                      <MenuItem value={25}>25</MenuItem>
+                      <MenuItem value={20}>20</MenuItem>
+                      <MenuItem value={15}>15</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" fullWidth>
+                    <InputLabel>Encoder</InputLabel>
+                    <Select label="Encoder" value={adv.encoder}
+                      onChange={(e) => setAdv((a) => ({ ...a, encoder: e.target.value }))}>
+                      <MenuItem value="auto">Tự động (ưu tiên GPU)</MenuItem>
+                      <MenuItem value="x264">x264 (CPU)</MenuItem>
+                      <MenuItem value="nvenc">NVIDIA NVENC</MenuItem>
+                      <MenuItem value="videotoolbox">Apple VideoToolbox</MenuItem>
+                      <MenuItem value="qsv">Intel QuickSync</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Stack>
+                <Stack direction="row" spacing={1}>
+                  <TextField
+                    size="small" fullWidth type="number" label="Video bitrate (kbps)"
+                    value={adv.videoBitrateKbps}
+                    onChange={(e) => setAdv((a) => ({ ...a, videoBitrateKbps: e.target.value }))}
+                    helperText="Mạng yếu → 2000–3000; khoẻ → 5000–8000"
+                  />
+                  <FormControl size="small" fullWidth>
+                    <InputLabel>Audio (kbps)</InputLabel>
+                    <Select label="Audio (kbps)" value={adv.audioBitrateKbps}
+                      onChange={(e) => setAdv((a) => ({ ...a, audioBitrateKbps: e.target.value }))}>
+                      <MenuItem value={64}>64</MenuItem>
+                      <MenuItem value={96}>96</MenuItem>
+                      <MenuItem value={128}>128</MenuItem>
+                      <MenuItem value={160}>160</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Stack>
+              </Stack>
+            </Collapse>
+          </Box>
+
           <Divider>Điểm đến livestream</Divider>
 
           <Stack direction="row" spacing={1}>
@@ -431,6 +567,12 @@ function StartDialog({ tournamentId, court, onClose }) {
                   ))}
                 </Select>
               </FormControl>
+            ) : dtype === "youtube" ? (
+              <TextField
+                size="small" fullWidth label="YouTube stream key"
+                placeholder="xxxx-xxxx-xxxx-xxxx (YouTube Studio → Phát trực tiếp)"
+                value={ytKey} onChange={(e) => setYtKey(e.target.value)}
+              />
             ) : (
               <>
                 <TextField size="small" label="RTMP URL" fullWidth value={durl} onChange={(e) => setDurl(e.target.value)} />

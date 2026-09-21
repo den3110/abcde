@@ -24,6 +24,7 @@ import {
 import {
   AccountTree as AccountTreeIcon,
   AutoStories as AutoStoriesIcon,
+  LiveTv as LiveTvIcon,
 } from "@mui/icons-material";
 import {
   Add as AddIcon,
@@ -134,6 +135,7 @@ export default function TournamentsListPage() {
   const goMatches = useCallback((id) => navigate(`/admin/tournaments/${id}/matches`), [navigate]);
   const goEdit = useCallback((id) => navigate(`/admin/tournaments/${id}/edit`), [navigate]);
   const goCourts = useCallback((id) => navigate(`/admin/tournaments/${id}/courts`), [navigate]);
+  const goAutoLive = useCallback((id) => navigate(`/admin/tournaments/${id}/auto-live`), [navigate]);
   const goAiImport = useCallback(
     (id) => navigate(`/admin/ai-registration-import?t=${encodeURIComponent(id)}`),
     [navigate]
@@ -286,6 +288,11 @@ export default function TournamentsListPage() {
             <Tooltip title="AI Bracket Story">
               <IconButton size="small" color="warning" onClick={() => goBracketStory(t._id)}>
                 <AutoStoriesIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Auto-Live (livestream tự động)">
+              <IconButton size="small" color="error" onClick={() => goAutoLive(t._id)}>
+                <LiveTvIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title="Sửa">
