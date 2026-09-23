@@ -33,6 +33,15 @@ export const tournamentAutoLiveApiSlice = apiSlice.injectEndpoints({
     getAutoLiveStats: builder.query({
       query: () => `/tournament-auto-live/stats`,
     }),
+    // Đầu thu Dahua/DMSS qua P2P (nguồn auto-live). Trạng thái (KHÔNG trả mật khẩu).
+    getVenueDahua: builder.query({
+      query: (venueId) => `/tournament-auto-live/venue-dahua?venueId=${venueId}`,
+      providesTags: (r, e, venueId) => [{ type: "VenueDahua", id: venueId }],
+    }),
+    setVenueDahua: builder.mutation({
+      query: (body) => ({ url: `/tournament-auto-live/venue-dahua`, method: "POST", body }),
+      invalidatesTags: (r, e, { venueId }) => [{ type: "VenueDahua", id: venueId }],
+    }),
   }),
 });
 
@@ -44,4 +53,6 @@ export const {
   useListAdminFbPagesQuery,
   useListAvailableCamsQuery,
   useGetAutoLiveStatsQuery,
+  useGetVenueDahuaQuery,
+  useSetVenueDahuaMutation,
 } = tournamentAutoLiveApiSlice;

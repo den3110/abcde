@@ -27,7 +27,10 @@ import {
   useListAdminFbPagesQuery,
   useListAvailableCamsQuery,
   useGetAutoLiveStatsQuery,
+  useGetVenueDahuaQuery,
+  useSetVenueDahuaMutation,
 } from "slices/tournamentAutoLiveApiSlice";
+import { useListVenuesAdminQuery } from "slices/venueAdminApiSlice";
 
 function statusChip(status) {
   const map = {
@@ -305,6 +308,124 @@ function CamPicker({ deviceId, onChange }) {
   );
 }
 
+// Nguồn đầu thu Dahua/DMSS qua P2P (serial+mật khẩu, khác mạng, không port-forward).
+// Chọn venue đã cấu hình đầu thu + kênh cam. GIỚI HẠN: đầu thu ~1 phiên P2P/lúc →
+// 1 cam/lúc. Có phần cấu hình creds (mã hoá ở backend).
+function DahuaSourcePicker({ venueId, channel, onChange }) {
+  const { data: venuesRes, isLoading: loadingVenues } = useListVenuesAdminQuery({ limit: 200 });
+  const venues = venuesRes?.venues || venuesRes?.data || venuesRes?.items ||
+    (Array.isArray(venuesRes) ? venuesRes : []);
+  const { data: dahua } = useGetVenueDahuaQuery(venueId, { skip: !venueId });
+  const [setVenueDahua, { isLoading: saving }] = useSetVenueDahuaMutation();
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [form, setForm] = useState({ serial: "", username: "admin", password: "", channels: 8 });
+  const [msg, setMsg] = useState("");
+
+  React.useEffect(() => {
+    if (dahua) {
+      setForm((f) => ({
+        ...f,
+        serial: dahua.serial || "",
+        username: dahua.username || "admin",
+        channels: dahua.channels || 8,
+        password: "", // không hiển thị mật khẩu cũ
+      }));
+    }
+  }, [dahua]);
+
+  const chans = Math.max(1, Number(dahua?.channels || form.channels || 8));
+  const saveCfg = async () => {
+    setMsg("");
+    if (!venueId) { setMsg("Chọn venue trước"); return; }
+    if (!form.serial.trim()) { setMsg("Nhập serial đầu thu"); return; }
+    try {
+      await setVenueDahua({
+        venueId, serial: form.serial.trim(), username: form.username.trim() || "admin",
+        password: form.password || undefined, channels: Number(form.channels) || 8,
+      }).unwrap();
+      setMsg("Đã lưu cấu hình đầu thu.");
+      setForm((f) => ({ ...f, password: "" }));
+    } catch (e) {
+      setMsg(e?.data?.message || String(e));
+    }
+  };
+
+  return (
+    <Stack spacing={1.5}>
+      <FormControl fullWidth size="small">
+        <InputLabel>Venue (đầu thu)</InputLabel>
+        <Select
+          label="Venue (đầu thu)"
+          value={venueId || ""}
+          onChange={(e) => onChange(e.target.value, channel)}
+          disabled={loadingVenues}
+        >
+          {venues.map((v) => (
+            <MenuItem key={v._id} value={v._id}>{v.name}</MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+
+      {venueId ? (
+        dahua?.hasPassword ? (
+          <>
+            <Alert severity="success" sx={{ py: 0.5 }}>
+              Đầu thu: <b>{dahua.serial}</b> · {dahua.channels} kênh · đã có mật khẩu.
+            </Alert>
+            <FormControl size="small" sx={{ maxWidth: 200 }}>
+              <InputLabel>Kênh cam</InputLabel>
+              <Select
+                label="Kênh cam"
+                value={channel || 1}
+                onChange={(e) => onChange(venueId, Number(e.target.value))}
+              >
+                {Array.from({ length: chans }, (_, i) => i + 1).map((n) => (
+                  <MenuItem key={n} value={n}>Kênh {n}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </>
+        ) : (
+          <Alert severity="warning" sx={{ py: 0.5 }}>
+            Venue này chưa cấu hình đầu thu Dahua. Mở &quot;Cấu hình đầu thu&quot; bên dưới.
+          </Alert>
+        )
+      ) : null}
+
+      <Button size="small" onClick={() => setCfgOpen((o) => !o)} sx={{ alignSelf: "flex-start" }}>
+        {cfgOpen ? "Ẩn cấu hình đầu thu" : "Cấu hình đầu thu (serial + mật khẩu)"}
+      </Button>
+      <Collapse in={cfgOpen}>
+        <Stack spacing={1}>
+          <Alert severity="info" sx={{ py: 0.5 }}>
+            Đầu thu Dahua/DMSS truy cập TỪ XA qua P2P chỉ bằng <b>serial + mật khẩu</b>
+            {" "}(không cần port-forward/VPN). Đầu thu chỉ cho <b>~1 phiên P2P/lúc</b> → live
+            1 cam tại một thời điểm. Mật khẩu được mã hoá ở máy chủ.
+          </Alert>
+          <TextField size="small" fullWidth label="Serial đầu thu" value={form.serial}
+            onChange={(e) => setForm({ ...form, serial: e.target.value })} />
+          <Stack direction="row" spacing={1}>
+            <TextField size="small" fullWidth label="Tài khoản" value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            <TextField size="small" sx={{ maxWidth: 130 }} type="number" label="Số kênh"
+              value={form.channels}
+              onChange={(e) => setForm({ ...form, channels: e.target.value })} />
+          </Stack>
+          <TextField size="small" fullWidth type="password"
+            label={dahua?.hasPassword ? "Mật khẩu mới (để trống = giữ nguyên)" : "Mật khẩu"}
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <Button variant="outlined" size="small" onClick={saveCfg} disabled={saving || !venueId}
+            sx={{ alignSelf: "flex-start" }}>
+            {saving ? "Đang lưu..." : "Lưu cấu hình đầu thu"}
+          </Button>
+          {msg ? <Typography variant="caption" color="text.secondary">{msg}</Typography> : null}
+        </Stack>
+      </Collapse>
+    </Stack>
+  );
+}
+
 const CORNER_OPTS = [
   { v: "top-left", l: "Trên · Trái" },
   { v: "top-right", l: "Trên · Phải" },
@@ -335,6 +456,7 @@ function StartDialog({ tournamentId, court, onClose }) {
   const [imouStreamId, setImouStreamId] = useState("0"); // 0=chính, 1=phụ (nhẹ)
   const [imouAudio, setImouAudio] = useState("0");        // 0=tắt tiếng cam
   const [resyncSec, setResyncSec] = useState(600);        // re-sync mép live (Imou)
+  const [dahuaChannel, setDahuaChannel] = useState(1);    // kênh cam đầu thu Dahua P2P
   const { data: fbPages = [] } = useListAdminFbPagesQuery();
   const [startAutoLive, { isLoading }] = useStartAutoLiveMutation();
 
@@ -369,6 +491,7 @@ function StartDialog({ tournamentId, court, onClose }) {
   const submit = async () => {
     setErr("");
     if (srcType === "imou" && !deviceId) { setErr("Chọn cam"); return; }
+    if (srcType === "dahua" && !venueId) { setErr("Chọn venue có đầu thu Dahua"); return; }
     if (srcType === "url" && !sourceUrl.trim()) { setErr("Nhập Custom link"); return; }
     if (destinations.length === 0) { setErr("Thêm tối thiểu 1 điểm đến"); return; }
     const advanced = {
@@ -387,8 +510,11 @@ function StartDialog({ tournamentId, court, onClose }) {
         tournamentId,
         courtStationId: court._id,
         imouDeviceId: srcType === "imou" ? deviceId : "",
-        venueId: srcType === "imou" ? venueId : "",
+        venueId: (srcType === "imou" || srcType === "dahua") ? venueId : "",
         sourceUrl: srcType === "url" ? sourceUrl.trim() : "",
+        dahuaP2p: srcType === "dahua"
+          ? { channel: Number(dahuaChannel) || 1, subtype: 0 }
+          : undefined,
         destinations,
         layout,
         advanced,
@@ -408,15 +534,24 @@ function StartDialog({ tournamentId, court, onClose }) {
             <InputLabel>Nguồn video</InputLabel>
             <Select label="Nguồn video" value={srcType} onChange={(e) => setSrcType(e.target.value)}>
               <MenuItem value="imou">Camera Imou</MenuItem>
+              <MenuItem value="dahua">Đầu thu Dahua P2P (1 cam/lúc)</MenuItem>
               <MenuItem value="url">Custom link (m3u8 / RTSP / RTMP)</MenuItem>
             </Select>
           </FormControl>
-          {srcType === "imou" ? (
+          {srcType === "imou" && (
             <CamPicker
               deviceId={deviceId}
               onChange={(id, cam) => { setDeviceId(id); setVenueId(cam?.venueId || ""); }}
             />
-          ) : (
+          )}
+          {srcType === "dahua" && (
+            <DahuaSourcePicker
+              venueId={venueId}
+              channel={dahuaChannel}
+              onChange={(vid, ch) => { setVenueId(vid); setDahuaChannel(ch || 1); }}
+            />
+          )}
+          {srcType === "url" && (
             <TextField
               size="small" fullWidth label="Link nguồn"
               placeholder="rtsp://admin:pass@192.168.1.10:554/cam/realmonitor?channel=1&subtype=0"
