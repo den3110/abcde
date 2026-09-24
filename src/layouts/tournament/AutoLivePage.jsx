@@ -10,6 +10,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableRow, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, MenuItem, Select, InputLabel,
   FormControl, Alert, Box, Stack, Tooltip, Divider, Collapse,
+  FormControlLabel, Checkbox,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
@@ -537,6 +538,7 @@ function StartDialog({ tournamentId, court, onClose }) {
   // Mặc định PHỤ vì P2P/relay băng thông thấp → chính hay starve input sau ~1 phút.
   const [dahuaSubtype, setDahuaSubtype] = useState(1);
   const [dahuaPreview, setDahuaPreview] = useState(false);
+  const [dahuaFill, setDahuaFill] = useState(true); // phủ kín 16:9 (cắt viền) cho luồng phụ 4:3
   const { data: fbPages = [] } = useListAdminFbPagesQuery();
   const [startAutoLive, { isLoading }] = useStartAutoLiveMutation();
 
@@ -584,6 +586,8 @@ function StartDialog({ tournamentId, court, onClose }) {
       ...(srcType === "imou"
         ? { imouStreamId, imouAudio, resyncSec: Number(resyncSec) || 0 }
         : {}),
+      // Đầu thu Dahua: phủ kín 16:9 (cắt viền) cho luồng phụ 4:3
+      ...(srcType === "dahua" ? { fillScreen: dahuaFill } : {}),
     };
     try {
       await startAutoLive({
@@ -642,6 +646,10 @@ function StartDialog({ tournamentId, court, onClose }) {
                   <MenuItem value={0}>Chính (nét, nặng — chỉ khi mạng khoẻ/LAN)</MenuItem>
                 </Select>
               </FormControl>
+              <FormControlLabel
+                control={<Checkbox checked={dahuaFill} onChange={(e) => setDahuaFill(e.target.checked)} />}
+                label="Lấp đầy màn hình 16:9 (cắt viền — cho luồng phụ 4:3, hết đen 2 bên)"
+              />
               <Alert severity="info" sx={{ py: 0.5 }}>
                 Qua P2P từ xa thường rơi về <b>relay</b> (băng thông thấp) → luồng
                 <b> chính</b> hay mượt ~1 phút rồi giật/mất tín hiệu. Chọn <b>luồng phụ</b>
