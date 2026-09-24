@@ -318,7 +318,7 @@ function DahuaSourcePicker({ venueId, channel, onChange }) {
   const { data: dahua } = useGetVenueDahuaQuery(venueId, { skip: !venueId });
   const [setVenueDahua, { isLoading: saving }] = useSetVenueDahuaMutation();
   const [cfgOpen, setCfgOpen] = useState(false);
-  const [form, setForm] = useState({ serial: "", username: "admin", password: "", channels: 8 });
+  const [form, setForm] = useState({ serial: "", username: "admin", password: "", channels: 8, directHost: "" });
   const [msg, setMsg] = useState("");
 
   React.useEffect(() => {
@@ -328,6 +328,7 @@ function DahuaSourcePicker({ venueId, channel, onChange }) {
         serial: dahua.serial || "",
         username: dahua.username || "admin",
         channels: dahua.channels || 8,
+        directHost: dahua.directHost || "",
         password: "", // không hiển thị mật khẩu cũ
       }));
     }
@@ -342,6 +343,7 @@ function DahuaSourcePicker({ venueId, channel, onChange }) {
       await setVenueDahua({
         venueId, serial: form.serial.trim(), username: form.username.trim() || "admin",
         password: form.password || undefined, channels: Number(form.channels) || 8,
+        directHost: (form.directHost || "").trim(),
       }).unwrap();
       setMsg("Đã lưu cấu hình đầu thu.");
       setForm((f) => ({ ...f, password: "" }));
@@ -415,6 +417,13 @@ function DahuaSourcePicker({ venueId, channel, onChange }) {
             label={dahua?.hasPassword ? "Mật khẩu mới (để trống = giữ nguyên)" : "Mật khẩu"}
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <TextField size="small" fullWidth
+            label="Địa chỉ trực tiếp (LAN/DDNS) — khuyến nghị"
+            placeholder="picapo-qt.smartddns.tv:8554  hoặc  192.168.1.10:554"
+            value={form.directHost}
+            onChange={(e) => setForm({ ...form, directHost: e.target.value })}
+            helperText="Có địa chỉ này → kéo RTSP TRỰC TIẾP (full nét, ổn định), KHÔNG qua P2P/relay. Cần mở cổng 554 trên router (hoặc cùng LAN)."
+          />
           <Button variant="outlined" size="small" onClick={saveCfg} disabled={saving || !venueId}
             sx={{ alignSelf: "flex-start" }}>
             {saving ? "Đang lưu..." : "Lưu cấu hình đầu thu"}
