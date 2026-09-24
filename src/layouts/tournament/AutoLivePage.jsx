@@ -438,7 +438,7 @@ function DahuaSourcePicker({ venueId, channel, onChange }) {
 
 // Preview camera đầu thu Dahua: ffmpeg lấy 1 khung hình → refresh ~2.5s.
 // Fetch có kèm token (endpoint protect) rồi tạo objectURL cho <img>.
-function DahuaSnapshotPreview({ venueId, channel, subtype }) {
+function DahuaSnapshotPreview({ venueId, channel, subtype, fill = false }) {
   const [src, setSrc] = React.useState("");
   const [err, setErr] = React.useState("");
   const havingFrame = React.useRef(false);
@@ -492,7 +492,7 @@ function DahuaSnapshotPreview({ venueId, channel, subtype }) {
   return (
     <Box sx={{ mt: 1, borderRadius: 2, overflow: "hidden", bgcolor: "#000", position: "relative", aspectRatio: "16 / 9" }}>
       {src ? (
-        <img src={src} alt="camera preview" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+        <img src={src} alt="camera preview" style={{ width: "100%", height: "100%", objectFit: fill ? "cover" : "contain", display: "block" }} />
       ) : null}
       {(!src || err) && (
         <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", textAlign: "center", p: 2, fontSize: 12.5, opacity: src ? 0.85 : 1, background: src ? "rgba(0,0,0,.35)" : "transparent" }}>
@@ -669,6 +669,7 @@ function StartDialog({ tournamentId, court, onClose }) {
                   venueId={venueId}
                   channel={dahuaChannel}
                   subtype={dahuaSubtype}
+                  fill={dahuaFill}
                 />
               )}
             </>
