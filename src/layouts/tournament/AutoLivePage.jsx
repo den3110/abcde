@@ -457,6 +457,9 @@ function StartDialog({ tournamentId, court, onClose }) {
   const [imouAudio, setImouAudio] = useState("0");        // 0=tắt tiếng cam
   const [resyncSec, setResyncSec] = useState(600);        // re-sync mép live (Imou)
   const [dahuaChannel, setDahuaChannel] = useState(1);    // kênh cam đầu thu Dahua P2P
+  // 0=luồng chính (nét, NẶNG — dễ giật khi P2P relay); 1=luồng phụ (nhẹ, ỔN ĐỊNH).
+  // Mặc định PHỤ vì P2P/relay băng thông thấp → chính hay starve input sau ~1 phút.
+  const [dahuaSubtype, setDahuaSubtype] = useState(1);
   const { data: fbPages = [] } = useListAdminFbPagesQuery();
   const [startAutoLive, { isLoading }] = useStartAutoLiveMutation();
 
@@ -513,7 +516,7 @@ function StartDialog({ tournamentId, court, onClose }) {
         venueId: (srcType === "imou" || srcType === "dahua") ? venueId : "",
         sourceUrl: srcType === "url" ? sourceUrl.trim() : "",
         dahuaP2p: srcType === "dahua"
-          ? { channel: Number(dahuaChannel) || 1, subtype: 0 }
+          ? { channel: Number(dahuaChannel) || 1, subtype: Number(dahuaSubtype) }
           : undefined,
         destinations,
         layout,
@@ -545,11 +548,29 @@ function StartDialog({ tournamentId, court, onClose }) {
             />
           )}
           {srcType === "dahua" && (
-            <DahuaSourcePicker
-              venueId={venueId}
-              channel={dahuaChannel}
-              onChange={(vid, ch) => { setVenueId(vid); setDahuaChannel(ch || 1); }}
-            />
+            <>
+              <DahuaSourcePicker
+                venueId={venueId}
+                channel={dahuaChannel}
+                onChange={(vid, ch) => { setVenueId(vid); setDahuaChannel(ch || 1); }}
+              />
+              <FormControl size="small" fullWidth>
+                <InputLabel>Luồng cam</InputLabel>
+                <Select
+                  label="Luồng cam"
+                  value={dahuaSubtype}
+                  onChange={(e) => setDahuaSubtype(e.target.value)}
+                >
+                  <MenuItem value={1}>Phụ (nhẹ, ỔN ĐỊNH — khuyến nghị cho P2P/xa)</MenuItem>
+                  <MenuItem value={0}>Chính (nét, nặng — chỉ khi mạng khoẻ/LAN)</MenuItem>
+                </Select>
+              </FormControl>
+              <Alert severity="info" sx={{ py: 0.5 }}>
+                Qua P2P từ xa thường rơi về <b>relay</b> (băng thông thấp) → luồng
+                <b> chính</b> hay mượt ~1 phút rồi giật/mất tín hiệu. Chọn <b>luồng phụ</b>
+                {" "}để ổn định; muốn nét thì mở cổng RTSP (LAN/DDNS).
+              </Alert>
+            </>
           )}
           {srcType === "url" && (
             <TextField
