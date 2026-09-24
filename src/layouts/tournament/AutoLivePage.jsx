@@ -435,6 +435,73 @@ function DahuaSourcePicker({ venueId, channel, onChange }) {
   );
 }
 
+// Preview camera đầu thu Dahua: ffmpeg lấy 1 khung hình → refresh ~2.5s.
+// Fetch có kèm token (endpoint protect) rồi tạo objectURL cho <img>.
+function DahuaSnapshotPreview({ venueId, channel, subtype }) {
+  const [src, setSrc] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const havingFrame = React.useRef(false);
+  const prevUrl = React.useRef("");
+  React.useEffect(() => {
+    let alive = true;
+    let timer;
+    havingFrame.current = false;
+    setSrc("");
+    setErr("");
+    const base = String(process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
+    let token = "";
+    try { token = JSON.parse(localStorage.getItem("userInfo") || "{}")?.token || ""; } catch {}
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `${base}/tournament-auto-live/dahua-snapshot?venueId=${venueId}&channel=${channel}&subtype=${subtype}&_=${Date.now()}`,
+          { headers: token ? { authorization: `Bearer ${token}` } : {} },
+        );
+        if (!alive) return;
+        if (!res.ok) {
+          if (!havingFrame.current) {
+            let msg = "Đang chờ camera… (nguồn chưa sẵn sàng / relay chập chờn)";
+            try { const j = await res.json(); if (j?.message) msg = j.message; } catch {}
+            setErr(msg);
+          }
+        } else {
+          const blob = await res.blob();
+          if (!alive) return;
+          const url = URL.createObjectURL(blob);
+          if (prevUrl.current) URL.revokeObjectURL(prevUrl.current);
+          prevUrl.current = url;
+          havingFrame.current = true;
+          setSrc(url);
+          setErr("");
+        }
+      } catch {
+        if (alive && !havingFrame.current) setErr("Lỗi tải preview");
+      } finally {
+        if (alive) timer = setTimeout(tick, 2500);
+      }
+    };
+    tick();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      if (prevUrl.current) URL.revokeObjectURL(prevUrl.current);
+    };
+  }, [venueId, channel, subtype]);
+
+  return (
+    <Box sx={{ mt: 1, borderRadius: 2, overflow: "hidden", bgcolor: "#000", position: "relative", aspectRatio: "16 / 9" }}>
+      {src ? (
+        <img src={src} alt="camera preview" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+      ) : null}
+      {(!src || err) && (
+        <Box sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", textAlign: "center", p: 2, fontSize: 12.5, opacity: src ? 0.85 : 1, background: src ? "rgba(0,0,0,.35)" : "transparent" }}>
+          {err || "Đang lấy hình từ camera…"}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 const CORNER_OPTS = [
   { v: "top-left", l: "Trên · Trái" },
   { v: "top-right", l: "Trên · Phải" },
@@ -469,6 +536,7 @@ function StartDialog({ tournamentId, court, onClose }) {
   // 0=luồng chính (nét, NẶNG — dễ giật khi P2P relay); 1=luồng phụ (nhẹ, ỔN ĐỊNH).
   // Mặc định PHỤ vì P2P/relay băng thông thấp → chính hay starve input sau ~1 phút.
   const [dahuaSubtype, setDahuaSubtype] = useState(1);
+  const [dahuaPreview, setDahuaPreview] = useState(false);
   const { data: fbPages = [] } = useListAdminFbPagesQuery();
   const [startAutoLive, { isLoading }] = useStartAutoLiveMutation();
 
@@ -579,6 +647,22 @@ function StartDialog({ tournamentId, court, onClose }) {
                 <b> chính</b> hay mượt ~1 phút rồi giật/mất tín hiệu. Chọn <b>luồng phụ</b>
                 {" "}để ổn định; muốn nét thì mở cổng RTSP (LAN/DDNS).
               </Alert>
+              <Button
+                size="small"
+                variant={dahuaPreview ? "contained" : "outlined"}
+                disabled={!venueId}
+                onClick={() => setDahuaPreview((v) => !v)}
+                sx={{ alignSelf: "flex-start" }}
+              >
+                {dahuaPreview ? "Ẩn preview" : "👁 Xem thử camera"}
+              </Button>
+              {dahuaPreview && venueId && (
+                <DahuaSnapshotPreview
+                  venueId={venueId}
+                  channel={dahuaChannel}
+                  subtype={dahuaSubtype}
+                />
+              )}
             </>
           )}
           {srcType === "url" && (
