@@ -64,6 +64,7 @@ export const apiSlice = createApi({
     "Reconciliation",
     "Finance",
     "EmailCampaign",
+    "MailboxAccount",
     "EmailContactList",
     "EmailContacts",
     "EmailRecipients",

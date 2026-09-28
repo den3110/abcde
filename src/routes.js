@@ -61,6 +61,8 @@ import SystemSettingsPage from "layouts/SystemSettingsPage";
 import FinancePage from "layouts/finance/FinancePage";
 import EmailCampaignsPage from "layouts/email-campaigns/EmailCampaignsPage";
 import EmailContactListsPage from "layouts/email-campaigns/EmailContactListsPage";
+import MailboxPage from "layouts/mailbox/MailboxPage";
+import MailboxSettingsPage from "layouts/mailbox/MailboxSettingsPage";
 import ZaloZnsLogsPage from "layouts/ZaloZnsLogsPage";
 import EventLiveMonitorPage from "layouts/event-live/EventLiveMonitorPage";
 import ReviewModerationPage from "layouts/reviews/ReviewModerationPage";
@@ -177,6 +179,30 @@ const routes = [
     icon: <Icon fontSize="small">payments</Icon>,
     route: "/admin/finance",
     component: <FinancePage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+
+  // 🆕 Hộp thư (webmail trong admin)
+  {
+    type: "collapse",
+    name: "Hộp thư",
+    key: "admin-mailbox",
+    icon: <Icon fontSize="small">inbox</Icon>,
+    route: "/admin/mailbox",
+    component: <MailboxPage />,
+    private: true,
+    roles: ["admin"],
+    show: true,
+  },
+  {
+    type: "collapse",
+    name: "Cấu hình hộp thư",
+    key: "admin-mailbox-settings",
+    icon: <Icon fontSize="small">mail_outline</Icon>,
+    route: "/admin/mailbox-settings",
+    component: <MailboxSettingsPage />,
     private: true,
     roles: ["admin"],
     show: true,
