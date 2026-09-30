@@ -42,6 +42,19 @@ export const tournamentAutoLiveApiSlice = apiSlice.injectEndpoints({
       query: (body) => ({ url: `/tournament-auto-live/venue-dahua`, method: "POST", body }),
       invalidatesTags: (r, e, { venueId }) => [{ type: "VenueDahua", id: venueId }],
     }),
+    // Thư viện nguồn RTSP có tên (label + url + vị trí overlay).
+    listRtspSources: builder.query({
+      query: () => `/tournament-auto-live/rtsp-sources`,
+    }),
+    createRtspSource: builder.mutation({
+      query: (body) => ({ url: `/tournament-auto-live/rtsp-sources`, method: "POST", body }),
+    }),
+    updateRtspSource: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/tournament-auto-live/rtsp-sources/${id}`, method: "PUT", body }),
+    }),
+    deleteRtspSource: builder.mutation({
+      query: (id) => ({ url: `/tournament-auto-live/rtsp-sources/${id}`, method: "DELETE" }),
+    }),
   }),
 });
 
@@ -55,4 +68,8 @@ export const {
   useGetAutoLiveStatsQuery,
   useGetVenueDahuaQuery,
   useSetVenueDahuaMutation,
+  useListRtspSourcesQuery,
+  useCreateRtspSourceMutation,
+  useUpdateRtspSourceMutation,
+  useDeleteRtspSourceMutation,
 } = tournamentAutoLiveApiSlice;

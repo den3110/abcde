@@ -30,6 +30,10 @@ import {
   useGetAutoLiveStatsQuery,
   useGetVenueDahuaQuery,
   useSetVenueDahuaMutation,
+  useListRtspSourcesQuery,
+  useCreateRtspSourceMutation,
+  useUpdateRtspSourceMutation,
+  useDeleteRtspSourceMutation,
 } from "slices/tournamentAutoLiveApiSlice";
 import { useListVenuesAdminQuery } from "slices/venueAdminApiSlice";
 
@@ -542,6 +546,52 @@ function StartDialog({ tournamentId, court, onClose }) {
   const { data: fbPages = [] } = useListAdminFbPagesQuery();
   const [startAutoLive, { isLoading }] = useStartAutoLiveMutation();
 
+  // Thư viện nguồn RTSP có tên (label + url + vị trí overlay).
+  const { data: rtspSources = [], refetch: refetchRtsp } = useListRtspSourcesQuery();
+  const [createRtspSource, { isLoading: savingRtsp }] = useCreateRtspSourceMutation();
+  const [updateRtspSource] = useUpdateRtspSourceMutation();
+  const [deleteRtspSource] = useDeleteRtspSourceMutation();
+  const [savedSrcId, setSavedSrcId] = useState("");
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveLabel, setSaveLabel] = useState("");
+
+  const applyRtspSource = (id) => {
+    setSavedSrcId(id);
+    const s = rtspSources.find((x) => x._id === id);
+    if (s) {
+      setSourceUrl(s.url || "");
+      if (s.layout) setLayout({ scoreboard: s.layout.scoreboard, brand: s.layout.brand, sponsor: s.layout.sponsor });
+    }
+  };
+  const doSaveRtsp = async () => {
+    setErr("");
+    const label = saveLabel.trim();
+    if (!label) { setErr("Nhập tên gợi nhớ cho nguồn"); return; }
+    if (!sourceUrl.trim()) { setErr("Chưa có link RTSP để lưu"); return; }
+    try {
+      if (savedSrcId) {
+        await updateRtspSource({ id: savedSrcId, label, url: sourceUrl.trim(), layout }).unwrap();
+      } else {
+        const created = await createRtspSource({ label, url: sourceUrl.trim(), layout }).unwrap();
+        if (created?._id) setSavedSrcId(created._id);
+      }
+      setSaveOpen(false); setSaveLabel("");
+      refetchRtsp();
+    } catch (e) {
+      setErr(e?.data?.message || "Lưu nguồn RTSP thất bại");
+    }
+  };
+  const doDeleteRtsp = async () => {
+    if (!savedSrcId) return;
+    try {
+      await deleteRtspSource(savedSrcId).unwrap();
+      setSavedSrcId("");
+      refetchRtsp();
+    } catch (e) {
+      setErr(e?.data?.message || "Xoá nguồn RTSP thất bại");
+    }
+  };
+
   const addDest = () => {
     setErr("");
     if (dtype === "fb") {
@@ -675,12 +725,64 @@ function StartDialog({ tournamentId, court, onClose }) {
             </>
           )}
           {srcType === "url" && (
-            <TextField
-              size="small" fullWidth label="Link nguồn"
-              placeholder="rtsp://admin:pass@192.168.1.10:554/cam/realmonitor?channel=1&subtype=0"
-              value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)}
-              helperText="RTSP/HLS/RTMP. Nguồn nội bộ (LAN) mượt & trễ thấp nhất."
-            />
+            <>
+              {rtspSources.length > 0 && (
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Nguồn RTSP đã lưu</InputLabel>
+                  <Select
+                    label="Nguồn RTSP đã lưu"
+                    value={savedSrcId}
+                    onChange={(e) => applyRtspSource(e.target.value)}
+                  >
+                    <MenuItem value="">— Nhập thủ công —</MenuItem>
+                    {rtspSources.map((s) => (
+                      <MenuItem key={s._id} value={s._id}>{s.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+              <TextField
+                size="small" fullWidth label="Link nguồn"
+                placeholder="rtsp://admin:pass@192.168.1.10:554/cam/realmonitor?channel=1&subtype=0"
+                value={sourceUrl}
+                onChange={(e) => { setSourceUrl(e.target.value); }}
+                helperText="RTSP/HLS/RTMP. Nguồn nội bộ (LAN) mượt & trễ thấp nhất. Chọn nguồn đã lưu sẽ tự điền cả vị trí overlay."
+              />
+              {!saveOpen ? (
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small" variant="outlined"
+                    disabled={!sourceUrl.trim()}
+                    onClick={() => {
+                      const cur = rtspSources.find((x) => x._id === savedSrcId);
+                      setSaveLabel(cur?.label || "");
+                      setSaveOpen(true);
+                    }}
+                  >
+                    {savedSrcId ? "Cập nhật / lưu tên" : "＋ Lưu nguồn này"}
+                  </Button>
+                  {!!savedSrcId && (
+                    <Button size="small" color="error" variant="text" onClick={doDeleteRtsp}>
+                      Xoá nguồn
+                    </Button>
+                  )}
+                </Stack>
+              ) : (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    size="small" fullWidth label="Tên gợi nhớ (vd: Lã Vọng · Sân 1)"
+                    value={saveLabel} onChange={(e) => setSaveLabel(e.target.value)}
+                    autoFocus
+                  />
+                  <Button size="small" variant="contained" disabled={savingRtsp} onClick={doSaveRtsp}>
+                    Lưu
+                  </Button>
+                  <Button size="small" color="inherit" onClick={() => { setSaveOpen(false); setSaveLabel(""); }}>
+                    Huỷ
+                  </Button>
+                </Stack>
+              )}
+            </>
           )}
 
           {srcType === "imou" && (
