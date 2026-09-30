@@ -34,6 +34,7 @@ import {
   useCreateRtspSourceMutation,
   useUpdateRtspSourceMutation,
   useDeleteRtspSourceMutation,
+  useListAutoLiveClipsQuery,
 } from "slices/tournamentAutoLiveApiSlice";
 import { useListVenuesAdminQuery } from "slices/venueAdminApiSlice";
 
@@ -258,6 +259,8 @@ export default function AutoLivePage() {
           </CardContent>
         </Card>
 
+        <ClipsCard tournamentId={tournamentId} />
+
         {startOpen && (
           <StartDialog
             tournamentId={tournamentId}
@@ -267,6 +270,103 @@ export default function AutoLivePage() {
         )}
       </Box>
     </DashboardLayout>
+  );
+}
+
+// Trạng thái clip → màu chip
+function clipStatusChip(st) {
+  const map = {
+    pending: ["Chờ đủ segment", "default"],
+    cutting: ["Đang cắt", "info"],
+    uploading: ["Đang lên Drive", "info"],
+    done: ["Xong", "success"],
+    failed: ["Lỗi", "error"],
+    skipped: ["Bỏ qua", "warning"],
+  };
+  const [label, color] = map[st] || [st, "default"];
+  return <Chip size="small" color={color} label={label} />;
+}
+
+function fmtClipDur(sec) {
+  const s = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(s / 60);
+  return m ? `${m}m${String(s % 60).padStart(2, "0")}s` : `${s}s`;
+}
+
+// Giám sát clip từng trận (recording auto-live "xuyên suốt" → cắt + upload Drive).
+function ClipsCard({ tournamentId }) {
+  const { data: clips = [], refetch, isFetching } = useListAutoLiveClipsQuery(
+    { tournamentId },
+    { pollingInterval: 30000 }
+  );
+  if (!clips.length && !isFetching) return null;
+  return (
+    <Card sx={{ mt: 2 }}>
+      <CardContent>
+        <Stack direction="row" alignItems="center" spacing={1} mb={1}>
+          <Typography variant="subtitle1" fontWeight={700}>
+            Clip từng trận (recording → Google Drive)
+          </Typography>
+          <IconButton size="small" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+          Live xuyên suốt có bật “Ghi + cắt clip từng trận”: máy live đẩy recording về
+          server → server cắt mỗi trận rồi upload Drive. Link Drive tự gắn vào trận.
+        </Typography>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Trận</TableCell>
+              <TableCell>Trạng thái</TableCell>
+              <TableCell>Thời lượng</TableCell>
+              <TableCell>Tạo lúc</TableCell>
+              <TableCell align="right">Drive</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {clips.map((c) => (
+              <TableRow key={c._id}>
+                <TableCell>
+                  <b>{c.matchCode || "—"}</b>
+                  {c.title ? (
+                    <Typography variant="caption" color="text.secondary" display="block" noWrap sx={{ maxWidth: 260 }}>
+                      {c.title}
+                    </Typography>
+                  ) : null}
+                </TableCell>
+                <TableCell>
+                  {clipStatusChip(c.status)}
+                  {c.status === "failed" && c.lastError ? (
+                    <Tooltip title={c.lastError}>
+                      <Typography variant="caption" color="error" display="block" noWrap sx={{ maxWidth: 220 }}>
+                        {c.lastError}
+                      </Typography>
+                    </Tooltip>
+                  ) : null}
+                </TableCell>
+                <TableCell>{fmtClipDur(c.clipDurationSec)}</TableCell>
+                <TableCell>
+                  <Typography variant="caption" color="text.secondary">
+                    {c.createdAt ? new Date(c.createdAt).toLocaleString("vi-VN") : "—"}
+                  </Typography>
+                </TableCell>
+                <TableCell align="right">
+                  {c.driveUrl ? (
+                    <Button
+                      size="small" variant="outlined"
+                      startIcon={<OpenInNewIcon fontSize="small" />}
+                      component="a" href={c.driveUrl} target="_blank" rel="noopener noreferrer"
+                    >Mở</Button>
+                  ) : "—"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 

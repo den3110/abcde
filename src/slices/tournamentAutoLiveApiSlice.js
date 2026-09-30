@@ -55,6 +55,17 @@ export const tournamentAutoLiveApiSlice = apiSlice.injectEndpoints({
     deleteRtspSource: builder.mutation({
       query: (id) => ({ url: `/tournament-auto-live/rtsp-sources/${id}`, method: "DELETE" }),
     }),
+    // Clip từng trận (recording auto-live) — giám sát trạng thái + link Drive.
+    listAutoLiveClips: builder.query({
+      query: ({ tournamentId, sessionId, status } = {}) => {
+        const p = new URLSearchParams();
+        if (tournamentId) p.set("tournamentId", tournamentId);
+        if (sessionId) p.set("sessionId", sessionId);
+        if (status) p.set("status", status);
+        return { url: `/tournament-auto-live/clips?${p.toString()}` };
+      },
+      providesTags: ["AutoLiveClip"],
+    }),
   }),
 });
 
@@ -72,4 +83,5 @@ export const {
   useCreateRtspSourceMutation,
   useUpdateRtspSourceMutation,
   useDeleteRtspSourceMutation,
+  useListAutoLiveClipsQuery,
 } = tournamentAutoLiveApiSlice;
