@@ -521,6 +521,7 @@ function StartDialog({ tournamentId, court, onClose }) {
   const [sourceUrl, setSourceUrl] = useState("");
   const [layout, setLayout] = useState({ scoreboard: "top-left", brand: "top-right", sponsor: "bottom-right" });
   const [destinations, setDestinations] = useState([]);
+  const [perMatchLive, setPerMatchLive] = useState(false); // false = 1 live xuyên suốt mọi trận
   const [dtype, setDtype] = useState("fb");
   const [durl, setDurl] = useState("");
   const [dkey, setDkey] = useState("");
@@ -604,11 +605,11 @@ function StartDialog({ tournamentId, court, onClose }) {
       return;
     }
     if (dtype === "youtube") {
-      if (!ytKey.trim()) { setErr("Nhập YouTube stream key (từ YouTube Studio)"); return; }
-      setDestinations((d) => [...d, {
-        type: "rtmp", label: "YouTube",
-        streamUrl: "rtmp://a.rtmp.youtube.com/live2", streamKey: ytKey.trim(),
-      }]);
+      // Có nhập key → dùng key thủ công; để trống → backend tự tạo broadcast qua
+      // YouTube API (đã kết nối ở /admin/youtube-live).
+      setDestinations((d) => [...d, ytKey.trim()
+        ? { type: "youtube", label: "YouTube", streamUrl: "rtmp://a.rtmp.youtube.com/live2", streamKey: ytKey.trim() }
+        : { type: "youtube", label: "YouTube (tự tạo qua API)" }]);
       setYtKey("");
       return;
     }
@@ -652,6 +653,7 @@ function StartDialog({ tournamentId, court, onClose }) {
         destinations,
         layout,
         advanced,
+        perMatchLive,
       }).unwrap();
       onClose();
     } catch (e) {
@@ -929,9 +931,10 @@ function StartDialog({ tournamentId, court, onClose }) {
               </FormControl>
             ) : dtype === "youtube" ? (
               <TextField
-                size="small" fullWidth label="YouTube stream key"
-                placeholder="xxxx-xxxx-xxxx-xxxx (YouTube Studio → Phát trực tiếp)"
+                size="small" fullWidth label="YouTube stream key (tuỳ chọn)"
+                placeholder="Để trống = tự tạo broadcast qua YouTube API"
                 value={ytKey} onChange={(e) => setYtKey(e.target.value)}
+                helperText="Để trống → hệ thống tự tạo live YouTube (đã kết nối ở /admin/youtube-live). Nhập key nếu muốn dùng key thủ công."
               />
             ) : (
               <>
@@ -941,6 +944,16 @@ function StartDialog({ tournamentId, court, onClose }) {
             )}
             <Button size="small" variant="outlined" onClick={addDest}>Thêm</Button>
           </Stack>
+
+          <FormControlLabel
+            control={<Checkbox checked={perMatchLive} onChange={(e) => setPerMatchLive(e.target.checked)} />}
+            label="Live riêng từng trận (mỗi trận 1 broadcast mới)"
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1, display: "block" }}>
+            {perMatchLive
+              ? "Mỗi trận sẽ kết thúc live cũ và tạo live mới (FB + YouTube tự tạo qua API). Có gián đoạn vài giây khi chuyển trận."
+              : "Live XUYÊN SUỐT: tất cả trận trong 1 live duy nhất (khuyến nghị — chỉ tạo 1 key/broadcast)."}
+          </Typography>
 
           {destinations.length > 0 && (
             <Box>
