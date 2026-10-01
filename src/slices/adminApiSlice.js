@@ -41,6 +41,15 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
+    updateUserCommentator: builder.mutation({
+      query: ({ id, isCommentator }) => ({
+        url: `/admin/users/${id}/commentator`,
+        method: "PATCH",
+        body: { isCommentator },
+      }),
+      invalidatesTags: ["User"],
+    }),
+
     /* ===== Coach applications ===== */
     listCoachApplications: builder.query({
       query: ({ status = "pending", cursor, limit = 20 } = {}) => {
@@ -396,6 +405,7 @@ export const {
   useUpdateUserRoleMutation,
   useUpdateUserSuperAdminMutation,
   useUpdateUserCoachMutation,
+  useUpdateUserCommentatorMutation,
   useListCoachApplicationsQuery,
   useApproveCoachApplicationMutation,
   useRejectCoachApplicationMutation,

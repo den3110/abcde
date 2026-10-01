@@ -61,6 +61,7 @@ import {
   useUpdateUserRoleMutation,
   useUpdateUserSuperAdminMutation,
   useUpdateUserCoachMutation,
+  useUpdateUserCommentatorMutation,
   useUpdateUserInfoMutation,
   useVerifyUserPhoneMutation,
   useSetUserPhoneRequiredMutation,
@@ -225,6 +226,7 @@ export default function UserManagement() {
   const [updateRoleMut] = useUpdateUserRoleMutation();
   const [updateSuperAdminMut] = useUpdateUserSuperAdminMutation();
   const [updateCoachMut] = useUpdateUserCoachMutation();
+  const [updateCommentatorMut] = useUpdateUserCommentatorMutation();
   const [updateInfoMut] = useUpdateUserInfoMutation();
   const [verifyPhoneMut, { isLoading: verifyingPhone }] =
     useVerifyUserPhoneMutation();
@@ -529,6 +531,29 @@ export default function UserManagement() {
                 />
               }
               label="Huấn luyện viên"
+            />
+
+            {/* Checkbox: Bình luận viên (vào trang Điều khiển Live chỉ để bình luận) */}
+            <FormControlLabel
+              sx={{ m: 0 }}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={Boolean(u.isCommentator)}
+                  onChange={(e) =>
+                    handle(
+                      updateCommentatorMut({
+                        id: u._id,
+                        isCommentator: e.target.checked,
+                      }).unwrap(),
+                      e.target.checked
+                        ? "Đã bật quyền bình luận viên"
+                        : "Đã tắt quyền bình luận viên"
+                    )
+                  }
+                />
+              }
+              label="Bình luận viên"
             />
 
             {canManageSuperAdmin && (
