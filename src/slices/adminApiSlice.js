@@ -119,6 +119,12 @@ export const adminApiSlice = apiSlice.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
+    /** ✨ Khôi phục tài khoản đã xoá mềm (isDeleted=true → false) */
+    restoreUser: builder.mutation({
+      query: (id) => ({ url: `/admin/users/${id}/restore`, method: "PATCH" }),
+      invalidatesTags: ["User"],
+    }),
+
     /** ✨ SỬA hồ sơ (name, phone, …) */
     updateUserInfo: builder.mutation({
       query: ({ id, body }) => ({
@@ -399,6 +405,7 @@ export const {
   usePatchCoachAchievementMutation,
   useAdminCreateCoachAchievementMutation,
   useDeleteUserMutation,
+  useRestoreUserMutation,
   useReviewKycMutation,
   useUpdateUserInfoMutation,
   useVerifyUserPhoneMutation,

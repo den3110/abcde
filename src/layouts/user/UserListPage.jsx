@@ -35,6 +35,7 @@ import {
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import DeleteIcon from "@mui/icons-material/Delete";
+import RestoreFromTrashIcon from "@mui/icons-material/RestoreFromTrash";
 import EditIcon from "@mui/icons-material/Edit";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { toast } from "react-toastify";
@@ -70,6 +71,7 @@ import {
   usePromoteToEvaluatorMutation,
   useDemoteEvaluatorMutation,
   useDeleteUserMutation,
+  useRestoreUserMutation,
 } from "slices/adminApiSlice";
 import { useResetNicknameCooldownMutation } from "slices/nicknameRequestsApiSlice";
 
@@ -234,6 +236,17 @@ export default function UserManagement() {
   const [promoteEvaluatorMut] = usePromoteToEvaluatorMutation();
   const [demoteEvaluatorMut] = useDemoteEvaluatorMutation();
   const [deleteUserMut] = useDeleteUserMutation();
+  const [restoreUserMut] = useRestoreUserMutation();
+  const handleRestoreUser = async (u) => {
+    if (!u?._id) return;
+    if (!window.confirm(`Khôi phục tài khoản "${u.nickname || u.name || u.phone || u.email}"?`)) return;
+    try {
+      await restoreUserMut(u._id).unwrap();
+      window.alert("Đã khôi phục tài khoản.");
+    } catch (e) {
+      window.alert("Lỗi khôi phục: " + (e?.data?.message || e?.error || "thử lại"));
+    }
+  };
   const [resetCooldownMut, { isLoading: resettingCooldown }] =
     useResetNicknameCooldownMutation();
 
@@ -422,7 +435,19 @@ export default function UserManagement() {
       const isSelf = String(u?._id) === String(currentUser?._id);
 
       return {
-        name: <MDTypography variant="button">{u.name}</MDTypography>,
+        name: (
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <MDTypography variant="button">{u.name}</MDTypography>
+            {u.isDeleted ? (
+              <Chip
+                size="small"
+                color="error"
+                label="Đã xoá"
+                sx={{ height: 18, "& .MuiChip-label": { px: 0.6, fontSize: 10 } }}
+              />
+            ) : null}
+          </Stack>
+        ),
         email: <MDTypography variant="button">{u.email}</MDTypography>,
         phone: (
           <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
@@ -581,6 +606,14 @@ export default function UserManagement() {
                 </IconButton>
               </span>
             </Tooltip>
+            {/* Khôi phục tài khoản đã xoá mềm */}
+            {u.isDeleted ? (
+              <Tooltip title="Khôi phục tài khoản đã xoá">
+                <IconButton size="small" color="success" onClick={() => handleRestoreUser(u)}>
+                  <RestoreFromTrashIcon fontSize="inherit" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
             {/* Xoá user */}
             <Tooltip title="Xoá">
               <IconButton size="small" color="error" onClick={() => setDel(u)}>
