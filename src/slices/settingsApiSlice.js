@@ -71,6 +71,14 @@ export const settingsApiSlice = apiSlice.injectEndpoints({
         return { url: `/admin/zalo-zns/logs?${p.toString()}` };
       },
     }),
+    // Reset lượt OTP trong ngày cho 1 SĐT (khi user bị chặn "quá N lần/ngày")
+    resetPhoneOtp: builder.mutation({
+      query: (phone) => ({
+        url: `/admin/otp/reset`,
+        method: "POST",
+        body: { phone: String(phone || "").trim() },
+      }),
+    }),
     getEventLiveStats: builder.query({
       query: (days = 30) => ({ url: `/event-live/stats?days=${days}` }),
     }),
@@ -106,6 +114,7 @@ export const {
   useTestZaloZnsMutation,
   useRefreshZaloZnsTokenMutation,
   useGetZaloZnsLogsQuery,
+  useResetPhoneOtpMutation,
   useGetEventLiveStatsQuery,
   useGetOpsStatusQuery,
   useTestOpsChannelMutation,

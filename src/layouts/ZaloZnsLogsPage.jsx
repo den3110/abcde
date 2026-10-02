@@ -15,10 +15,16 @@ import {
   Typography,
   Pagination,
   CircularProgress,
+  Button,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import { useGetZaloZnsLogsQuery } from "slices/settingsApiSlice";
+import {
+  useGetZaloZnsLogsQuery,
+  useResetPhoneOtpMutation,
+} from "slices/settingsApiSlice";
 
 const PURPOSE_LABEL = {
   register: "Đăng ký",
@@ -43,13 +49,30 @@ export default function ZaloZnsLogsPage() {
   const [status, setStatus] = useState("");
   const [purpose, setPurpose] = useState("");
 
-  const { data, isFetching } = useGetZaloZnsLogsQuery({
+  const { data, isFetching, refetch } = useGetZaloZnsLogsQuery({
     page,
     limit: 30,
     phone,
     status,
     purpose,
   });
+
+  const [resetOtp, { isLoading: resetting }] = useResetPhoneOtpMutation();
+  const [toast, setToast] = useState({ open: false, msg: "", sev: "success" });
+  const handleResetOtp = async () => {
+    const p = phoneInput.trim();
+    if (!p) {
+      setToast({ open: true, msg: "Nhập số điện thoại cần reset OTP vào ô SĐT.", sev: "warning" });
+      return;
+    }
+    try {
+      const r = await resetOtp(p).unwrap();
+      setToast({ open: true, msg: r?.message || "Đã reset lượt OTP.", sev: "success" });
+      try { refetch(); } catch {}
+    } catch (e) {
+      setToast({ open: true, msg: e?.data?.message || e?.error || "Reset OTP thất bại.", sev: "error" });
+    }
+  };
 
   const items = data?.items || [];
   const pages = data?.pages || 1;
@@ -120,6 +143,16 @@ export default function ZaloZnsLogsPage() {
                 <MenuItem value="activate">Kích hoạt SĐT</MenuItem>
                 <MenuItem value="test">Test</MenuItem>
               </TextField>
+              <Button
+                variant="contained"
+                color="warning"
+                onClick={handleResetOtp}
+                disabled={resetting}
+                sx={{ color: "#fff", whiteSpace: "nowrap" }}
+                title="Xoá lượt OTP hôm nay của SĐT ở ô bên trái → cho phép gửi lại ngay"
+              >
+                {resetting ? "Đang reset…" : "Reset OTP SĐT"}
+              </Button>
             </Stack>
           </Stack>
 
@@ -193,6 +226,21 @@ export default function ZaloZnsLogsPage() {
           </Stack>
         </Card>
       </Box>
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={5000}
+        onClose={() => setToast((t) => ({ ...t, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={toast.sev}
+          variant="filled"
+          onClose={() => setToast((t) => ({ ...t, open: false }))}
+          sx={{ color: "#fff" }}
+        >
+          {toast.msg}
+        </Alert>
+      </Snackbar>
     </DashboardLayout>
   );
 }
