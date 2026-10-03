@@ -564,6 +564,10 @@ function EventLiveSection() {
   const [autoNotifyCooldownMinutes, setAutoNotifyCooldownMinutes] = useState(180);
   const [manualStreams, setManualStreams] = useState([]);
   const [replayTitleFilter, setReplayTitleFilter] = useState("");
+  const [slug, setSlug] = useState("");
+  const [pinnedToHome, setPinnedToHome] = useState(true);
+  // Nhiều giải song song (events[])
+  const [events, setEvents] = useState([]);
 
   useEffect(() => {
     if (!data) return;
@@ -577,6 +581,8 @@ function EventLiveSection() {
     setAutoNotify(src.autoNotify === true);
     setAutoNotifyCooldownMinutes(Number(src.autoNotifyCooldownMinutes) || 180);
     setReplayTitleFilter(src.replayTitleFilter || "");
+    setSlug(src.slug || "");
+    setPinnedToHome(src.pinnedToHome !== false);
     setManualStreams(
       Array.isArray(src.manualStreams)
         ? src.manualStreams.map((m) => ({
@@ -590,7 +596,53 @@ function EventLiveSection() {
           }))
         : []
     );
+    setEvents(
+      Array.isArray(src.events)
+        ? src.events.map((x) => ({
+            enabled: x.enabled !== false,
+            slug: x.slug || "",
+            pinnedToHome: x.pinnedToHome !== false,
+            eventName: x.eventName || "",
+            youtubeChannel: x.youtubeChannel || "",
+            eventLogoUrl: x.eventLogoUrl || "",
+            bannerImageUrl: x.bannerImageUrl || "",
+            tournamentId: x.tournamentId || "",
+            replayTitleFilter: x.replayTitleFilter || "",
+            autoNotify: x.autoNotify === true,
+            autoNotifyCooldownMinutes: Number(x.autoNotifyCooldownMinutes) || 180,
+            youtubeApiKey: "", // server đã che; để trống = giữ key cũ
+            youtubeApiKeySet: x.youtubeApiKeySet === true,
+            // Giữ lại luồng thủ công của giải (không sửa ở đây) để round-trip.
+            manualStreams: Array.isArray(x.manualStreams) ? x.manualStreams : [],
+          }))
+        : []
+    );
   }, [data]);
+
+  const addEvent = () =>
+    setEvents((prev) => [
+      ...prev,
+      {
+        enabled: true,
+        slug: "",
+        pinnedToHome: true,
+        eventName: "",
+        youtubeChannel: "",
+        eventLogoUrl: "",
+        bannerImageUrl: "",
+        tournamentId: "",
+        replayTitleFilter: "",
+        autoNotify: false,
+        autoNotifyCooldownMinutes: 180,
+        youtubeApiKey: "",
+        youtubeApiKeySet: false,
+        manualStreams: [],
+      },
+    ]);
+  const updateEvent = (idx, patch) =>
+    setEvents((prev) => prev.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
+  const removeEvent = (idx) =>
+    setEvents((prev) => prev.filter((_, i) => i !== idx));
 
   const addManualStream = () =>
     setManualStreams((prev) => [
@@ -606,6 +658,8 @@ function EventLiveSection() {
     const body = {
       eventLive: {
         enabled,
+        slug: slug.trim(),
+        pinnedToHome,
         eventName: eventName.trim(),
         youtubeChannel: youtubeChannel.trim(),
         eventLogoUrl: eventLogoUrl.trim(),
@@ -626,6 +680,33 @@ function EventLiveSection() {
             enabled: m.enabled !== false,
           }))
           .filter((m) => m.url),
+        // Nhiều giải song song: chỉ lưu giải có slug (slug là bắt buộc để xem /live/event/<slug>)
+        events: events
+          .map((x) => {
+            const out = {
+              enabled: x.enabled !== false,
+              slug: (x.slug || "").trim(),
+              pinnedToHome: x.pinnedToHome !== false,
+              eventName: (x.eventName || "").trim(),
+              youtubeChannel: (x.youtubeChannel || "").trim(),
+              eventLogoUrl: (x.eventLogoUrl || "").trim(),
+              bannerImageUrl: (x.bannerImageUrl || "").trim(),
+              tournamentId: (x.tournamentId || "").trim(),
+              replayTitleFilter: (x.replayTitleFilter || "").trim(),
+              autoNotify: x.autoNotify === true,
+              autoNotifyCooldownMinutes: Math.max(
+                5,
+                Number(x.autoNotifyCooldownMinutes) || 180,
+              ),
+              manualStreams: Array.isArray(x.manualStreams) ? x.manualStreams : [],
+            };
+            // Chỉ gửi key khi admin nhập mới; để trống -> server giữ key cũ (theo slug).
+            if ((x.youtubeApiKey || "").trim())
+              out.youtubeApiKey = x.youtubeApiKey.trim();
+            else out.youtubeApiKey = "";
+            return out;
+          })
+          .filter((x) => x.slug),
       },
     };
     if (youtubeApiKey.trim()) body.eventLive.youtubeApiKey = youtubeApiKey.trim();
@@ -688,6 +769,33 @@ function EventLiveSection() {
           value={eventName}
           onChange={(e) => setEventName(e.target.value)}
         />
+        <TextField
+          label="Slug đường dẫn (tuỳ chọn)"
+          placeholder="VD: riverside"
+          fullWidth
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          helperText={
+            slug.trim()
+              ? `Xem tại: /live/event/${slug
+                  .trim()
+                  .toLowerCase()
+                  .normalize("NFD")
+                  .replace(/[̀-ͯ]/g, "")
+                  .replace(/[^a-z0-9]+/g, "-")
+                  .replace(/(^-|-$)/g, "")} (và /live/event)`
+              : "Để trống vẫn xem được ở /live/event. Nhập slug để có đường dẫn riêng, VD /live/event/riverside."
+          }
+        />
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Switch
+            checked={pinnedToHome}
+            onChange={(e) => setPinnedToHome(e.target.checked)}
+          />
+          <Typography variant="body2">
+            Hiển thị banner giải này ở trang chủ (web + app)
+          </Typography>
+        </Stack>
         <TextField
           label="Kênh YouTube (nhiều kênh — mỗi kênh 1 dòng)"
           placeholder={"@PickleballTour-y2b\nUC4LvrpNXujjbGOS4RDvr41g | pickleball"}
@@ -826,6 +934,150 @@ function EventLiveSection() {
           sx={{ alignSelf: "flex-start" }}
         >
           Thêm luồng thủ công
+        </Button>
+
+        <Divider textAlign="left" sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            Giải khác (nhiều giải song song)
+          </Typography>
+        </Divider>
+        <Alert severity="info">
+          Mỗi giải có <b>slug</b> riêng để xem tại <code>/live/event/&lt;slug&gt;</code>
+          {" "}(VD <code>/live/event/riverside</code>). Bật &quot;Hiển thị ở trang chủ&quot;
+          để đẩy banner giải đó ra trang chủ (web + app). Có thể chạy song song nhiều giải.
+        </Alert>
+
+        {events.map((x, idx) => (
+          <Card key={idx} variant="outlined" sx={{ p: 1.5 }}>
+            <Stack spacing={1}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Typography variant="subtitle2" sx={{ flex: 1 }}>
+                  Giải #{idx + 1}
+                  {x.slug ? ` — /live/event/${x.slug}` : ""}
+                </Typography>
+                <Switch
+                  size="small"
+                  checked={x.enabled !== false}
+                  onChange={(e) => updateEvent(idx, { enabled: e.target.checked })}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {x.enabled !== false ? "Bật" : "Tắt"}
+                </Typography>
+                <IconButton size="small" color="error" onClick={() => removeEvent(idx)}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                <TextField
+                  label="Slug (bắt buộc)"
+                  placeholder="VD: riverside"
+                  size="small"
+                  fullWidth
+                  value={x.slug}
+                  onChange={(e) => updateEvent(idx, { slug: e.target.value })}
+                />
+                <TextField
+                  label="Tên giải hiển thị"
+                  size="small"
+                  fullWidth
+                  value={x.eventName}
+                  onChange={(e) => updateEvent(idx, { eventName: e.target.value })}
+                />
+              </Stack>
+              <TextField
+                label="Kênh YouTube (mỗi kênh 1 dòng)"
+                placeholder={"@kenh-cua-giai\nUC… | pickleball"}
+                size="small"
+                fullWidth
+                multiline
+                minRows={1}
+                maxRows={5}
+                value={x.youtubeChannel}
+                onChange={(e) => updateEvent(idx, { youtubeChannel: e.target.value })}
+              />
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                <TextField
+                  label="Lọc tên sân (Xem lại)"
+                  placeholder="VD: Riverside"
+                  size="small"
+                  fullWidth
+                  value={x.replayTitleFilter}
+                  onChange={(e) =>
+                    updateEvent(idx, { replayTitleFilter: e.target.value })
+                  }
+                />
+                <TextField
+                  label="YouTube API key"
+                  type="password"
+                  size="small"
+                  fullWidth
+                  placeholder={
+                    x.youtubeApiKeySet ? "•••••• (để trống nếu không đổi)" : "Để trống = dùng key chung"
+                  }
+                  value={x.youtubeApiKey}
+                  onChange={(e) => updateEvent(idx, { youtubeApiKey: e.target.value })}
+                  autoComplete="new-password"
+                />
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                <TextField
+                  label="Logo giải (URL)"
+                  size="small"
+                  fullWidth
+                  value={x.eventLogoUrl}
+                  onChange={(e) => updateEvent(idx, { eventLogoUrl: e.target.value })}
+                />
+                <TextField
+                  label="Ảnh nền banner (URL)"
+                  size="small"
+                  fullWidth
+                  value={x.bannerImageUrl}
+                  onChange={(e) => updateEvent(idx, { bannerImageUrl: e.target.value })}
+                />
+              </Stack>
+              <TextField
+                label="Tournament ID (nếu có)"
+                size="small"
+                fullWidth
+                value={x.tournamentId}
+                onChange={(e) => updateEvent(idx, { tournamentId: e.target.value })}
+              />
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1}
+                alignItems={{ xs: "flex-start", sm: "center" }}
+              >
+                <Stack direction="row" alignItems="center" spacing={0.5}>
+                  <Switch
+                    size="small"
+                    checked={x.pinnedToHome !== false}
+                    onChange={(e) =>
+                      updateEvent(idx, { pinnedToHome: e.target.checked })
+                    }
+                  />
+                  <Typography variant="caption">Hiển thị ở trang chủ</Typography>
+                </Stack>
+                <Stack direction="row" alignItems="center" spacing={0.5}>
+                  <Switch
+                    size="small"
+                    checked={x.autoNotify === true}
+                    onChange={(e) =>
+                      updateEvent(idx, { autoNotify: e.target.checked })
+                    }
+                  />
+                  <Typography variant="caption">Auto-push khi LIVE</Typography>
+                </Stack>
+              </Stack>
+            </Stack>
+          </Card>
+        ))}
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={addEvent}
+          sx={{ alignSelf: "flex-start" }}
+        >
+          Thêm giải
         </Button>
 
         <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
