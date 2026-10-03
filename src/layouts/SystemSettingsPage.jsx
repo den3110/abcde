@@ -563,6 +563,7 @@ function EventLiveSection() {
   const [autoNotify, setAutoNotify] = useState(false);
   const [autoNotifyCooldownMinutes, setAutoNotifyCooldownMinutes] = useState(180);
   const [manualStreams, setManualStreams] = useState([]);
+  const [replayTitleFilter, setReplayTitleFilter] = useState("");
 
   useEffect(() => {
     if (!data) return;
@@ -575,6 +576,7 @@ function EventLiveSection() {
     setTournamentId(src.tournamentId || "");
     setAutoNotify(src.autoNotify === true);
     setAutoNotifyCooldownMinutes(Number(src.autoNotifyCooldownMinutes) || 180);
+    setReplayTitleFilter(src.replayTitleFilter || "");
     setManualStreams(
       Array.isArray(src.manualStreams)
         ? src.manualStreams.map((m) => ({
@@ -612,6 +614,7 @@ function EventLiveSection() {
         autoNotify,
         autoNotifyCooldownMinutes:
           Math.max(5, Number(autoNotifyCooldownMinutes) || 180),
+        replayTitleFilter: replayTitleFilter.trim(),
         manualStreams: manualStreams
           .map((m) => ({
             url: (m.url || "").trim(),
@@ -699,6 +702,17 @@ function EventLiveSection() {
             '(vd FPT Bóng Đá vừa bóng đá vừa pickleball), thêm " | pickleball" ' +
             'ở cuối dòng để CHỈ lấy stream có tiêu đề chứa từ khoá đó (nhiều từ ' +
             'khoá ngăn bằng dấu phẩy). Không có " | …" = lấy mọi luồng live của kênh.'
+          }
+        />
+        <TextField
+          label="Lọc tên sân ở tab Xem lại"
+          placeholder="VD: Riverside"
+          fullWidth
+          value={replayTitleFilter}
+          onChange={(e) => setReplayTitleFilter(e.target.value)}
+          helperText={
+            'Chỉ hiện video XEM LẠI có tiêu đề/tên sân chứa chuỗi này (không phân biệt ' +
+            'hoa thường). Rỗng = hiện tất cả. VD nhập "Riverside" → chỉ hiện các trận có "Riverside".'
           }
         />
         <TextField
